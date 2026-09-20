@@ -40,6 +40,8 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | `enabled` | | 默认 `true`；`false` 则停用。停用规则只要求写 `disabled_reason`，不必写全选择器——它是「调研记录存根」 |
 | `disabled_reason` | | 停用原因。**必须是技术原因**（WAF / 目录靠 JS / 需浏览器会话），不要写「因为含 VIP」——含 VIP 不构成拒绝理由，见 [FREE_ONLY.md](./FREE_ONLY.md) 第 1 层 |
 | `predecode` | | 默认 `true`。是否启用 JS 内联 base64 预解码 |
+| `fetch_mode` | | `http`（默认，纯 HTTP）\| `browser`（真实浏览器渲染后再取 DOM）。目录靠 JS 异步加载的站点用 browser |
+| `browser` | | `fetch_mode=browser` 时的渲染参数：`wait_selector`（等某选择器出现）、`wait_ms`（额外固定等待）、`click_selectors`（先点这些元素，如「目录」标签）、`scroll`（滚到底触发懒加载） |
 | `font_decode` | | 字体反爬解码配置（见下文「字体反爬」）。仅番茄这类站点需要 |
 | `requires_js` | | 站点是否必须执行 JS 才能拿到内容。**本项目暂无 JS 引擎支持**，标 `true` 表示已知不可用 |
 | `demo_url` | | 演示地址，会被第 1 层政策名单校验 |
@@ -240,6 +242,100 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
   "font_decode": {"mode": "outline_match", "auto_build": true}
 }
 ```
+
+### E. 正版站 + VIP 混排目录（zongheng.com）——「站点含 VIP ≠ 不可用」
+
+这是**最能说明本项目设计取向**的一条规则：一本 705 章的正版小说，其中 **650 章是 VIP**。
+但前 50 章免费内容在射程内，VIP 章靠**目录层的 class 标记**拦下。
+
+```json
+{
+  "id": "zongheng.com", "free_only": true, "predecode": false,
+  "match": ["zongheng.com", "huayu.zongheng.com", "read.zongheng.com"],
+  "book": {
+    "url_pattern": "/(?:book|showchapter|info|chapter)/(\\d{5,})",
+    "info_url": "https://book.zongheng.com/book/{bid}.html",
+    "title": [".book-info .book-name", "h1"],
+    "author": [".au-name", ".book-author .au-name"],
+    "intro": ["meta[name='description']"]
+  },
+  "catalog": {
+    "pages": {"mode": "auto", "link_pattern": "/showchapter/\\d+\\.html"},
+    "item_selector": "ul.chapter-list li a",
+    "id_from": {"mode": "href", "pattern": "/chapter/\\d+/(?P<cid>\\d+)\\.html"},
+    "sort": "cid_numeric_asc"
+  },
+  "chapter": {
+    "title_selector": "div.reader-content div.title",
+    "content_selector": "div.reader-content div.content",
+    "strip_selectors": ["div.reader-content div.title",
+                        "div.reader-content div.bookinfo", "script", "style"]
+  }
+}
+```
+
+关键实测发现：
+
+1. **站点跨三个子域，只有一处有完整目录**：
+
+   | 地址 | 结果 |
+   |---|---|
+   | `huayu.zongheng.com/showchapter/{bid}.html` | **700 章 + 650 个 `li.vip`** ✅ |
+   | `book.zongheng.com/showchapter/{bid}.html` | 只有 1 章（最新章节试读） |
+   | `www.zongheng.com/showchapter/{bid}.html` | 同样只有 1 章 |
+
+   所以 `info_url` 指向书籍页，再用书籍页的 `<a class="all-catalog">` 由
+   `pages.mode=auto` + `link_pattern` 自动跳到 huayu 目录。
+
+2. **VIP 标记在 `<li>` 上，不在 `<a>` 上**：`<li class="vip col-4">`。
+   本项目第 3 层会检查**父元素**的 class（`is_vip_item(cls + parent_cls, title)`），
+   所以能命中——若只查 `<a>` 自身的 class 就会漏掉全部 650 章。
+
+3. **免费章与 VIP 章的正文差异**（第 4 层是第二道保险）：
+
+   | | 段数 | 字数 | 付费墙特征 |
+   |---|---|---|---|
+   | 免费章 | 51 | 3177 | 无 |
+   | VIP 章 | 6 | 233 | 命中「请先登录」 |
+
+4. **正文不在 `div.reader-content` 直接子级**，而是在其内的 `div.content`；
+   `div.title` / `div.bookinfo` 要剔除，否则章节标题与作者行会混进正文。
+
+5. 这条规则**没走浏览器路由**：目录与正文都是服务端渲染，纯 HTTP 可取（240KB）。
+   用无头浏览器反而只看到 2 个章节链接。**先用实测证据决定路由。**
+
+---
+
+## 浏览器路由（`fetch_mode: browser`）
+
+有些站点的目录/正文由 JS 异步加载，纯 HTTP 只能拿到首屏骨架。此时把 `fetch_mode`
+设为 `browser`，引擎会用真实 Chromium 渲染后再取 DOM：
+
+```json
+{
+  "fetch_mode": "browser",
+  "browser": {
+    "wait_selector": "ul.chapter-list li a",
+    "wait_ms": 3000,
+    "click_selectors": ["a.all-catalog"],
+    "scroll": false
+  }
+}
+```
+
+要点：
+
+- **可选依赖**：需要 `playwright` + Chromium（`python -m playwright install chromium`）。
+  没装只影响这类站点，其它规则照常工作，并会给出带安装命令的提示。
+- **强制单线程**：Playwright 同步 API 不能跨线程共享，故 browser 模式下并发自动降为 1
+  （引擎会打印说明）。速度会明显慢于 HTTP 路由。
+- **不参与任何凭据环节**：不注入 Cookie、不登录、不接管你的浏览器会话。
+  若站点要求完成人机验证（captcha），本路由同样会失败——那是需要人参与的步骤，
+  代码里不做绕过。
+- **先试 HTTP 再上浏览器**：实测有反直觉的情况——纵横的 `showchapter` 页用无头浏览器
+  打开只看到 2 个章节链接（JS 版是懒加载的），而**纯 HTTP 取到的静态 HTML 里有完整
+  700 章**。所以不要默认"JS 站就得用浏览器"，先用 `probe_site.py` 与
+  `python -m noveldown probe` 各试一次，用实测证据决定。
 
 ---
 

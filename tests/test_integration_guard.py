@@ -175,10 +175,20 @@ class TestEndToEndFreeGuard(unittest.TestCase):
         self.assertEqual(by_index[3].paragraphs, [], "受保护正文必须立即丢弃")
         self.assertTrue(by_index[3].is_protected)
 
-        # --- 导出层：存在受保护章节时必须拒绝导出 ---
+        # --- 导出层：受保护章节**不携带正文**，故应拒绝导出（泄漏检查）---
+        #    这里手工塞一段正文进去，模拟"拦截失效"，导出必须失败
+        by_index[3].paragraphs = ["这里是本不该存在的付费正文"]
         from noveldown.exporters import export_all
         with self.assertRaises(FreeGuardError):
-            export_all(book, os.path.join(self.out, "blocked"))
+            export_all(book, os.path.join(self.out, "leak"))
+
+        # --- 恢复正常状态（正文为空）后，导出应成功且不含受保护章节 ---
+        by_index[3].paragraphs = []
+        res = export_all(book, os.path.join(self.out, "clean"))
+        self.assertEqual(set(res), {"txt", "md", "epub", "html"})
+        txt = open(res["txt"], encoding="utf-8").read()
+        self.assertNotIn("会员专享", txt)
+        self.assertIn("第1章 免费章节", txt)
 
     def test_blocked_body_not_persisted_and_export_excludes_it(self):
         """把受保护章节从结果里剔除后，导出应成功且不含任何付费内容。"""

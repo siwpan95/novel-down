@@ -54,6 +54,9 @@ class Rule:
         self.demo_url = raw.get("demo_url", "")
         self.requires_js = bool(raw.get("requires_js", False))
         self.font_decode = raw.get("font_decode") or None
+        # 取页路由：http（默认，纯 HTTP）| browser（真实浏览器渲染后再取 DOM）
+        self.fetch_mode = raw.get("fetch_mode", "http")
+        self.browser_cfg = raw.get("browser") or {}
 
     # ---------------- 校验 ----------------
     def validate(self):
@@ -82,6 +85,9 @@ class Rule:
             raise RuleError(f"{self.id}: catalog.item_selector 不能为空")
         if not self.raw["chapter"].get("content_selector"):
             raise RuleError(f"{self.id}: chapter.content_selector 不能为空")
+        if self.fetch_mode not in ("http", "browser"):
+            raise RuleError(f"{self.id}: fetch_mode 只能是 http 或 browser，"
+                            f"当前为 {self.fetch_mode!r}")
         return self
 
     # ---------------- 匹配 ----------------

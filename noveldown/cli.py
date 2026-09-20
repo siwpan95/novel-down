@@ -151,8 +151,13 @@ def cmd_probe(args):
         return 2
 
     d.log(f"[规则] {d.rule.id} · {d.rule.name}")
+    if d.rule.fetch_mode == "browser":
+        d.log("[路由] browser —— 用真实 Chromium 渲染后取 DOM（单线程）")
     t0 = time.time()
-    book = d.discover()
+    try:
+        book = d.discover()
+    finally:
+        pass
     dt = time.time() - t0
     print()
     print("=" * 62)
@@ -185,6 +190,7 @@ def cmd_probe(args):
         print(f"  首段        : {target.paragraphs[0][:60] if target.paragraphs else '—'}")
         if target.char_count < MIN_CHAPTER_CHARS:
             print(f"  [!] 字数低于阈值 {MIN_CHAPTER_CHARS}，该章会被标为 empty")
+    d.close()          # 释放浏览器等资源
     return 0
 
 

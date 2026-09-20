@@ -113,15 +113,41 @@ def check_content(paragraphs) -> tuple:
 
 
 def assert_no_protected(chapters, context: str = "export"):
-    """第 5 层：导出前终检。存在受保护章节即抛错。"""
-    bad = [c for c in chapters if c.is_protected]
-    if bad:
-        detail = "；".join(f"#{c.index} {c.title}({c.status}: {c.note})" for c in bad[:5])
-        more = f" 等 {len(bad)} 章" if len(bad) > 5 else ""
+    """第 5 层：导出前终检 —— 受保护章节**不得携带正文**。
+
+    注意这里检查的是「**泄漏**」，不是「存在」。
+    站点目录里标了 VIP 的章节本来就该存在并被跳过：一本 705 章的书有 650 章 VIP
+    是**正常状态**，那些章节一直躺在章节表里（状态 locked、正文为空）是对的。
+    如果改成「存在受保护章节就拒绝导出」，那么任何含 VIP 的正版站都永远导不出来
+    —— 又是把粒度放错了层级。
+
+    真正要防的是：`locked` / `blocked` 的章节**却带着正文**。
+    那意味着某层拦截失效（比如目录标记没生效、或付费墙正文没被丢弃），
+    此时必须失败而不是静默写进成品。
+    """
+    leaked = [c for c in chapters if c.is_protected and c.paragraphs]
+    if leaked:
+        detail = "；".join(
+            f"#{c.index} {c.title}({c.status}, {len(c.paragraphs)} 段)"
+            for c in leaked[:5])
+        more = f" 等 {len(leaked)} 章" if len(leaked) > 5 else ""
         raise FreeGuardError(
-            f"[{context}] 检出 {len(bad)} 个受保护章节，拒绝导出：{detail}{more}\n"
-            f"这是免费章节约束的终检，属预期行为，非程序错误。"
+            f"[{context}] 检出 {len(leaked)} 个受保护章节**携带正文**，拒绝导出：{detail}{more}\n"
+            f"这说明拦截失效（受保护内容泄漏），属实现缺陷，请勿绕过。"
         )
+
+
+def assert_export_shape(exportable, context: str = "export"):
+    """附加检查：传给导出器的集合里不得混入受保护章节。
+
+    这是一道「形状」断言 —— 即使将来有人改了 `filter_exportable` 的过滤条件，
+    这里也会拦住，避免受保护章节静默进入产物。
+    """
+    bad = [c for c in exportable if c.is_protected]
+    if bad:
+        raise FreeGuardError(
+            f"[{context}] 可导出集合里混入了 {len(bad)} 个受保护章节："
+            + "；".join(f"#{c.index} {c.title}" for c in bad[:5]))
 
 
 def filter_exportable(chapters):

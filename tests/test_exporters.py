@@ -140,12 +140,37 @@ class TestExporters(unittest.TestCase):
         self.assertIn("\\u003c", m.group(1))
 
     # ---------------- 拦截 ----------------
-    def test_export_refuses_when_protected_present(self):
+    def test_export_refuses_on_leaked_content(self):
+        """受保护章节**携带正文**时必须拒绝导出（拦截失效的信号）。"""
         from noveldown.freeguard import FreeGuardError
         self.book.chapters.append(
-            Chapter(index=99, title="VIP章", url="u", status=STATUS_BLOCKED))
+            Chapter(index=99, title="VIP章", url="u", cid="9999",
+                    status=STATUS_BLOCKED,
+                    paragraphs=["这段付费正文不该存在"]))
         with self.assertRaises(FreeGuardError):
             export_all(self.book, self.out)
+
+    def test_export_succeeds_when_protected_are_empty(self):
+        """存在受保护章节但正文为空 —— 正常状态，应正常导出且不含它们。
+
+        （含 VIP 的正版站就是这样：一本书 700 章里 650 章是 VIP。）
+        """
+        from noveldown.freeguard import assert_no_protected
+        from noveldown.models import STATUS_LOCKED
+        for i in range(90, 95):
+            self.book.chapters.append(
+                Chapter(index=i, title=f"VIP{i}", url="u", cid=str(9000 + i),
+                        status=STATUS_LOCKED, note="目录项 class 命中 'vip'"))
+        assert_no_protected(self.book.chapters, context="测试")   # 不得抛错
+        res = export_all(self.book, self.out)
+        self.assertEqual(set(res), {"txt", "md", "epub", "html"})
+        import zipfile
+        z = zipfile.ZipFile(res["epub"])
+        chs = [n for n in z.namelist() if n.startswith("OEBPS/text/chapter_")]
+        self.assertEqual(len(chs), 3, "受保护章节不得进入 EPUB")
+        txt = open(res["txt"], encoding="utf-8").read()
+        for i in range(90, 95):
+            self.assertNotIn(f"VIP{i}", txt)
 
     def test_export_skips_unfetched_chapters(self):
         from noveldown.models import STATUS_PENDING

@@ -147,14 +147,38 @@ class TestLayer4PaywallAndLength(unittest.TestCase):
 
 
 class TestLayer5ExportGate(unittest.TestCase):
+    """第 5 层检查的是「**泄漏**」而非「存在」。
 
-    def test_assert_no_protected_raises(self):
+    站点目录标了 VIP 的章节本来就该存在并被跳过（纵横那本是 705 章里 650 章 VIP）——
+    若改成「存在受保护章节就拒绝导出」，任何含 VIP 的正版站都永远导不出来。
+    真正要防的是 locked/blocked 的章节却**带着正文**。
+    """
+
+    def test_leak_raises(self):
+        """受保护章节携带正文 = 拦截失效 → 必须拒绝导出。"""
         chs = [Chapter(index=1, title="ok", url="u", status=STATUS_OK,
                        paragraphs=["正文" * 40]),
                Chapter(index=2, title="vip", url="u2", status=STATUS_BLOCKED,
-                       note="正文命中付费墙特征")]
+                       note="正文命中付费墙特征",
+                       paragraphs=["这段付费正文不该在这里"])]
         with self.assertRaises(FreeGuardError):
             assert_no_protected(chs, context="单元测试")
+
+    def test_protected_without_content_is_fine(self):
+        """存在受保护章节但正文为空 —— 这是**正常状态**，不得拒绝导出。"""
+        chs = [Chapter(index=1, title="ok", url="u", status=STATUS_OK,
+                       paragraphs=["正文" * 40]),
+               Chapter(index=2, title="vip1", url="u2", status=STATUS_LOCKED),
+               Chapter(index=3, title="vip2", url="u3", status=STATUS_BLOCKED)]
+        assert_no_protected(chs, context="单元测试")          # 不得抛错
+        self.assertEqual([c.index for c in filter_exportable(chs)], [1])
+
+    def test_export_shape_guard(self):
+        from noveldown.freeguard import assert_export_shape
+        leaked = [Chapter(index=1, title="vip", url="u", status=STATUS_LOCKED,
+                          paragraphs=["泄漏内容" * 20])]
+        with self.assertRaises(FreeGuardError):
+            assert_export_shape(leaked, context="单元测试")
 
     def test_filter_exportable_excludes_protected_and_pending(self):
         chs = [

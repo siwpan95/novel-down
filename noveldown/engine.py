@@ -76,11 +76,16 @@ class Downloader:
         self._done = 0
         self._total = 0
         self._font_decoder = None       # 惰性创建（仅字体反爬站点需要）
+        self._browser_fetcher = None    # 惰性创建（仅 fetch_mode=browser 的站点）
 
     # ========================================================
     #  HTTP
     # ========================================================
     def _fetch(self, url: str, referer=None) -> str:
+        # 浏览器路由：目录/正文靠 JS 渲染的站点（见 browser.py）
+        if self.rule.fetch_mode == "browser":
+            return self._fetch_browser(url)
+
         with self._lock:
             ident = self.idm.get_identity(self._ident)
             self._ident += 1
@@ -104,8 +109,48 @@ class Downloader:
         self.limiter.recover()
         return resp.text
 
+    # --------------------------------------------------------
+    #  浏览器路由（可选依赖 playwright）
+    # --------------------------------------------------------
+    def _browser(self):
+        """惰性创建并复用唯一的 BrowserFetcher（只在主线程里用）。"""
+        if self._browser_fetcher is None:
+            from . import browser as br
+            ok, why = br.deps_available()
+            if not ok:
+                raise br.BrowserUnavailable(why)
+            self._browser_fetcher = br.BrowserFetcher(
+                headless=self.config.get("browser_headless", True),
+                timeout=max(self.config["timeout"] * 1000, 45000),
+                log=self.log).start()
+            self.log("  浏览器路由已启动（Chromium）")
+        return self._browser_fetcher
+
+    def _fetch_browser(self, url: str) -> str:
+        cfg = self.rule.browser_cfg
+        self.limiter.wait()
+        html = self._browser().fetch(
+            url,
+            wait_selector=cfg.get("wait_selector"),
+            wait_ms=int(cfg.get("wait_ms", 0)),
+            click_selectors=cfg.get("click_selectors"),
+            scroll=bool(cfg.get("scroll", False)),
+        )
+        return html
+
+    def close(self):
+        """释放浏览器资源（run() 结束时会自动调用）。"""
+        if self._browser_fetcher is not None:
+            try:
+                self._browser_fetcher.close()
+            finally:
+                self._browser_fetcher = None
+
     def _fetch_bytes(self, url: str, referer=None) -> bytes:
         """抓二进制资源（字体文件用）。"""
+        if self.rule.fetch_mode == "browser":
+            self.limiter.wait()
+            return self._browser().fetch_bytes(url)
         with self._lock:
             ident = self.idm.get_identity(self._ident)
             self._ident += 1
@@ -409,31 +454,39 @@ class Downloader:
         self._total = len(pending)
         self._done = 0
         concurrency = max(1, int(self.config["concurrency"]))
+        if self.rule.fetch_mode == "browser" and concurrency > 1:
+            # Playwright 同步 API 不能跨线程共享 → 浏览器路由强制单线程
+            self.log(f"[抓取] 该站点用浏览器路由，并发强制为 1（配置的 {concurrency} 已忽略）")
+            concurrency = 1
         self.log(f"[抓取] 待抓 {self._total} 章，并发 {concurrency}，"
-                 f"基础间隔 {self.config['delay']}s±{self.config['jitter']}s")
+                 f"基础间隔 {self.config['delay']}s±{self.config['jitter']}s"
+                 + ("，路由=browser" if self.rule.fetch_mode == "browser" else ""))
 
         t0 = time.time()
-        with ThreadPoolExecutor(max_workers=concurrency) as pool:
-            futures = {pool.submit(self._fetch_one_chapter, c): c for c in pending}
-            for fut in as_completed(futures):
-                ch = futures[fut]
-                try:
-                    fut.result()
-                except Exception as e:
-                    ch.status = STATUS_FAILED
-                    ch.note = f"未捕获异常：{e}"
-                with self._lock:
-                    self._done += 1
-                    n = self._done
-                store.save_chapter(ch)
-                if ch.status == STATUS_OK:
-                    msg = f"[{n}/{self._total}] #{ch.index} {ch.title[:26]} ({ch.char_count}字)"
-                else:
-                    msg = f"[{n}/{self._total}] #{ch.index} {ch.title[:26]} → {ch.status}（{ch.note}）"
-                self.log(msg, "info" if ch.status == STATUS_OK else "warn")
-                self.progress(n, self._total, ch.title)
-                if n % STATE_SAVE_INTERVAL == 0:
-                    store.save_state(book)
+        try:
+            with ThreadPoolExecutor(max_workers=concurrency) as pool:
+                futures = {pool.submit(self._fetch_one_chapter, c): c for c in pending}
+                for fut in as_completed(futures):
+                    ch = futures[fut]
+                    try:
+                        fut.result()
+                    except Exception as e:
+                        ch.status = STATUS_FAILED
+                        ch.note = f"未捕获异常：{e}"
+                    with self._lock:
+                        self._done += 1
+                        n = self._done
+                    store.save_chapter(ch)
+                    if ch.status == STATUS_OK:
+                        msg = f"[{n}/{self._total}] #{ch.index} {ch.title[:26]} ({ch.char_count}字)"
+                    else:
+                        msg = f"[{n}/{self._total}] #{ch.index} {ch.title[:26]} → {ch.status}（{ch.note}）"
+                    self.log(msg, "info" if ch.status == STATUS_OK else "warn")
+                    self.progress(n, self._total, ch.title)
+                    if n % STATE_SAVE_INTERVAL == 0:
+                        store.save_state(book)
+        finally:
+            self.close()
 
         elapsed = time.time() - t0
         store.save_state(book)

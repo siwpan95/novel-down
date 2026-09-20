@@ -11,7 +11,8 @@
 import os
 import re
 
-from ..freeguard import assert_no_protected, filter_exportable
+from ..freeguard import (assert_export_shape, assert_no_protected,
+                         filter_exportable)
 
 EXPORTERS = {}
 
@@ -60,7 +61,9 @@ def ensure_dir(path: str) -> str:
 def export_all(book, out_dir: str, formats=None, verbose=None):
     """按 formats 依次导出。返回 {fmt: path}。"""
     formats = formats or list(EXPORTERS.keys())
+    # 第 5 层终检：受保护章节不得**携带正文**（存在但为空是正常状态）
     assert_no_protected(book.chapters, context="导出前终检")
+    assert_export_shape(filter_exportable(book.chapters), context="导出前终检")
     ensure_dir(out_dir)
     results = {}
     for fmt in formats:

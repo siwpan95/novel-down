@@ -5,6 +5,56 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.0] - 2026-09-20
+
+承接 0.1.0 的拦截粒度修正，继续把「过度防御」的残留清掉，并补齐两个能力缺口。
+
+### Changed — 两处拦截粒度修正（重要）
+
+- **第 5 层导出终检：查「泄漏」而非「存在」**。原实现是「存在受保护章节就拒绝导出」，
+  导致任何含 VIP 的正版站**永远导不出来**（纵横那本 705 章里 650 章 VIP）。
+  现在只检查「受保护章节**携带正文**」——那才是拦截失效的信号。
+  受保护章节存在但正文为空是**正常状态**。见 [docs/FREE_ONLY.md](docs/FREE_ONLY.md) 第 5 层。
+- **不再用「含 VIP」当作站点不支持的隐含理由**。参见 0.1.0 的第 1 层修正；
+  本轮把纵横从「技术障碍」复核为「**服务端渲染、纯 HTTP 可取**」，正式启用。
+
+### Added
+
+- **正版站点规则：纵横中文网**（`zongheng.com`）——705 章里 50 章免费 / 650 章 VIP。
+  VIP 章在目录层带 `class="vip col-4"` → 标记 locked、**零请求**（已机械验证）。
+  实测要点：站点跨三个子域且只有 `huayu.zongheng.com/showchapter/{bid}.html` 有完整目录；
+  VIP 标记在 `<li>` 而非 `<a>`（第 3 层查父元素 class 才能命中）；
+  正文在 `div.reader-content div.content`（非直接子级）。
+- **浏览器路由**（`noveldown/browser.py` + `fetch_mode: browser`）——补上此前的能力缺口：
+  参考项目 FictionDown 用 Chromedp/PhantomJS 处理 JS 渲染页，本项目此前只有 HTTP 路由。
+  可选依赖 playwright；browser 模式自动降为单线程（同步 API 不能跨线程共享）。
+  **不做任何凭据相关的事**：不注入 Cookie、不登录；若站点要求人机验证，本路由同样失败。
+- **`tools/verify_artifacts.py`**：产物终检 —— 机械验证
+  「受保护章节零请求（无缓存痕迹）」「零泄漏（正文区无受保护章节标题）」
+  「无付费墙字样」「无 PUA 乱码残留」「章节数自洽」。
+  四本实测产物（纵横/番茄/bqgbe/shuquge）全部 PASS。
+- 规则新增 `fetch_mode` / `browser`（`wait_selector` / `wait_ms` / `click_selectors` / `scroll`）。
+
+### Fixed
+
+- 实测发现：**「JS 站就得用浏览器」是错的**。纵横的 showchapter 页用无头浏览器打开
+  只看到 2 个章节链接，而纯 HTTP 取到的静态 HTML 里有完整 700 章。
+  已在 docs/RULES.md 写明「先用实测证据决定路由，不要默认」。
+- `tools/verify_artifacts.py` 首版对 EPUB 有假阳性：EPUB 里 `intro.xhtml` 的物理顺序
+  在章节之后，用「锚点之后」切正文区会把书籍简介算进来，而简介里合法地含有
+  「最新章节：第699章 后会无期（大结局）」。已改为 EPUB 只扫章节文件。
+
+### 验证
+
+- 113 用例全绿（约 2s）；新增回归测试锚定「含 VIP 的正版站规则必须启用」
+  「受保护章节正文为空时导出必须成功」。
+- 纵横 E2E：700 章 → 50 章抓取 / 650 章 locked；产物 163 576 字；
+  `verify_artifacts` 证明 **locked 章节零缓存痕迹、零泄漏、无付费墙字样**。
+- 番茄 E2E：966 章目录；字体反爬 362/362 还原；产物 PUA 残留 0。
+- 免费约束自检 PASS；仓库卫生门禁 PASS。
+
+---
+
 ## [0.1.0] - 2026-09-20
 
 首个可用版本。四个站点规则经端到端实测，四格式导出产物通过结构校验。

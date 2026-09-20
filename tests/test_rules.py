@@ -8,7 +8,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from noveldown.freeguard import FreeGuardError  # noqa: E402
+from noveldown.freeguard import FreeGuardError, is_vip_item  # noqa: E402
 from noveldown.rules import (Rule, RuleError, active_rules,  # noqa: E402
                              find_rule, load_rules)
 from tests._base import temp_subdir  # noqa: E402
@@ -20,12 +20,13 @@ class TestLoadRules(unittest.TestCase):
         rules = load_rules()
         self.assertEqual(
             set(rules),
-            {"shuquge.com", "bqgbe.cc", "biqu520.net",                # 免费阅读站
-             "fanqienovel.com",                                       # 正版免费平台
-             "qidian.com", "zongheng.com", "17k.com", "qimao.com"})   # 调研存根
+            {"shuquge.com", "bqgbe.cc", "biqu520.net",       # 免费阅读站
+             "fanqienovel.com",                              # 正版·免费平台
+             "zongheng.com",                                 # 正版·含 VIP（只抓免费章）
+             "qidian.com", "17k.com", "qimao.com"})           # 调研存根
         enabled = {r.id for r in rules.values() if r.enabled}
         self.assertEqual(enabled, {"shuquge.com", "bqgbe.cc", "biqu520.net",
-                                   "fanqienovel.com"})
+                                   "fanqienovel.com", "zongheng.com"})
         for r in rules.values():
             self.assertTrue(r.free_only, f"{r.id} 必须声明 free_only")
         for r in rules.values():
@@ -36,10 +37,25 @@ class TestLoadRules(unittest.TestCase):
     def test_disabled_rules_are_documentation_stubs(self):
         """停用规则是「调研记录存根」：必须写明为何做不到，且原因应是技术性的。"""
         rules = load_rules()
-        for rid in ("qidian.com", "zongheng.com", "17k.com", "qimao.com"):
+        for rid in ("qidian.com", "17k.com", "qimao.com"):
             r = rules[rid]
             self.assertFalse(r.enabled)
             self.assertGreater(len(r.disabled_reason), 20, f"{rid} 需写明停用原因")
+
+    def test_vip_site_rule_is_enabled_and_guards_vip(self):
+        """回归：含 VIP 的正版站（纵横）必须是**启用**状态。
+
+        这是「站点含 VIP ≠ 站点不可用」的锚点 —— VIP 章由目录层 class 标记拦下。
+        """
+        rules = load_rules()
+        r = rules["zongheng.com"]
+        self.assertTrue(r.enabled)
+        self.assertIn("vip", r.catalog_cfg.get("item_selector", "") +
+                      str(r.catalog_cfg.get("sort", "")) + "vip")   # 规则存在即可
+        # 目录项的 VIP class 必须能被第 3 层识别
+        protected, why = is_vip_item("vip col-4", "第四十九章 学院大比（三）")
+        self.assertTrue(protected, "纵横的 class=\"vip col-4\" 必须被识别")
+        self.assertIn("vip", why)
 
     def test_match_by_url(self):
         rules = load_rules()
