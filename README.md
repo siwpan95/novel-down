@@ -29,7 +29,7 @@
 ## 快速开始
 
 ```bat
-cd G:\local\novel-down
+cd G:\repos\novel-down
 
 :: 看有哪些站点规则
 F:\Python314\python.exe -m noveldown sites
