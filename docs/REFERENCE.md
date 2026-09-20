@@ -125,6 +125,24 @@
 
 ---
 
+## 四之二、第二轮参考资料评阅（2026-09-20）
+
+全哥新给的 5 篇教程/文章 + 1 个程序。**结论：全部只在「方法论/候选站」层面有参考价值，
+没有一项需要改代码**（本项目的实现已超出这些教程覆盖的范围）。逐条记账：
+
+| 来源 | 类型 / 许可 | 取用与结论 |
+|---|---|---|
+| <https://docs.pingcode.com/insights/ghk1gxm29zkq4cfvusxadav4> 《python 怎么爬取小说》 | 厂商博客文章（PingCode，内容为方法论；**未取任何代码**） | **价值最高**（全哥判断正确）。它把路线讲成「先判页面类型 → 目录 → 正文 → 清洗 → 保存」，并列出四类高频失败。**逐条独立印证**了本项目已有设计：① 先判静态/异步/强反爬/图片混淆 → 我们的 triage；② 目录最容易出错 → 我们的目录归一化；③ 「先结构化，后成书」→ 我们的按 cid 章节缓存 + 四格式导出；④ 断点续抓/重试/去重/日志 → 我们全有；⑤ 「返回 200 却抓不到正文」→ 我们本轮踩的寒武纪年；⑥ 正文容器用「候选区域 + 内容校验」→ 我们的 `content_selectors` + 回退。**唯一新点子**：「按文本长度/标点密度自动挑正文容器」——记为待评估（见 NEW_SITES_PLAN §10.2） |
+| <https://blog.csdn.net/weixin_41943766/article/details/155093905> | CSDN 新手教程 | 无新意（requests+bs4、`#list a` 目录 / `#content` 正文、`time.sleep(1.5)`）。仅记一个候选站 `xsbiquge.com` |
+| <https://cloud.tencent.com/developer/article/2576592> | 腾讯云社区文章 | 无新意（多线程、ebooklib 生成 epub、fake_useragent、代理池、selenium headless）。⚠ 其中 **pytesseract 识别验证码** 属本项目红线（不做验证码）；其 `--headless` 用法正是我们已知**会被识破**的方式（见 RULES.md 反检测一节） |
+| <https://blog.csdn.net/Mr_Ohahah/article/details/107597333> | CSDN 小白篇 | 无新意（正则提取、`#pager_next` 链式翻页、docx 输出）。可借鉴的一点：用 `requests.adapters.HTTPAdapter(max_retries=3)` 做**传输层**重传（本项目是应用层重试）。候选站 `dusuu.com`（读书网，`/ml/{bid}/{cid}.html`） |
+| <https://www.cnblogs.com/dcpeng/p/18344946> | 博客园文章 | 无新意（`div.book_list a` 目录 / `div#htmlContent` 正文）。候选站 `biquw.com` |
+| `novel-spider-main.zip`（@LMingJian，2025） | **GPL-3.0** 程序，**不入仓**（与本项目 MIT 不兼容，处理方式同 FictionDown） | 语言 Python（Selenium 无头浏览器 + CSS 选择器书源）。**书源格式**为简化版 Yuedu 格式。内含 2 个书源候选：`sudugu.org`（速读谷，`.con` / `#list li a`）、`soushuwang.cc`（搜书网，`#chaptercontent` / `.listmain dd a`）。⚠ **红线冲突**：其 Cloudflare 方案是「**手动**在安全浏览器里取 `cf_clearance` cookie 再绕过」——属凭据流程 + 人工环节，本项目**不做**（我们走 `--curl-cffi` / 浏览器路由）。另其 README 提到书源参考 [XIU2/Yuedu](https://github.com/XIU2/Yuedu) 书源库，**那是更大的站点候选池**（本项目可当线索用，不复制其代码） |
+
+> 以上第三方源码/程序**一律不入仓**，仅记来源、许可与结论，由 `tools/check_repo.py` 机械校验。
+
+---
+
 ## 五、实测数据来源
 
 本项目所有站点规则均基于**实际请求所得页面**逆向，非猜测。关键实测记录：
@@ -139,6 +157,8 @@
 | 2026-09-20 | `www.tadu.com` | 目录 `/book/catalogue/{bid}`；章节页 `#artContent` 为空、正文由 `/getPartContentByCodeTable/{bid}/{seq}` 以 JSON 下发（`{seq}` 是序号不是 cid）；每个 `<p>` 带 `data-limit`，其中等于 `base64(当前章 cid)` 的若干段是**站点自注入的推广水印**（站点自己用 CSS 隐藏），实测 7/77 → 规则按此精确剔除。**同章高频直连会被降级**（越来越多段落被标记隐藏），真人浏览器稳定 |
 | 2026-09-20 | `www.shuhai.com` | 杰奇 CMS（`ajax_gets=jieqi_contents`），GBK；详情页 `/book/{bid}.htm`（不带 .htm 是榜单页）；目录 `?method=getcatalog` **不带 CALLBACK 即裸 HTML**；目录项 `<div class=chapter-item>` 内 **215/645 的 `<a>` 文本为空**（标题在 `</a>` 之后）、VIP 是同级 `<span class="vip">` |
 | 2026-09-20 | `www.ciweimao.com` | 目录 817 章可读，但**任意章节页 307 → `/signup/man_machine_verify`**（标题「验证码 - 刺猬猫」，引 geetest）；**真 Chrome + headed 仍被挡** → 判为人机验证**红线**，不予支持 |
+| 2026-09-20 | `www.linovelib.com` | 书籍页 `/novel/{bid}.html`；**目录在独立页** `/novel/{bid}/catalog`（38 卷 → `ul.chapter-list > li > a`，426 章）；正文 `div#TextContent` **在 HTML 里**；目录无 VIP 标记（全免费）；作者与书名揉在 `.book-author` 需 `author_pattern`；cid 跳号故排序必须 `document_order` |
+| 2026-09-20 | `www.linovel.net` | **站点已关闭**（未经授权刊载大量日本轻小说译作，版权侵权）：首页/书籍页持续 `Read timed out`，`/book/{id}` 404 → 记停用存根 |
 | 2026-09-20 | 多站 | 不可达（curl 000）：bqg70.com、b520.cc、biqiuge.com、bqgui.cc、22biqu.com、xbiquge.la、69shuba.com、bqg128.com；WAF 403：beqege.cc |
 
 ---

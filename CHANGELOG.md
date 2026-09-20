@@ -5,6 +5,43 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.7.1] - 2026-09-20
+
+按「接着做轻之文库 / 哔哩轻小说」推进 + 评阅全哥新给的 5 篇参考与 1 个程序。
+
+### Added
+
+- **站点：哔哩轻小说**（`linovelib.com`，轻小说译作聚合站）——**纯 HTTP，零新代码**。
+  - 书籍页 `/novel/{bid}.html`；**目录在独立页** `/novel/{bid}/catalog`
+    （结构：`div.volume`（38 卷）→ `div.volume-info` + `ul.chapter-list > li > a`）；
+    章节页 `/novel/{bid}/{cid}.html` 正文在 HTML 里、容器 `div#TextContent`。
+  - **作者与书名揉在同一元素** `.book-author`（「作者 石踏一荣 、 みやま零 全文字数 398.2万 …」）
+    → 用 `author_pattern` 抽；⚠ 别用 `.author`（实测命中侧栏推荐位的另一个作者名）。
+  - **必须用 `document_order`**：目录按「卷 → 卷内章节」展示顺序排列，而 cid 不逐卷递增
+    （实测第一卷内出现 10 / 100 / 101 / 102 这类跳号），按 cid 数值排序会打乱章序。
+  - 实测《恶魔高校DxD》：**426 章全免费**（目录里没有任何 VIP 标记），3 章 6484 字，校对 + 产物终检 PASS。
+  - ⚠ 法律风险已写入规则 `notes` 与 `docs/FREE_ONLY.md`（见下）。
+
+### Known issues
+
+- **轻之文库 `linovel.net` 已正式关闭**：因未经授权刊载大量日本轻小说译作构成版权侵权，域名已不可用。
+  实测首页/书籍页持续 `Read timed out`（45s/60s），`/book/{id}` 404。
+  → 不接入，改为一条**停用存根**记录此事（避免日后重复探测死站）。
+- ⚠ **同类风险提醒**：本次接入的 `linovelib.com`（哔哩轻小说）与轻之文库属**同一形态**
+  （聚合未授权日轻译作）。规则仅供**个人离线阅读**，请勿再分发或商用。
+
+### Docs
+
+- 新增参考资料评阅（5 篇教程/文章 + 1 个程序），结论记入 `docs/REFERENCE.md` 与
+  `docs/NEW_SITES_PLAN.md` §10：**无一项需要改代码**，其中 pingcode 那篇方法论文章
+  **独立印证**了本项目已有的全部关键设计；另记 5 个新的免费站候选与 1 条红线冲突
+  （某程序用「手动取 `cf_clearance` cookie」过 Cloudflare = 凭据流程，本项目不做）。
+
+### Tests
+
+- 168 → **170**。新增：站点已关闭的存根必须写明「已关闭 + 原因」、哔哩轻小说规则形态
+  （目录独立页 / `document_order` / `#TextContent` / 必须有 `author_pattern`）。
+
 ## [0.7.0] - 2026-09-20
 
 按「先做寒武纪年 → 加通用能力做次元姬 → 深查米国度/飞卢」推进。结果：

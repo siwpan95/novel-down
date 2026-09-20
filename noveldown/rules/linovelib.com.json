@@ -1,0 +1,38 @@
+{
+  "id": "linovelib.com",
+  "name": "哔哩轻小说",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "demo_url": "https://www.linovelib.com/novel/1.html",
+  "notes": "★ 轻小说译作聚合站，2026-09-20 实测。**纯 HTTP 即可**（服务端渲染）。\n\n【形态】\n  · 书籍页 `/novel/{bid}.html`：`h1`/`.book-name` 是书名（实测「恶魔高校DxD」）；\n    作者在 `.book-author` 里，但该元素把作者、字数、章节数、收藏数、简介揉在一起\n    （「作者 石踏一荣 、 みやま零 全文字数 398.2万 章 节 数 482 …」）\n    → 用 `author_pattern: \"作者\\\\s*([^\\\\s、全]+)\"` 抽第一个作者名。\n    ⚠ 不要用 `.author`（实测命中的是侧栏推荐位的另一个作者名）。\n  · **目录在独立页** `/novel/{bid}/catalog`（书籍页里有 `/novel/{bid}/catalog` 链接）。\n    结构：`div.volume`（38 卷）→ `div.volume-info`（卷名）+ `ul.chapter-list > li > a`。\n    实测 426 个章节链接 `/novel/{bid}/{cid}.html`。\n  · 章节页：正文**在 HTML 里**，容器 `div#TextContent`（实测 1755 汉字 / 27 个 `<p>` / 9 个 `<br>`）。\n    注意 `<p>` 与 `<br>` 混用 → 交给默认的整体切分（`extract_paragraphs` 会把 `<br>` 换成换行），\n    不要写 `paragraph_selector`。\n\n【排序】用 `document_order`：目录按「卷 → 卷内章节」的**展示顺序**排列，\n而 cid 不是逐卷递增的（实测第一卷内出现 10 / 100 / 101 / 102 这种跳号），\n按 cid 数值排序会把章序打乱。\n\n【免费/VIP】实测目录里**没有任何 VIP 标记**（`vip` 字样只出现在章节标题里——\n本站确实有一章标题就叫「VIP.」）。属全免费聚合站，故不配 `vip_markers`。\n\n⚠【法律风险提示（请自行评估）】本站与刚被关闭的**轻之文库（linovel.net）**属同一类形态：\n聚合未经授权翻译的日本轻小说。轻之文库已因侵权关站。\n本规则仅供**个人离线阅读**使用；请勿再分发或商用（见 README「注意事项」）。",
+  "match": ["linovelib.com"],
+  "book": {
+    "url_pattern": "/novel/(\\d+)",
+    "info_url": "{origin}/novel/{bid}.html",
+    "title": ["h1", ".book-name"],
+    "author": [".book-author"],
+    "author_pattern": "作者\\s*([^\\s、全]+)"
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single",
+      "url": "{origin}/novel/{bid}/catalog"
+    },
+    "item_selector": "ul.chapter-list a[href*='/novel/']",
+    "volume_selector": "div.volume-info",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/novel/\\d+/(?P<cid>\\d+)\\.html"
+    },
+    "url_template": "{origin}/novel/{bid}/{cid}.html",
+    "sort": "document_order",
+    "dedupe": "keep_first"
+  },
+  "chapter": {
+    "title_selector": "h1",
+    "content_selector": "#TextContent",
+    "strip_selectors": ["script", "style"]
+  }
+}

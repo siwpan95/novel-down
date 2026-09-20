@@ -14,7 +14,7 @@
 
 ## 特性
 
-- **规则驱动**：一个站点一个 JSON，加站不改代码。内置 **12 个**实测可用站点规则（+4 条停用存根）。
+- **规则驱动**：一个站点一个 JSON，加站不改代码。内置 **13 个**实测可用站点规则（+5 条停用存根）。
 - **双路由取页**：纯 HTTP 为主；目录靠 JS 渲染、或站点有 WAF 的，可切**真实浏览器路由**
   （`fetch_mode: browser`，Playwright/Chromium）。**反检测模式**（`browser.anti_detect`）
   用本机**真 Chrome + headed + 关 AutomationControlled + 语言自洽**，可过腾讯云 Chaos VM。
@@ -109,13 +109,17 @@ F:\Python314\python.exe -m noveldown selfcheck
 | **书海小说网** | 正版·含 VIP | `shuhai.com` | **645（40 免费 / 605 VIP）** | 正版详情页 `/book/{bid}.htm`；目录 `?method=getcatalog` **裸 HTML**（无需浏览器）；605 章带 `span.vip` → locked、**零请求**；5 章 11 585 字 |
 | **飞卢小说网** | 正版·含 VIP | `faloo.com` | **12188（49 免费 / 12139 VIP）** | 书籍页一次给出全目录（约 2 MB）；免费/VIP 由**分段** `div.DivVip` 判定（逐章无标记）→ 12139 章 locked、**零请求**；3 章 6087 字 |
 | **次元姬** | 正版·含 VIP | `ciyuanji.com` | **673（26 免费 / 647 VIP）** | Next.js：目录在 `__NEXT_DATA__`；**无书籍页**，入口为章节页；正文服务端加密、需浏览器渲染；647 章 locked、**零请求**；3 章 10370 字 |
+| **哔哩轻小说** | 轻小说译作聚合 | `linovelib.com` | **426（全免费）** | 目录在独立页 `/novel/{bid}/catalog`（按 38 卷组织）；正文 `div#TextContent` **在 HTML 里** → 纯 HTTP；3 章 6484 字 |
 | 书趣阁 | 免费阅读站 | `shuquge.com` / `xshuquge.net` | 1582 | 第 1 章 106 段 / 2865 字，过滤 2 行广告 |
 | 笔趣阁 bqgbe | 免费阅读站 | `bqgbe.cc` | 169 | 第 1 章 55 段 / 1352 字，base64×33 |
 | 笔趣阁 biqu520 | 免费阅读站 | `biqu520.net` | 2653 | 第 1 章 45 段 / 1345 字，base64×23 |
 
-**另有三条停用存根**（红线，均附可复核证据）：`ciweimao.com`（刺猬猫，人机验证：章节页 307 → 极验）、
+**另有五条停用存根**（均附可复核证据）：`ciweimao.com`（刺猬猫，人机验证：章节页 307 → 极验）、
 `xrzww.com`（息壤，登录墙：正文接口恒 `{code:401,用户验证失败}`，真 Chrome 也 401）、
-`youdubook.com`（有毒小说网，同息壤）。详见 [FREE_ONLY.md](./docs/FREE_ONLY.md)。
+`youdubook.com`（有毒小说网，同息壤）、
+`hanwujinian.com`（寒武纪年，正文不向未登录下发）、
+`linovel.net`（轻之文库，**站点已因版权侵权关闭**）。
+详见 [FREE_ONLY.md](./docs/FREE_ONLY.md)。
 
 > **纵横这条最能说明设计取向**：那是一本 705 章的正版小说，其中 **650 章是 VIP**。
 > 「站点含 VIP」不是拒绝理由——那 50 章免费内容在射程内；VIP 章由**目录层的 class 标记**
@@ -191,7 +195,7 @@ novel-down/
 ├── tools/verify_reader.py     真实浏览器验证 HTML 阅读器（Playwright）
 ├── tools/make_screenshot.py   生成 README 演示截图（用自撰文本，不含第三方正文）
 ├── tools/check_repo.py        仓库卫生门禁（本仓不含第三方源码 / 凭据 / 产物）
-├── tests/                     168 个用例（含端到端拦截集成测试）+ fixtures
+├── tests/                     170 个用例（含端到端拦截集成测试）+ fixtures
 ├── docs/
 │   ├── REFERENCE.md           借鉴记账（来源 + 许可证 + 范围 + 排除项）
 │   ├── RULES.md               规则格式与典型形态（含字体反爬 / 浏览器路由）
@@ -235,7 +239,7 @@ F:\Python314\python.exe -m pip install -r requirements.txt
 F:\Python314\python.exe -m unittest discover -s tests -t .
 ```
 
-**168 个用例，约 3 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
+**170 个用例，约 3 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
 目录归一化（含 `document_order`/`keep_last`）、目录页发现、正文提取、
 免费六层拦截、四格式导出（含 EPUB 结构与 XML 合法性校验）、
 断点续爬状态机、规则校验、校对报告、字体反爬解码（glyph 名 / 轮廓索引）、

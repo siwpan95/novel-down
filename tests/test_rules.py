@@ -33,13 +33,15 @@ class TestLoadRules(unittest.TestCase):
              "youdubook.com",                                # 停用存根（同息壤，登录墙）
              "ciyuanji.com",                                 # 正版（Next.js；目录+正文都在 __NEXT_DATA__）
              "hanwujinian.com",                              # 停用存根（正文对未登录不下发）
-             "faloo.com"})                                   # 正版·含 VIP（目录分段判 VIP）
+             "faloo.com",                                    # 正版·含 VIP（目录分段判 VIP）
+             "linovelib.com",                                 # 轻小说译作聚合站（纯 HTTP）
+             "linovel.net"})                                  # 停用存根（站点已关闭·侵权）
         enabled = {r.id for r in rules.values() if r.enabled}
         self.assertEqual(enabled, {"shuquge.com", "bqgbe.cc", "biqu520.net",
                                    "fanqienovel.com", "zongheng.com", "qimao.com",
                                    "17k.com", "qidian.com", "shuhai.com",
                                    "tadu.com", "ciyuanji.com",
-                                   "faloo.com"})
+                                   "faloo.com", "linovelib.com"})
         for r in rules.values():
             self.assertTrue(r.free_only, f"{r.id} 必须声明 free_only")
         for r in rules.values():
@@ -62,7 +64,7 @@ class TestLoadRules(unittest.TestCase):
         rules = load_rules()
         disabled = {r.id for r in rules.values() if not r.enabled}
         self.assertEqual(disabled, {"ciweimao.com", "xrzww.com", "youdubook.com",
-                                    "hanwujinian.com"})
+                                    "hanwujinian.com", "linovel.net"})
         r = rules["ciweimao.com"]
         self.assertGreater(len(r.disabled_reason), 40)
         # 原因必须点出**红线性质**（人机验证）与实测证据（man_machine_verify）
@@ -104,6 +106,23 @@ class TestLoadRules(unittest.TestCase):
         self.assertEqual(r.catalog_cfg["sort"], "document_order")
         # 正文容器用属性前缀选择器抗 CSS-Modules 哈希漂移
         self.assertIn("class^=", r.chapter_cfg["content_selector"])
+
+    def test_closed_site_stub_says_so(self):
+        """站点已关闭的存根要写明「已关闭 + 原因」，避免日后重复探测死站。"""
+        r = load_rules()["linovel.net"]
+        self.assertFalse(r.enabled)
+        self.assertIn("已正式关闭", r.disabled_reason)
+        self.assertIn("侵权", r.disabled_reason)
+
+    def test_linovelib_rule_shape(self):
+        """哔哩轻小说：目录在独立页，且必须用 document_order（cid 跳号）。"""
+        r = load_rules()["linovelib.com"]
+        self.assertTrue(r.enabled)
+        self.assertIn("/catalog", r.catalog_cfg["pages"]["url"])
+        self.assertEqual(r.catalog_cfg["sort"], "document_order")
+        self.assertEqual(r.chapter_cfg["content_selector"], "#TextContent")
+        # 作者与书名揉在同一元素 → 必须配 author_pattern
+        self.assertIn("author_pattern", r.book_cfg)
 
     def test_vip_site_rule_is_enabled_and_guards_vip(self):
         """回归：含 VIP 的正版站（纵横）必须是**启用**状态。

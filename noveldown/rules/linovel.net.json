@@ -1,0 +1,11 @@
+{
+  "id": "linovel.net",
+  "name": "轻之文库",
+  "enabled": false,
+  "free_only": true,
+  "requires_js": false,
+  "demo_url": "https://www.linovel.net/",
+  "disabled_reason": "站点已正式关闭（未经授权刊载大量日本轻小说译作，版权侵权），域名已不可用：实测 2026-09-20 起首页与书籍页持续 Read timeout，`/book/{id}` 返回 404。属「站点已下线」，非技术障碍，也无从抓取。留此存根以免日后再花时间探测。",
+  "notes": "实探记录（2026-09-20）：\n  · 早期（同日较早）一次探测曾拿到首页 200 / 204 KB，含 118 个 `/book/{id}` 链接；\n  · 随后复测：`https://www.linovel.net/` 持续 `Read timed out`（45s / 60s 均超时），\n    `https://www.linovel.net/book/100007` 返回 404；\n  · 经确认该站**已因版权侵权正式关闭**（未经授权刊载大量日本轻小说译作）。\n\n【同类提醒】`linovelib.com`（哔哩轻小说）与本站属同一形态（聚合未授权日轻译作），\n法律风险同类。本项目对它的规则仅供**个人离线阅读**，请勿再分发或商用。",
+  "match": ["linovel.net"]
+}
