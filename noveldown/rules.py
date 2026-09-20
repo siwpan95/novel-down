@@ -50,8 +50,10 @@ class Rule:
         self.free_only = bool(raw.get("free_only", False))
         self.predecode = bool(raw.get("predecode", True))
         self.notes = raw.get("notes", "")
+        self.disabled_reason = raw.get("disabled_reason", "")
         self.demo_url = raw.get("demo_url", "")
         self.requires_js = bool(raw.get("requires_js", False))
+        self.font_decode = raw.get("font_decode") or None
 
     # ---------------- 校验 ----------------
     def validate(self):
@@ -64,6 +66,15 @@ class Rule:
                 f"本项目仅处理免费章节（见 docs/FREE_ONLY.md）")
         if not self.match:
             raise RuleError(f"{self.id}: match 不能为空")
+        # 第 2 层：规则自带 URL 也要过项目声明名单
+        if self.demo_url:
+            assert_site_allowed(self.demo_url)
+
+        # 停用的规则是「调研记录存根」：只需说明为何做不到，
+        # 不要求写全 book/catalog/chapter（避免为一份说明堆几十行无用配置）。
+        if not self.enabled:
+            return self
+
         for key in ("book", "catalog", "chapter"):
             if key not in self.raw:
                 raise RuleError(f"{self.id}: 缺少 '{key}' 段")
@@ -71,9 +82,6 @@ class Rule:
             raise RuleError(f"{self.id}: catalog.item_selector 不能为空")
         if not self.raw["chapter"].get("content_selector"):
             raise RuleError(f"{self.id}: chapter.content_selector 不能为空")
-        # 第 2 层：规则自带 URL 也必须过付费站黑名单
-        if self.demo_url:
-            assert_site_allowed(self.demo_url)
         return self
 
     # ---------------- 匹配 ----------------
@@ -148,15 +156,31 @@ def load_rules(rules_dir: str = RULES_DIR, strict: bool = True) -> dict:
 
 
 def find_rule(url: str, rules: dict = None) -> Rule:
-    """按 URL 找到匹配规则；先做付费站黑名单校验。"""
-    assert_site_allowed(url)          # 第 1 层
+    """按 URL 找到匹配规则。
+
+    只在**启用**的规则里匹配。若命中的规则被停用，明确说明停用原因 ——
+    停用往往是因为「站点技术上做不到」（WAF / 需要浏览器会话 / 目录靠 JS），
+    而**不是**因为「站点含 VIP 内容」：含 VIP 的正版站是允许的，
+    VIP 章节由章节级的目录标记与正文付费墙拦下。
+    """
+    assert_site_allowed(url)
     rules = rules if rules is not None else load_rules()
-    for r in rules.values():
-        if r.matches(url):
-            return r
+
+    matched = [r for r in rules.values() if r.matches(url)]
+    active = [r for r in matched if r.enabled]
+    if active:
+        return active[0]
+
+    if matched:
+        r = matched[0]
+        reason = r.disabled_reason or r.notes or "未说明"
+        raise RuleError(
+            f"站点 {r.id} 有规则但已停用。\n停用原因：{reason}\n"
+            f"若确认可用，把规则文件里的 \"enabled\" 改为 true。")
+
     raise RuleError(
         f"没有匹配的站点规则：{url}\n"
-        f"可用规则：{', '.join(sorted(rules)) or '(空)'}\n"
+        f"可用规则：{', '.join(sorted(r.id for r in rules.values() if r.enabled)) or '(空)'}\n"
         f"新增站点请参考 docs/RULES.md")
 
 
@@ -164,3 +188,16 @@ def active_rules(rules: dict = None) -> dict:
     """仅返回启用的规则。"""
     rules = rules if rules is not None else load_rules()
     return {k: v for k, v in rules.items() if v.enabled}
+
+
+def site_overview(rules: dict = None) -> list:
+    """站点总览（含停用原因），供 CLI `sites` 输出。"""
+    rules = rules if rules is not None else load_rules()
+    out = []
+    for r in sorted(rules.values(), key=lambda x: (not x.enabled, x.id)):
+        out.append({
+            "id": r.id, "name": r.name, "enabled": r.enabled,
+            "requires_js": r.requires_js, "demo_url": r.demo_url,
+            "reason": "" if r.enabled else (r.disabled_reason or r.notes or "未说明"),
+        })
+    return out

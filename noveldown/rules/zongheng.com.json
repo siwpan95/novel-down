@@ -1,0 +1,11 @@
+{
+  "id": "zongheng.com",
+  "name": "纵横中文网（正版·含免费章节）",
+  "enabled": false,
+  "free_only": true,
+  "requires_js": true,
+  "demo_url": "https://book.zongheng.com/showchapter/1059341.html",
+  "disabled_reason": "技术原因，非政策拒绝：目录页 https://book.zongheng.com/showchapter/{bid}.html 返回 200（15KB）但正文目录由 JS 渲染，静态 HTML 里只有 11 个导航 <li>，取不到章节列表；书籍页 /book/{bid}.html 返回 500（实测 2026-09-20）。",
+  "match": ["zongheng.com"],
+  "notes": "有价值的实测发现：纵横确实在目录里用 class 标注付费章（class=\"pay fr\" / user_pay），比「VIP」字样更隐蔽。本项目已据此把 pay/price/coin 等补进 VIP_ITEM_CLASS_MARKERS，所以一旦能拿到目录 HTML，免费与付费章的区分是现成的。"
+}

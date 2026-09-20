@@ -49,6 +49,39 @@ class TestCatalogNormalize(unittest.TestCase):
         chs = normalize_catalog(items, "cid_numeric_desc")
         self.assertEqual([c.cid for c in chs], ["3", "2", "1"])
 
+    def test_document_order_keep_last_drops_head_echo(self):
+        """番茄小说的形态：头部有「最近更新：第N章」回显，与末尾正文条目同 cid。
+
+        章节 ID 是雪花 ID；用 cid 升序会把回显的脏标题排到最后 → 必须
+        document_order + keep_last：丢掉头部回显，保住末尾那条干净标题。
+        """
+        items = [
+            {"cid": "700", "title": "最近更新：第3章 终章（完）", "url": "u700"},
+            {"cid": "100", "title": "第1章 起", "url": "u100"},
+            {"cid": "200", "title": "第2章 承", "url": "u200"},
+            {"cid": "700", "title": "第3章 终章（完）", "url": "u700"},
+        ]
+        chs = normalize_catalog(items, "document_order", "keep_last")
+        self.assertEqual([c.title for c in chs],
+                         ["第1章 起", "第2章 承", "第3章 终章（完）"])
+        self.assertNotIn("最近更新", "".join(c.title for c in chs))
+
+    def test_document_order_keep_first_is_still_available(self):
+        """keep_first 仍是默认 —— 回显在尾部时该策略才对。"""
+        items = [{"cid": "1", "title": "第1章", "url": "u1"},
+                 {"cid": "1", "title": "回显：第1章", "url": "u1"}]
+        chs = normalize_catalog(items, "document_order", "keep_first")
+        self.assertEqual([c.title for c in chs], ["第1章"])
+
+    def test_default_sort_and_dedupe_unchanged(self):
+        """默认参数不得被改动 —— 三个既有站点规则依赖它。"""
+        items = [{"cid": "3", "title": "c", "url": "u"},
+                 {"cid": "1", "title": "a", "url": "u"},
+                 {"cid": "3", "title": "c2", "url": "u"}]
+        chs = normalize_catalog(items)
+        self.assertEqual([c.cid for c in chs], ["1", "3"])
+        self.assertEqual(chs[1].title, "c")     # keep_first
+
     def test_locked_status_is_carried(self):
         """受保护章节要保留在编号序列里（占位），但状态为 locked。"""
         items = [

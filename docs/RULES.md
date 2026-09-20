@@ -37,10 +37,12 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | `name` | ✓ | 站点显示名 |
 | `match` | ✓ | 域名数组（含别名，如 `["shuquge.com","xshuquge.net"]`） |
 | `free_only` | ✓ | **必须为 `true`**，否则规则加载失败 |
-| `enabled` | | 默认 `true`；`false` 则不进 `active_rules()` |
+| `enabled` | | 默认 `true`；`false` 则停用。停用规则只要求写 `disabled_reason`，不必写全选择器——它是「调研记录存根」 |
+| `disabled_reason` | | 停用原因。**必须是技术原因**（WAF / 目录靠 JS / 需浏览器会话），不要写「因为含 VIP」——含 VIP 不构成拒绝理由，见 [FREE_ONLY.md](./FREE_ONLY.md) 第 1 层 |
 | `predecode` | | 默认 `true`。是否启用 JS 内联 base64 预解码 |
+| `font_decode` | | 字体反爬解码配置（见下文「字体反爬」）。仅番茄这类站点需要 |
 | `requires_js` | | 站点是否必须执行 JS 才能拿到内容。**本项目暂无 JS 引擎支持**，标 `true` 表示已知不可用 |
-| `demo_url` | | 演示地址，会被第 1 层黑名单校验 |
+| `demo_url` | | 演示地址，会被第 1 层政策名单校验 |
 | `notes` | | 逆向记录（踩过的坑写这里，便于后人维护） |
 
 ### `book`
@@ -66,8 +68,14 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | `id_from.mode` | `href`（从链接取）\| `onclick`（从 onclick 取） |
 | `id_from.pattern` | 必须含 **命名捕获组 `(?P<cid>...)`** |
 | `url_template` | 可选。支持 `{origin}` `{bid}` `{cid}`；不填则 `urljoin(页面URL, href)` |
-| `sort` | 默认 `cid_numeric_asc`；另有 `cid_numeric_desc` |
+| `sort` | `cid_numeric_asc`（默认，ID 即顺序号）\| `document_order`（保持页面顺序，用于雪花 ID 站点）\| `cid_numeric_desc` |
+| `dedupe` | `keep_first`（默认）\| `keep_last`（回显在**列表头部**时用它，见下） |
 | `volume_selector` | 可选卷标题选择器（会按文档顺序跟踪当前卷名） |
+
+> **`document_order` + `keep_last` 的用途**（番茄小说的形态）：目录第一项是
+> 「最近更新：第966章 终章（完）」回显，与列表末尾的正文条目**同 cid**。
+> 章节 ID 是雪花 ID，用 cid 升序会把回显那条排到最后、并且标题带着「最近更新：」。
+> 用 `document_order` + `keep_last` 即可丢掉头部回显、保住末尾那条干净条目。
 
 ### `chapter`
 
@@ -201,6 +209,98 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 > 目录项是 `<a onclick="随机函数名(章节ID);">`，**没有 href**，
 > 函数名每次渲染都变（实测见过 `fwbnh` / `ouiigwv`），所以只能匹配
 > `函数名(数字)` 这个形状；URL 由 `url_template` 拼出。
+
+### D. 字体反爬 + 雪花 ID 目录（fanqienovel.com）
+
+**正版**站点（番茄小说是字节旗下「免费阅读 + 广告」平台，全站无 VIP 章节）。
+
+```json
+{
+  "id": "fanqienovel.com", "free_only": true, "predecode": false,
+  "match": ["fanqienovel.com"],
+  "book": {
+    "url_pattern": "/page/(\\d+)",
+    "info_url": "{origin}/page/{bid}",
+    "title": ["h1"],
+    "author": ["div.author-name"],
+    "intro": ["meta[name='description']"]
+  },
+  "catalog": {
+    "pages": {"mode": "single", "url": "{origin}/page/{bid}"},
+    "item_selector": "a[href^='/reader/']",
+    "id_from": {"mode": "href", "pattern": "/reader/(?P<cid>\\d+)"},
+    "sort": "document_order",
+    "dedupe": "keep_last"
+  },
+  "chapter": {
+    "title_selector": "h1.muye-reader-title",
+    "content_selector": "div.muye-reader-content",
+    "strip_selectors": ["script", "style"]
+  },
+  "font_decode": {"mode": "outline_match", "auto_build": true}
+}
+```
+
+---
+
+## 字体反爬（`font_decode`）
+
+某些站点把正文里的字符替换成**私用区码位**（U+E000–U+F8FF），再用一份自定义字体
+把这些码位渲染成真字形。DOM 源码里是 `'寒\ue516呼啸'`，浏览器里显示「寒风呼啸」。
+
+**这个坑最危险的地方是它不报错**：文本能取到、结构正常、字数也对，只是**缺字乱码**。
+实测番茄小说第 1 章 1409 字里有 **764 个 PUA（54%）**，连 `<meta description>`
+都是混淆过的——页面上没有任何非混淆来源。
+
+### 为什么不能简单反查
+
+子集字体里**没有**现成映射线索：
+
+| 思路 | 实测结果 |
+|---|---|
+| 读 cmap | 362 个码位**全是 PUA**，零真实码位 |
+| 读 glyph 名 | 形如 `gid58646`，取自来源字体的序号，与官方字体的 gid/cid **都不一致** |
+| 比 charstring 字节日码 | 子集重新打包过，0/363 命中 |
+| 找页面其他位置的明文 | 无（meta / JSON-LD 同样被混淆），也无明文 API |
+
+### 可行方法：字形轮廓匹配
+
+子集字体的 CFF charstring 就是来源字体的**字形轮廓**。拿到**同版本**参考字体后，
+把两者每个字形的轮廓点集序列化取哈希即可精确对应（不是 OCR 近似）：
+
+```python
+from fontTools.pens.recordingPen import RecordingPen
+pen = RecordingPen(); glyph_set[name].draw(pen)
+key = ";".join(op + "|" + ",".join(f"{x:g}/{y:g}" for x, y in pts)
+               for op, pts in pen.value)   # → sha1(key)
+```
+
+**版本必须严格对上**（实测）：
+
+| 参考字体版本 | 命中率 |
+|---|---|
+| `adobe-fonts/source-han-sans@2.002R`（与子集声明一致） | **363/363** |
+| `@release`（2.005） | 7/363 |
+
+还有一个取号陷阱：**同一字形可能对应多个码位**（「风」U+98CE 与康熙部首「⻛」U+2EDB
+共用字形）。不做区块优先级时，`U+E516` 会反查成 `⻛` 而不是 `风`。
+`fontdecode._cp_priority()` 按 CJK 基本区 > 扩展A > 扩展B > 标点 > 全角 > 部首 取号。
+
+### 使用
+
+```bat
+:: 一次性：下载参考字体（约 17MB）并生成轮廓索引（缓存在 output/fontcache/）
+F:\Python314\python.exe tools\build_fontmap.py
+
+:: 之后 fetch / probe 会自动用上；规则里 auto_build=true 时首次也会自动构建
+F:\Python314\python.exe -m noveldown probe "https://fanqienovel.com/page/<bookId>"
+```
+
+依赖：`fontTools`（+ `brotli`，读 woff2 时需要）。**只影响这类站点**，
+缺失时其它站点照常工作，并会给出带 pip 命令的明确提示。
+
+> 参考字体**不随仓库分发**（OFL-1.1 开源字体，17MB；索引约 1.2MB 也只在本地缓存），
+> 由脚本按需下载并校验 sha256。理由见 [REFERENCE.md](./REFERENCE.md)。
 
 ---
 

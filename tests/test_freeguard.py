@@ -23,26 +23,60 @@ from noveldown.models import (Chapter, STATUS_BLOCKED, STATUS_EMPTY,  # noqa: E4
 from tests._base import make_book, temp_subdir  # noqa: E402
 
 
-class TestLayer1PaidSiteDenylist(unittest.TestCase):
+class TestLayer1PolicyDenylist(unittest.TestCase):
+    """第 1 层语义（2026-09-20 修正）：拦的是「项目声明不支持」，**不是**「含 VIP」。
 
-    def test_paid_sites_are_rejected(self):
-        for url in ("https://www.qidian.com/book/1010868264/",
-                    "https://book.qidian.com/info/1010868264",
-                    "https://www.zongheng.com/book/1.html",
-                    "https://www.17k.com/book/1.html",
-                    "https://www.jjwxc.net/onebook.php?novelid=1",
-                    "https://www.ciweimao.com/book/1",
-                    "https://www.faloo.com/book/1.html"):
-            with self.assertRaises(FreeGuardError, msg=f"应拒绝 {url}"):
-                assert_site_allowed(url)
+    背景：曾经把起点/纵横/17K 等「含 VIP 内容」的站点整站拉黑，结果可用规则里
+    只剩盗版站。但一本小说通常前几十章免费，正版站本身是可用的 —— 粒度放错了层级。
+    """
 
-    def test_lookalike_host_is_not_matched(self):
-        """相似域名不得被误伤，也不得被绕过（如 qidian.com.evil.com）。"""
-        assert_site_allowed("https://www.shuquge.com/txt/1/")
-        with self.assertRaises(FreeGuardError):
-            assert_site_allowed("https://www.qidian.com.evil.com/x")
-        with self.assertRaises(FreeGuardError):
-            assert_site_allowed("https://book.qidian.com.attacker.net/x")
+    PAID_BUT_ALLOWED = (
+        "https://www.qidian.com/book/1010868264/",
+        "https://book.qidian.com/info/1010868264",
+        "https://www.zongheng.com/book/1.html",
+        "https://www.17k.com/book/1.html",
+        "https://www.jjwxc.net/onebook.php?novelid=1",
+        "https://www.ciweimao.com/book/1",
+        "https://www.faloo.com/book/1.html",
+        "https://www.hongxiu.com/book/1",
+        "https://www.readnovel.com/book/1",
+    )
+
+    def test_paid_sites_are_NOT_rejected(self):
+        """回归测试：含 VIP 章节的站点不得被站点层拒绝。
+
+        它们是正版站，免费章节在射程内；VIP 章节由第 3/4 层在**章节级**拦下。
+        """
+        for url in self.PAID_BUT_ALLOWED:
+            assert_site_allowed(url)      # 不得抛异常
+
+    def test_default_policy_list_is_empty(self):
+        """默认策略名单为空 —— 站点层不做「含 VIP 就拒」的技术判断。"""
+        from noveldown.constants import POLICY_DENYLIST
+        self.assertEqual(tuple(POLICY_DENYLIST), ())
+
+    def test_policy_mechanism_works_when_populated(self):
+        """名单机制本身要有效：临时填入域名后必须能拦住，且防相似域名绕过。"""
+        from noveldown import freeguard
+        original = freeguard.POLICY_DENYLIST
+        freeguard.POLICY_DENYLIST = ("example-bad.com",)
+        try:
+            assert_site_allowed("https://www.shuquge.com/txt/1/")   # 无关域名不受影响
+            for bad in ("https://example-bad.com/x",
+                        "https://www.example-bad.com/x",
+                        "https://sub.example-bad.com/x",
+                        "https://example-bad.com.evil.net/x"):
+                with self.assertRaises(FreeGuardError, msg=f"应拦住 {bad}"):
+                    assert_site_allowed(bad)
+        finally:
+            freeguard.POLICY_DENYLIST = original
+
+    def test_vip_marking_still_protects_at_chapter_level(self):
+        """站点层放宽后，真正的保护来自章节级 —— 这里钉住它。"""
+        protected, why = is_vip_item("vip-lock", "第100章")
+        self.assertTrue(protected)
+        protected2, status2, _ = check_content(["正文" * 60, "本章为VIP章节，订阅后可阅读"])
+        self.assertTrue(protected2, "付费墙正文必须被第 4 层拦下")
 
 
 class TestLayer3VipCatalogItem(unittest.TestCase):

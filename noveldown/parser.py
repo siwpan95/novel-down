@@ -311,26 +311,54 @@ def catalog_links_from_page(rule, html: str, page_url: str, bid: str,
     return found
 
 
-def normalize_catalog(items, sort_mode: str = "cid_numeric_asc"):
+def normalize_catalog(items, sort_mode: str = "cid_numeric_asc",
+                      dedupe: str = "keep_first"):
     """去重 + 排序 + 编号。
 
     这是核心归一化步骤：无论目录页给的是「倒序最新章节回显」「CSS 隐藏的乱序块」
     还是「多页拼接」，最终都产出唯一的、按阅读顺序排列的章节列表。
 
+    sort_mode
+        `cid_numeric_asc`（默认）按 cid 数字升序 —— 适用于章节 ID 即顺序号的站点
+        （shuquge / bqgbe / biqu520 都是）。
+        `document_order` 保持页面自身的顺序 —— 适用于 ID 是雪花 ID、
+        与阅读顺序无稳定关系的站点（如番茄小说）。
+        `cid_numeric_desc` 逆序（罕用）。
+
+    dedupe
+        `keep_first`（默认）/ `keep_last`。
+        番茄小说把「最近更新：第966章」放在**列表头部**（与末尾的正文条目同 cid），
+        此时需要 `document_order` + `keep_last`：丢掉头部的回显，保住末尾那条
+        条目自己的位置与干净标题。（实测踩过：用 cid 升序排序会把回显的
+        脏标题「最近更新：第966章 终章（完）」留到最后一章上。）
+
     items 元素可带 "status" / "note" 字段（用于把受保护的 VIP 章节一并纳入编号，
     使其在章节序列中占位但永不被抓取）。
     """
-    by_cid = {}
-    for it in items:
-        cid = it["cid"]
-        if cid not in by_cid:
-            by_cid[cid] = it
+    if dedupe == "keep_last":
+        by_cid = {}
+        for it in items:
+            by_cid[it["cid"]] = it          # 后出现者覆盖 → 位置也取后者
+        picked = []
+        seen = set()
+        for it in items:
+            cid = it["cid"]
+            if by_cid.get(cid) is it:
+                picked.append(it)
+    else:
+        by_cid, picked, seen = {}, [], set()
+        for it in items:
+            if it["cid"] not in by_cid:
+                by_cid[it["cid"]] = it
+                picked.append(it)
 
     def _num(cid):
         m = re.search(r"(\d+)", cid or "")
         return int(m.group(1)) if m else 0
 
-    if sort_mode == "cid_numeric_desc":
+    if sort_mode == "document_order":
+        ordered = picked
+    elif sort_mode == "cid_numeric_desc":
         ordered = sorted(by_cid.values(), key=lambda x: _num(x["cid"]), reverse=True)
     else:  # cid_numeric_asc（默认）
         ordered = sorted(by_cid.values(), key=lambda x: _num(x["cid"]))

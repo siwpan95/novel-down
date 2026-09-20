@@ -14,10 +14,12 @@
 
 ## 特性
 
-- **规则驱动**：一个站点一个 JSON，加站不改代码。内置 3 个实测可用站点规则。
-- **反爬三件套处理**：JS 内联 base64 正文、目录倒序回显、CSS 隐藏列表项、多页目录。
-- **章节归一化**：全收集 → 按 cid 去重 → 按 cid 升序编号，统一消解三类目录反爬。
-- **免费章节六层拦截**：站点黑名单 / 规则自证 / 目录 VIP 标记 / 正文付费墙 / 导出终检 / 代码自检。
+- **规则驱动**：一个站点一个 JSON，加站不改代码。内置 4 个实测可用站点规则。
+- **反爬四件套处理**：JS 内联 base64 正文、**字体反爬（PUA 码位）**、
+  目录倒序回显、CSS 隐藏列表项、多页目录。
+- **章节归一化**：全收集 → 按 cid 去重 → 排序编号，统一消解各站目录反爬。
+- **免费章节六层拦截**：政策名单 / 规则自证 / 目录 VIP 标记 / 正文付费墙 / 导出终检 / 代码自检。
+  （站点层不拦"含 VIP"的正版站——拦截在**章节级**，见 [FREE_ONLY.md](./docs/FREE_ONLY.md)）
 - **断点续爬**：章节级缓存（按 cid 索引）+ 状态文件，Ctrl-C 后重跑即续。
 - **四格式导出**：TXT / Markdown / **EPUB3（纯标准库手写）** / **单文件 HTML 阅读器**。
 - **校对报告**：缺失、乱序、重复、广告残留、异常短章、编码异常、受保护章节。
@@ -86,16 +88,26 @@ F:\Python314\python.exe -m noveldown selfcheck
 
 ## 内置站点规则（2026-09-20 实测）
 
-| 站点 | 匹配域名 | 目录 | 章节数 | 实测结果 |
+| 站点 | 类型 | 匹配域名 | 章节数 | 实测结果 |
 |---|---|---|---|---|
-| 书趣阁 | `shuquge.com` / `xshuquge.net` | 单页 `div.listmain` | 1582 | 第 1 章 106 段 / 2865 字，过滤 2 行广告 |
-| 笔趣阁 bqgbe | `bqgbe.cc` | 3 页（select + 链接） | 169 | 第 1 章 55 段 / 1352 字，base64×33 |
-| 笔趣阁 biqu520 | `biqu520.net` | 27 页（select） | 2653 | 第 1 章 45 段 / 1345 字，base64×23 |
+| **番茄小说** | 正版·免费阅读 | `fanqienovel.com` | 966 | 目录 967 链接→966 章；正文 **362/362 个字体混淆码位全部还原** |
+| 书趣阁 | 免费阅读站 | `shuquge.com` / `xshuquge.net` | 1582 | 第 1 章 106 段 / 2865 字，过滤 2 行广告 |
+| 笔趣阁 bqgbe | 免费阅读站 | `bqgbe.cc` | 169 | 第 1 章 55 段 / 1352 字，base64×33 |
+| 笔趣阁 biqu520 | 免费阅读站 | `biqu520.net` | 2653 | 第 1 章 45 段 / 1345 字，base64×23 |
 
-> 不可达（已排除）：bqg70.com、b520.cc、biqiuge.com、bqgui.cc、22biqu.com、
-> xbiquge.la、69shuba.com、bqg128.com（curl 000）；beqege.cc（WAF 403）。
->
-> 新增站点见 [docs/RULES.md](./docs/RULES.md)（含探针工具与三种典型形态的完整 JSON）。
+另有 4 条**停用规则存根**，逐条记录正版站的技术障碍（**不是**「因为含 VIP」）：
+
+| 站点 | 障碍 |
+|---|---|
+| 起点 `qidian.com` | WAF：首页 202 + `x-waf-captcha-referer`，免费目录接口匿名调用返回 `{"code":1,"msg":"失败"}` |
+| 纵横 `zongheng.com` | 目录由 JS 渲染，静态 HTML 只有导航项 |
+| 17K `17k.com` | 目录页仅 5.8KB，靠 JS 异步加载 |
+| 七猫 `qimao.com` | 首页 23KB 无书籍链接，靠 JS 渲染 |
+
+`python -m noveldown sites` 会列出全部规则与停用原因。
+
+> 新增站点见 [docs/RULES.md](./docs/RULES.md)（含探针工具、四种典型形态的完整 JSON，
+> 以及「**字体反爬**」的完整解法：字形轮廓匹配 + 版本敏感性 + 取号陷阱）。
 
 ---
 
@@ -146,10 +158,11 @@ novel-down/
 │   ├── identities.json        1373 条浏览器身份
 │   └── constants.py           常量 + 免费约束词表
 ├── tools/probe_site.py        站点结构探针（编写新规则用）
+├── tools/build_fontmap.py     构建字体反爬解码索引（一次性，约 17MB 参考字体）
 ├── tools/verify_reader.py     真实浏览器验证 HTML 阅读器（Playwright）
 ├── tools/make_screenshot.py   生成 README 演示截图（用自撰文本，不含第三方正文）
 ├── tools/check_repo.py        仓库卫生门禁（本仓不含第三方源码 / 凭据 / 产物）
-├── tests/                     85 个用例（含端到端拦截集成测试）+ fixtures
+├── tests/                     109 个用例（含端到端拦截集成测试）+ fixtures
 ├── docs/
 │   ├── REFERENCE.md           借鉴记账（来源 + 许可证 + 范围 + 排除项）
 │   ├── RULES.md               规则格式与三种典型形态
@@ -161,7 +174,7 @@ novel-down/
 
 ## 依赖
 
-**运行只需 `requests` + `beautifulsoup4`**（EPUB/HTML 导出为纯标准库实现）：
+**必需依赖只有 `requests` + `beautifulsoup4`**（EPUB/HTML 导出为纯标准库实现）：
 
 ```bat
 F:\Python314\python.exe -m pip install -r requirements.txt
@@ -173,6 +186,7 @@ F:\Python314\python.exe -m pip install -r requirements.txt
 | `beautifulsoup4` | HTML 解析 | ✓ |
 | `lxml` | bs4 的快速解析器（缺失自动回退 `html.parser`） | 建议 |
 | `soupsieve` | CSS 选择器（随 bs4 安装） | ✓ |
+| `fontTools` + `brotli` | **字体反爬解码**（番茄小说）——不装只影响该类站点 | 可选 |
 | `curl_cffi` | TLS 指纹伪装（`--curl-cffi`） | 可选 |
 
 实测本机 `F:\Python314`（Python 3.14.7）上述依赖**全部可用**。
@@ -185,9 +199,10 @@ F:\Python314\python.exe -m pip install -r requirements.txt
 F:\Python314\python.exe -m unittest discover -s tests -t .
 ```
 
-**85 个用例，约 3 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
-目录归一化、目录页发现、正文提取、免费六层拦截、四格式导出
-（含 EPUB 结构与 XML 合法性校验）、断点续爬状态机、规则校验、校对报告。
+**109 个用例，约 3 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
+目录归一化（含 `document_order`/`keep_last`）、目录页发现、正文提取、
+免费六层拦截、四格式导出（含 EPUB 结构与 XML 合法性校验）、
+断点续爬状态机、规则校验、校对报告、字体反爬解码。
 
 另有三项**端到端**验证：
 

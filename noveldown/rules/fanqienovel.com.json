@@ -1,0 +1,49 @@
+{
+  "id": "fanqienovel.com",
+  "name": "番茄小说（正版·免费阅读）",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "demo_url": "https://fanqienovel.com/page/6823667291557727235",
+  "notes": "★ 这是本项目第一个**正版**站点规则（番茄是字节旗下「免费阅读 + 广告」平台，全站无 VIP 章节）。它的存在是对一条设计错误的反证：曾经把「站点含 VIP 内容」当作拒绝理由，导致可用规则里只剩盗版站。\n\n三个实测坑：\n1. **字体反爬**：正文过半汉字被替换成私用区码位（U+E000–U+F8FF），靠一份 woff2 子集字体渲染。DOM 里是 '寒\\ue516呼啸'，浏览器里显示「寒风呼啸」。实测该章 1409 字里 764 个 PUA（54%）；连 meta description 都是混淆的，页面无任何非混淆来源。靠字形轮廓匹配同版本参考字体还原（见 fontdecode.py，363/363 命中）。\n2. **目录回显在头部**：列表第 1 项是「最近更新：第966章 终章（完）」，与末尾的正文条目同 cid。章节 ID 是雪花 ID，用 cid 升序会把回显的脏标题排到最后 → 故用 document_order + keep_last。\n3. **文件名含「最近更新：」** 会污染章节标题，同样由 keep_last 化解（保留末尾那条干净标题）。",
+  "match": ["fanqienovel.com"],
+  "book": {
+    "url_pattern": "/page/(\\d+)",
+    "info_url": "{origin}/page/{bid}",
+    "title": ["h1"],
+    "author": ["div.author-name"],
+    "intro": ["meta[name='description']"],
+    "cover": ["meta[property='og:image']", "div.page-header img"],
+    "status": []
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single",
+      "url": "{origin}/page/{bid}"
+    },
+    "item_selector": "a[href^='/reader/']",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/reader/(?P<cid>\\d+)"
+    },
+    "sort": "document_order",
+    "dedupe": "keep_last",
+    "volume_selector": null
+  },
+  "chapter": {
+    "title_selector": "h1.muye-reader-title",
+    "content_selector": "div.muye-reader-content",
+    "strip_selectors": ["script", "style"],
+    "ad_patterns": [
+      "番茄小说",
+      "fanqienovel",
+      "请记住本站",
+      "最新章节请记住"
+    ]
+  },
+  "font_decode": {
+    "mode": "outline_match",
+    "auto_build": true
+  }
+}

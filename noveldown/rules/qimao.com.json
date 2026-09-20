@@ -1,0 +1,11 @@
+{
+  "id": "qimao.com",
+  "name": "七猫免费小说（正版·全免费）",
+  "enabled": false,
+  "free_only": true,
+  "requires_js": true,
+  "demo_url": "https://www.qimao.com/",
+  "disabled_reason": "技术原因，非政策拒绝：首页返回 200 但只有 23KB、仅 2 个 <script>、无书籍链接也无可断言的初始状态数据，内容由 JS 渲染（实测 2026-09-20）。",
+  "match": ["qimao.com"],
+  "notes": "七猫是「免费阅读 + 广告」模式，理论上**全站无 VIP 章节**，是本项目最理想的站点类型之一；只差拿到它的 API。"
+}

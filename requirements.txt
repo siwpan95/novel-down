@@ -7,6 +7,11 @@ beautifulsoup4>=4.12
 # 建议安装：bs4 的快速解析器（缺失时自动回退 Python 内置 html.parser）
 lxml>=5.0
 
+# 可选：字体反爬解码（番茄小说这类站点需要）——不装只影响该类站点
+# fontTools 读字体轮廓，brotli 读 woff2 时必需
+# fontTools>=4.50
+# brotli>=1.1
+
 # 可选：TLS 指纹伪装（--curl-cffi）
 # curl_cffi>=0.7
 
@@ -15,5 +20,6 @@ lxml>=5.0
 #   trafilatura / readability / newspaper3k  —— 通用正文抽取，对小说章节页过重
 #                                               且会破坏段落边界，改用规则化容器选择器
 #   requests_cache                           —— 缓存改由 state.py 按 cid 自管
-#   playwright / ddddocr                     —— 本项目无 JS 引擎与验证码识别需求
+#   playwright / ddddocr                     —— 运行时不需要浏览器引擎与验证码识别
+#                                               （仅开发验证工具 tools/verify_reader.py 用到）
 # ---------------------------------------------------------------

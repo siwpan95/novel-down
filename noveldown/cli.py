@@ -19,13 +19,13 @@ import sys
 import time
 
 from .constants import (APP_TITLE, DEFAULT_CONFIG, MIN_CHAPTER_CHARS,
-                        PAID_SITE_DENYLIST, VERSION)
+                        POLICY_DENYLIST, VERSION)
 from .exporters import EXPORTERS, export_all
 from .freeguard import (assert_no_protected, assert_site_allowed, selfcheck,
                         FreeGuardError)
 from .models import Book, STATUS_OK
 from .proofread import format_report, proofread
-from .rules import find_rule, load_rules, RuleError
+from .rules import find_rule, load_rules, site_overview, RuleError
 from .state import StateStore, slug_of
 
 LEVEL_ICON = {"info": "·", "ok": "✓", "warn": "!", "error": "✗"}
@@ -95,15 +95,27 @@ def load_book(config: dict, url: str, rules: dict):
 def cmd_sites(args):
     rules = load_rules()
     print(f"{APP_TITLE}")
-    print(f"可用站点规则 {len(rules)} 条：\n")
-    print(f"  {'规则 ID':<18} {'名称':<20} {'状态':<6} 演示地址")
-    print("  " + "-" * 84)
-    for r in sorted(rules.values(), key=lambda x: x.id):
-        st = "启用" if r.enabled else "停用"
-        extra = " [需JS]" if r.requires_js else ""
-        print(f"  {r.id:<18} {r.name:<20} {st:<6} {r.demo_url}{extra}")
-    print(f"\n  付费站点黑名单（拒绝处理）：{', '.join(PAID_SITE_DENYLIST[:8])} …")
-    print(f"  本项目仅处理免费章节，不含登录 / Cookie / 付费墙绕过能力。")
+    active = [r for r in rules.values() if r.enabled]
+    disabled = [r for r in rules.values() if not r.enabled]
+    print(f"站点规则共 {len(rules)} 条：启用 {len(active)}，停用 {len(disabled)}\n")
+
+    print(f"  {'规则 ID':<18} {'名称':<20} {'说明'}")
+    print("  " + "-" * 86)
+    for item in site_overview(rules):
+        if item["enabled"]:
+            flag = " [需JS]" if item["requires_js"] else ""
+            print(f"  {item['id']:<18} {item['name']:<20} 可用{flag}　{item['demo_url']}")
+        else:
+            print(f"  {item['id']:<18} {item['name']:<20} 停用（{item['reason'][:40]}…）")
+
+    print()
+    print("  说明：**含 VIP 章节不构成拒绝理由** —— 一本小说通常前几十章免费。")
+    print("        拦截发生在**章节级**：目录标 VIP 的章不请求，正文命中付费墙的丢弃。")
+    print("        上表「停用」均为**技术原因**（WAF / 需浏览器会话 / 目录靠 JS），非政策拒绝。")
+    if POLICY_DENYLIST:
+        print(f"  项目声明不支持的域名：{', '.join(POLICY_DENYLIST)}")
+    else:
+        print("  项目声明不支持的域名：（空）")
     return 0
 
 

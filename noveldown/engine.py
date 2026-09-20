@@ -17,6 +17,7 @@
 导出前：终检（见 freeguard.assert_no_protected）。
 """
 
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -74,6 +75,7 @@ class Downloader:
         self._lock = threading.Lock()
         self._done = 0
         self._total = 0
+        self._font_decoder = None       # 惰性创建（仅字体反爬站点需要）
 
     # ========================================================
     #  HTTP
@@ -101,6 +103,24 @@ class Downloader:
         )
         self.limiter.recover()
         return resp.text
+
+    def _fetch_bytes(self, url: str, referer=None) -> bytes:
+        """抓二进制资源（字体文件用）。"""
+        with self._lock:
+            ident = self.idm.get_identity(self._ident)
+            self._ident += 1
+        headers = build_headers(identity=ident, referer=referer)
+        self.limiter.wait()
+        resp = http_get(
+            url, headers=headers,
+            timeout=self.config["timeout"],
+            retries=min(2, self.config["retries"]),
+            proxies=self.proxies,
+            use_curl_cffi=self.config.get("use_curl_cffi", False),
+            impersonate=self.idm.get_curl_impersonate(ident),
+        )
+        self.limiter.recover()
+        return resp.content
 
     # ========================================================
     #  目录发现
@@ -139,7 +159,8 @@ class Downloader:
             lk["note"] = lk.get("reason", "目录标记为受保护")
 
         sort_mode = rule.catalog_cfg.get("sort", "cid_numeric_asc")
-        chapters = normalize_catalog(all_items + all_locked, sort_mode)
+        dedupe = rule.catalog_cfg.get("dedupe", "keep_first")
+        chapters = normalize_catalog(all_items + all_locked, sort_mode, dedupe)
 
         book.chapters = chapters
         book.volumes = sorted({c.volume for c in chapters if c.volume})
@@ -212,6 +233,69 @@ class Downloader:
         return [(u, known.get(u)) for u in order]
 
     # ========================================================
+    #  字体反爬解码
+    # ========================================================
+    def _font_decode(self, page_html, paragraphs):
+        """把 PUA 码位还原成真字符。返回 (段落列表, 备注)。"""
+        from . import fontdecode as fd
+
+        pua = fd.pua_chars(paragraphs)
+        if not pua:
+            return paragraphs, ""
+
+        cfg = self.rule.font_decode or {}
+        with self._lock:
+            if self._font_decoder is None:
+                cache_dir = os.path.join(self.config["save_dir"], "fontcache")
+                self._font_decoder = fd.FontDecoder(cache_dir, log=self.log)
+            decoder = self._font_decoder
+
+        try:
+            mapping = self._lookup_font_map(decoder, cfg, page_html, pua)
+        except Exception as e:
+            self.log(f"  字体解码失败（正文将保留 PUA 占位字符）：{e}", "warn")
+            return paragraphs, f"字体解码失败：{e}"
+
+        if not mapping:
+            self.log("  字体解码未取得映射（正文将保留 PUA 占位字符）", "warn")
+            return paragraphs, "字体解码无映射"
+
+        out = [fd.decode_text(p, mapping) for p in paragraphs]
+        cov = fd.decode_coverage(paragraphs, mapping)
+        note = f"字体反爬还原 {len(mapping)} 码位（覆盖 {cov:.1%}）"
+        return out, note
+
+    def _lookup_font_map(self, decoder, cfg, page_html, pua):
+        """按页面上 @font-face 声明的字体逐个尝试，直到覆盖本轮全部 PUA。"""
+        from . import fontdecode as fd
+
+        ok, why = fd.deps_available()
+        if not ok:
+            raise fd.FontDecodeError(why)
+
+        urls = fd.font_urls_from_html(page_html or "")
+        if not urls:
+            raise fd.FontDecodeError("页面里没有 @font-face 字体 URL")
+
+        auto_build = bool(cfg.get("auto_build", True))
+        best = {}
+        for u in urls[:4]:
+            try:
+                data = self._fetch_bytes(u, referer=self.book.url)
+            except Exception as e:
+                self.log(f"  字体下载失败 {u}：{e}", "warn")
+                continue
+            m = decoder.map_for_font(data, build_if_missing=auto_build,
+                                     downloader=lambda url: self._fetch_bytes(url))
+            if not m:
+                continue
+            # 记录覆盖最全的那份
+            if len(m) > len(best):
+                best = m
+            if pua <= set(m):
+                return m
+        return best
+    # ========================================================
     #  章节抓取
     # ========================================================
     def _fetch_one_chapter(self, ch) -> None:
@@ -220,6 +304,7 @@ class Downloader:
         url = ch.url
         seen = set()
         title = ""
+        first_html = None
 
         for _ in range(MAX_PAGES_PER_CHAPTER):
             if not url or url in seen:
@@ -233,6 +318,8 @@ class Downloader:
                 ch.status = STATUS_FAILED
                 ch.note = f"请求失败：{e}"
                 return
+            if first_html is None:
+                first_html = html
             info = parse_chapter_page(self.rule, html, url, ch.cid)
             pages.append(url)
             if not title and info["title"]:
@@ -243,6 +330,12 @@ class Downloader:
             if not info["next_url"]:
                 break
             url = info["next_url"]
+
+        # 字体反爬：把 PUA 码位还原成真字符（见 fontdecode.py）
+        if self.rule.font_decode and paragraphs:
+            paragraphs, note = self._font_decode(first_html, paragraphs)
+            if note:
+                ch.decode_note = (ch.decode_note + " " + note).strip()
 
         # 目录标题为准；仅当目录没给标题时才回退用页标题
         # （页标题常带「（第N页）」等分页后缀，且可能被站点改写成广告文案）

@@ -8,9 +8,11 @@
 本项目**只抓取免费章节**，绝不涉及任何 VIP 付费内容。约束是**多层**的，
 任何一层命中即拒绝，且没有「跳过开关」：
 
-第 1 层（站点层）——付费站黑名单
-    起点/纵横/17K/晋江/刺猬猫/飞卢等以 VIP 章节为主的站点直接拒绝，
-    连规则都不提供。见 constants.PAID_SITE_DENYLIST。
+第 1 层（站点层）——**项目明确声明不支持的域名**
+    注意这里**不是**「含 VIP 的站点」黑名单。含 VIP 章节不构成拒绝理由：
+    一本小说通常前几十章免费，一律整站拒掉会把可用站点砍到只剩盗版站。
+    默认策略为空（POLICY_DENYLIST），只放项目主动声明不支持的域名。
+    真正该拦的是「**该章节**需要登录/付费」，那由第 3/4 层在**章节级**处理。
 
 第 2 层（规则层）——规则必须显式声明 free_only
     站点规则 JSON 里 `free_only` 必须为 true 才被加载；
@@ -34,7 +36,7 @@
     `python -m noveldown selfcheck` 机械校验）。
 """
 
-from .constants import (PAID_SITE_DENYLIST, PAYWALL_MARKERS,
+from .constants import (POLICY_DENYLIST, PAYWALL_MARKERS,
                         VIP_ITEM_CLASS_MARKERS, VIP_ITEM_TEXT_MARKERS,
                         MIN_CHAPTER_CHARS)
 from .models import STATUS_BLOCKED, STATUS_EMPTY
@@ -52,13 +54,21 @@ def site_of(url: str) -> str:
 
 
 def assert_site_allowed(url: str):
-    """第 1 层：付费站黑名单校验。命中即抛 FreeGuardError。"""
+    """第 1 层：项目声明不支持的域名校验（默认空名单）。
+
+    这里**只**查 POLICY_DENYLIST —— 它是「项目主动声明不支持」的政策旋钮，
+    不是「含 VIP 内容」的技术判断。含 VIP 的正版站是允许的，
+    其 VIP 章节由第 3/4 层在章节级拦下。
+
+    Returns: host
+    Raises: FreeGuardError（命中政策名单时）
+    """
     host = site_of(url)
-    for denied in PAID_SITE_DENYLIST:
+    for denied in POLICY_DENYLIST:
         if host == denied or host.endswith("." + denied) or host.startswith(denied):
             raise FreeGuardError(
-                f"拒绝处理付费站点：{host}（命中黑名单 {denied}）。\n"
-                f"本项目仅用于免费章节，不提供 VIP/付费章节的任何抓取能力。"
+                f"该域名在项目声明的不支持名单内：{host}（命中 {denied}）。\n"
+                f"如需支持，请从 constants.POLICY_DENYLIST 移除并补充站点规则。"
             )
     return host
 

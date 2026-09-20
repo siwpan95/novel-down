@@ -39,20 +39,26 @@ ANTICRAWL_STATUS_CODES = (403, 412, 429, 503)
 # ============================================================
 #  免费章节硬约束
 # ============================================================
-# 明确的付费/需登录站点黑名单：命中即拒绝，不提供规则，不尝试解析。
-# 本项目仅用于免费章节，绝不涉及 VIP 付费内容。
-PAID_SITE_DENYLIST = (
-    "qidian.com", "book.qidian.com",          # 起点（VIP 章节）
-    "zongheng.com", "book.zongheng.com",      # 纵横（VIP 章节）
-    "17k.com",                                # 17K（VIP 章节）
-    "jjwxc.net", "jjwxc.com",                 # 晋江（VIP 章节）
-    "ciweimao.com",                           # 刺猬猫（VIP 章节）
-    "faloo.com",                              # 飞卢（VIP 章节）
-    "hongxiu.com", "xxsy.net",                # 红袖（VIP 章节）
-    "readnovel.com",                          # 云起书院
-    "shuqi.com", "qidian"                     # 书旗 / 起点别名
-)
+# 【设计修正 2026-09-20】这里原本是一份「付费站黑名单」（起点/纵横/17K/晋江/
+# 刺猬猫/飞卢…），把「**站点**含 VIP 内容」当成了拒绝理由。那是**粒度放错层级**：
+#
+#   · 「站点含 VIP 内容」——几乎所有正版站都成立，一本小说通常前几十章免费；
+#   · 真正该拦的是「**该章节**需要登录/付费才能读」——这是**章节级**问题。
+#
+# 把站点整站拒掉，导致可用规则里只剩盗版站。现在改为：
+#   **站点层只拦「项目明确声明不支持」的域名（政策旋钮，默认为空）**，
+#   拦截职责下沉到目录层（VIP 标记 → 不请求）与正文层（付费墙 → 丢弃）。
+# 详见 docs/FREE_ONLY.md 第 1 层。
+POLICY_DENYLIST = ()   # 默认空。只放"项目明确不支持"的域名，不含任何技术判断。
 
+# 目录/章节项上的 VIP 标记（按 **class** 匹配）
+# 站点在目录里标 VIP/付费章节，最可靠的信号是给该项加 class。
+# 2026-09-20 扩充：实测纵横用 `class="pay fr"` / `user_pay` 标注付费章，
+# 裸 "paid" 匹配不到，故补入 pay / price / coin / charge / subscribe 等常见写法。
+VIP_ITEM_CLASS_MARKERS = (
+    "vip", "lock", "paid", "pay", "price", "coin", "charge", "subscribe",
+    "vipchapter", "vip-chapter",
+)
 # 正文付费墙特征词：命中即判定为受保护内容，正文一律丢弃。
 PAYWALL_MARKERS = (
     "本章为VIP章节", "本章为付费章节", "VIP章节", "vip章节",
@@ -62,10 +68,6 @@ PAYWALL_MARKERS = (
     "该章节为付费", "本章尚未购买", "试读结束",
     "本章内容需要购买", "升级为VIP",
 )
-
-# 目录/章节项上的 VIP 标记（按 **class** 匹配）
-# 站点在目录里标 VIP 章节，最可靠的信号是给该项加 class（vip / lock / paid…）。
-VIP_ITEM_CLASS_MARKERS = ("vip", "lock", "paid", "vipchapter", "vip-chapter")
 
 # 目录/章节项上的 VIP 标记（按 **标题文本** 匹配）——只收「徽章形态」的写法。
 #

@@ -1,0 +1,11 @@
+{
+  "id": "17k.com",
+  "name": "17K 小说网（正版·含免费章节）",
+  "enabled": false,
+  "free_only": true,
+  "requires_js": true,
+  "demo_url": "https://www.17k.com/list/3220540.html",
+  "disabled_reason": "技术原因，非政策拒绝：书籍页与目录页 /list/{bid}.html 均返回 200 但只有 5.8KB，正文目录由 JS 异步加载，静态 HTML 不含章节链接（实测 2026-09-20）。",
+  "match": ["17k.com"],
+  "notes": "需找出其目录 JSON 接口，或接入浏览器引擎。"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "qidian.com",
+  "name": "起点中文网（正版·含免费章节）",
+  "enabled": false,
+  "free_only": true,
+  "requires_js": true,
+  "demo_url": "https://www.qidian.com/book/1010868264/",
+  "disabled_reason": "技术原因，非政策拒绝：免费章节本可匿名阅读，但站点 WAF 要求浏览器会话——首页返回 202 且下发 x-waf-captcha-referer，免费目录接口 ajax/book/category 匿名调用返回 {\"code\":1,\"msg\":\"失败\"}（实测 2026-09-20）。本项目不含浏览器引擎，故暂不支持。",
+  "match": ["qidian.com"],
+  "notes": "★ 重要：本文件不是「因为含 VIP 就拒绝」。起点一本小说的前几十章是免费可读的，那部分属于本项目射程内。停用纯粹因为 WAF 挡在前面。若将来接入浏览器引擎（Playwright 解 WAF）或找到匿名可用的目录接口，把 enabled 改 true 并补全 catalog/chapter 段即可；届时 VIP 章节仍由目录标记（不请求）与正文付费墙（丢弃）在章节级拦下。"
+}
