@@ -41,28 +41,28 @@
 ## 快速开始
 
 ```bat
-cd G:\repos\novel-down
+cd 本仓（novel-down）
 
 :: 看有哪些站点规则
-F:\Python314\python.exe -m noveldown sites
+python -m noveldown sites
 
 :: 规则自检：抓目录 + 抽 1 章，确认规则可用
-F:\Python314\python.exe -m noveldown probe "https://www.shuquge.com/txt/207266/index.html"
+python -m noveldown probe "https://www.shuquge.com/txt/207266/index.html"
 
 :: 抓整本并导出（先抓 20 章试水）
-F:\Python314\python.exe -m noveldown fetch "https://www.bqgbe.cc/txt/445/" --limit 20
+python -m noveldown fetch "https://www.bqgbe.cc/txt/445/" --limit 20
 
 :: 继续抓完（自动从断点续，不会重抓）
-F:\Python314\python.exe -m noveldown fetch "https://www.bqgbe.cc/txt/445/"
+python -m noveldown fetch "https://www.bqgbe.cc/txt/445/"
 
 :: 已抓过的话，换格式重导（不联网）
-F:\Python314\python.exe -m noveldown export "https://www.bqgbe.cc/txt/445/" --formats epub,html
+python -m noveldown export "https://www.bqgbe.cc/txt/445/" --formats epub,html
 
 :: 只看校对报告
-F:\Python314\python.exe -m noveldown report "https://www.bqgbe.cc/txt/445/"
+python -m noveldown report "https://www.bqgbe.cc/txt/445/"
 
 :: 免费约束机械自检
-F:\Python314\python.exe -m noveldown selfcheck
+python -m noveldown selfcheck
 ```
 
 ---
@@ -113,6 +113,16 @@ F:\Python314\python.exe -m noveldown selfcheck
 | 书趣阁 | 免费阅读站 | `shuquge.com` / `xshuquge.net` | 1582 | 第 1 章 106 段 / 2865 字，过滤 2 行广告 |
 | 笔趣阁 bqgbe | 免费阅读站 | `bqgbe.cc` | 169 | 第 1 章 55 段 / 1352 字，base64×33 |
 | 笔趣阁 biqu520 | 免费阅读站 | `biqu520.net` | 2653 | 第 1 章 45 段 / 1345 字，base64×23 |
+
+**规则按来源分池**（`python -m noveldown sites` 会按池分组列出）：
+- **正版**（13 条）：起点 / 17K / 七猫 / 纵横 / 番茄 / 塔读 / 书海 / 次元姬 / 飞卢（+4 条停用存根）
+- **免费镜像**（6 条）：书趣阁 / bqgbe / biqu520 / 哔哩轻小说 / 搜书网族（搜书网·速读小说·bqg142）（+1 条停用存根：轻之文库已关站）
+
+> **「笔趣阁家族」**：国内最大的盗版阵营就是笔趣阁系——**倒下一个站起来一大片**，
+> 同一套模板（`/book/{bid}/` 目录 + `#chaptercontent` 正文）被无数镜像复用，所以本项目把
+> 它们收在**一条族规则**里、按域并列（`soushuwang.cc` / `bqg142.cc` / `soduo.cc`），
+> 而不是一站一条。这类站**抽风是通病**（同一 URL 时而 200 时而超时），
+> 靠重试 + 断点续爬兜住；探测时**不要凭一次失败判死**。
 
 **另有五条停用存根**（均附可复核证据）：`ciweimao.com`（刺猬猫，人机验证：章节页 307 → 极验）、
 `xrzww.com`（息壤，登录墙：正文接口恒 `{code:401,用户验证失败}`，真 Chrome 也 401）、
@@ -210,7 +220,7 @@ novel-down/
 **必需依赖只有 `requests` + `beautifulsoup4`**（EPUB/HTML 导出为纯标准库实现）：
 
 ```bat
-F:\Python314\python.exe -m pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 | 包 | 用途 | 必需 |
@@ -223,7 +233,7 @@ F:\Python314\python.exe -m pip install -r requirements.txt
 | `playwright` | **浏览器路由 / 反检测模式**（目录靠 JS 渲染、或有 WAF 的站点）——不装只影响该类站点；反检测还需本机装有 Google Chrome | 可选 |
 | `curl_cffi` | TLS 指纹伪装（`--curl-cffi`） | 可选 |
 
-实测本机 `F:\Python314`（Python 3.14.7）上述依赖**全部可用**。
+实测本机 本机 Python（Python 3.14.7）上述依赖**全部可用**。
 
 ### 环境变量
 
@@ -236,7 +246,7 @@ F:\Python314\python.exe -m pip install -r requirements.txt
 ## 测试
 
 ```bat
-F:\Python314\python.exe -m unittest discover -s tests -t .
+python -m unittest discover -s tests -t .
 ```
 
 **170 个用例，约 3 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
@@ -253,17 +263,17 @@ JSON 接口目录（含 `flatten_field` 卷→章展开、**内嵌 HTML 的 SSR 
 ```bat
 :: 1. 真实引擎 + 本地合成站点：证明「locked 章节零请求」「付费墙正文被丢弃」
 ::    「导出拒绝」「成品无付费字样」——随单测一起跑
-F:\Python314\python.exe -m unittest tests.test_integration_guard -v
+python -m unittest tests.test_integration_guard -v
 
 :: 2. 真实浏览器（Playwright + Chromium）操作 HTML 阅读器并断言 30 项
-F:\Python314\python.exe tools\verify_reader.py "output\<书名>_<站点>\<书名>_<站点>.html"
+python tools\verify_reader.py "output\<书名>_<站点>\<书名>_<站点>.html"
 
 :: 3. 产物终检：受保护内容零请求 / 零泄漏 / 无乱码残留
-F:\Python314\python.exe tools\verify_artifacts.py "output\<书名>_<站点>"
+python tools\verify_artifacts.py "output\<书名>_<站点>"
 
 :: 4. 仓库卫生门禁：不含第三方源码 / 凭据 / 产物，且借鉴记账完整
-F:\Python314\python.exe tools\check_repo.py
-F:\Python314\python.exe tools\check_repo.py --selfcheck   # 证明门禁本身有效
+python tools\check_repo.py
+python tools\check_repo.py --selfcheck   # 证明门禁本身有效
 ```
 
 ---

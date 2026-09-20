@@ -1,6 +1,7 @@
 {
   "id": "faloo.com",
   "name": "飞卢小说网",
+  "pool": "正版",
   "enabled": true,
   "free_only": true,
   "predecode": false,

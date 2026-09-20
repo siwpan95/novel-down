@@ -1,11 +1,14 @@
 {
   "id": "youdubook.com",
   "name": "有毒小说网",
+  "pool": "正版",
   "enabled": false,
   "free_only": true,
   "requires_js": true,
   "demo_url": "https://www.youdubook.com/",
   "disabled_reason": "同息壤中文网（xrzww.com）：正文接口返回 {code:401, 用户验证失败}，属登录墙（红线）。实测 youdubook.com 与 xrzww.com 返回**同款 SPA 外壳**（同 oss.xrzww.com 资源、相同 keywords），为同一技术栈/同一方运营，故同判。详见 noveldown/rules/xrzww.com.json 的 notes。",
   "notes": "实探记录（2026-09-20）：首页 200、DOM 渲染 166 KB、标题「有毒小说网」；\n外壳同样加载顶象验证码 SDK；首页仅 5 个 <a href>（SPA，靠 JS 点击）。\n与 xrzww.com 共用同一套前端资源（oss.xrzww.com/mini/xrlogo.png + 相同 keywords），\n判定为同一方/同一技术栈 → 正文受同一登录墙限制，不做。",
-  "match": ["youdubook.com"]
+  "match": [
+    "youdubook.com"
+  ]
 }

@@ -3,13 +3,13 @@
 """
 全局常量。
 
-[复用来源] G:/repos/webcopier/webcopier/constants.py
+[复用来源] 本家 webcopier 仓/webcopier/constants.py
 许可证：内部项目（全哥创建）——本项目为其派生子项目，可自由复用。
 抽取范围：DEFAULT_HEADERS / ANTICRAWL_STATUS_CODES / 版本常量。
 剔除范围：字体常量（本项目无 GUI）。
 """
 
-VERSION = "0.7.1"
+VERSION = "0.8.0"
 APP_TITLE = f"novel-down 读书爬虫 v{VERSION}"
 
 # ============================================================

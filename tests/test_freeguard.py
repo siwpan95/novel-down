@@ -249,6 +249,36 @@ class TestLayer6CodeSelfcheck(unittest.TestCase):
                     "X = 1\n")
         self.assertTrue(selfcheck(td)["ok"])
 
+    def test_no_hardcoded_local_paths_in_code(self):
+        """生产代码不得写死本机绝对路径（门禁第 7 项）。
+
+        实测踩过：报错指引里写死了解释器安装路径，换盘符/换 Python 就给出错误指引。
+        正确做法是自发现（sys.executable / os.environ / shutil.which）。
+        """
+        import re as _re
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        rx = _re.compile(r"[A-Za-z]:" + r"[\\/]+" +
+                         r"(?:Python\d|Users|repos|local|notpython|assets)\b")
+        bad = []
+        for sub in ("noveldown", "tools", "tests"):
+            for dp, dns, fns in os.walk(os.path.join(root, sub)):
+                dns[:] = [d for d in dns if d != "__pycache__"]
+                for fn in fns:
+                    if not fn.endswith(".py"):
+                        continue
+                    fp = os.path.join(dp, fn)
+                    try:
+                        fh = open(fp, encoding="utf-8", errors="replace")
+                    except OSError:
+                        continue
+                    with fh:
+                        for i, line in enumerate(fh, 1):
+                            if line.lstrip().startswith("#"):
+                                continue
+                            m = rx.search(line)
+                            if m:
+                                bad.append(f"{os.path.relpath(fp, root)}:{i} {m.group(0)}")
+        self.assertEqual(bad, [], "发现硬编码本机路径：\n" + "\n".join(bad))
 
 if __name__ == "__main__":
     unittest.main()

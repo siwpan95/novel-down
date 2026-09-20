@@ -9,7 +9,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 来源 | `G:\repos\webcopier`（WebCopier v5.3/5.4，全哥内部项目） |
+| 来源 | `本家 webcopier 仓`（WebCopier v5.3/5.4，全哥内部项目） |
 | 许可证 | 内部项目（全哥创建），本项目为其派生子项目 |
 | 关系 | 按 webcopier `SKILL.md` 既有约定「**复制优于共享**」——把复用层落到本项目内，上游改动靠手工对照 |
 
@@ -71,7 +71,7 @@
 | **404-novel-downloader**<br>（TypeScript / 油猴，v5.2.0） | <https://github.com/404-novel-project/novel-downloader><br>作者 BGME | **AGPL-3.0-or-later**<br>*依据 `package.json` 的 `"license"` 字段* | ① **规则驱动站点适配**的架构思想（一书一规则、多类目录形态）；② EPUB 章节结构参考 | ① 登录 Token / VIP 相关参数与流程；② 其 AGPL 代码（**传染性许可证，未复制一行**，仅借鉴架构思路） |
 | **backupqidian**<br>（Python，2020-01 最后提交） | <https://github.com/zombie110year/backupqidian> | **未声明许可证**<br>*仓库内**无 LICENSE / COPYING 文件**；按著作权法默认「保留全部权利」对待* | 仅取一个**事实**：起点免费目录存在可用接口 `ajax/book/category`，以及 Markdown 输出规范（标题为 1 级、段落空行分隔）的思路 | `--vip` 开关、`cookies.txt` 载入、`get_session()` 凭据注入——**全部排除**。因其未声明许可，本仓**更不会**收录其源码 |
 
-> **参考价值判断**：真正与本项目最契合的是**本家 `G:\repos\webcopier`**（见第一节），
+> **参考价值判断**：真正与本项目最契合的是**本家 `本家 webcopier 仓`**（见第一节），
 > 上表三份只用来说明「别人是怎么做的」，以及界定**哪些做法本项目不做**。
 
 ### 本地快照（仅存在于开发机 `_ref/`，已被 `.gitignore` 忽略）

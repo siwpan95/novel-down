@@ -3,7 +3,7 @@
 """
 HTTP 客户端层：请求发送、退避重试、代理、限速。
 
-[复用来源] G:/repos/webcopier/webcopier/http_client.py
+[复用来源] 本家 webcopier 仓/webcopier/http_client.py
 许可证：内部项目（全哥创建）。
 抽取范围：parse_proxy / build_headers / auto_referer / http_get + 三个后端实现。
 改造点（重要）：

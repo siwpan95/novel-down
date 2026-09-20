@@ -1,23 +1,36 @@
 {
   "id": "shuhai.com",
   "name": "书海小说网",
+  "pool": "正版",
   "enabled": true,
   "free_only": true,
   "predecode": false,
   "requires_js": false,
   "demo_url": "https://www.shuhai.com/book/101449.htm",
   "notes": "★ 正版站（杰奇 CMS：URL 带 ajax_gets=jieqi_contents）。2026-09-20 实测。\n\n【三条实测坑，都是原文】\n1) 书籍详情页是 `/book/{bid}.htm`（**带 .htm**）。不带 .htm 的 `/book/{bid}` 是另一张\n   榜单/聚合页——实测 101449 不带 .htm 时页面上出现 48 个 .book-name 全是推荐位，\n   真正的主书名一个都没有。\n2) 目录**不在**静态 HTML 里：`#catalog` 是空 div，由 JS 调\n   `/book/{bid}.htm?method=getcatalog&...` 填充。该接口**不带 CALLBACK 时直接返回裸 HTML**\n   （带 CALLBACK 才是 JSONP 包裹的转义 HTML）——所以本规则用 plain HTTP 就能拿目录，\n   不需要浏览器路由，也不需要 JSONP 解包。\n3) 章节项是**容器** `<div class=\"chapter-item\"><a …>…</a><span class=\"vip\"></span></div>`：\n   VIP 标记是项内**兄弟 span**（既不在 <a> 的 class，也不在父级 class 上）→ 用\n   `vip_child_selector`；且实测 645 章里 **215 章（33%）的 <a> 文本为空**（站点标记错位，\n   标题落在 </a> 之后），所以 item_selector 必须选**容器**、标题取容器文本，\n   只选 `a` 会丢掉三分之一标题。\n\n【编码】站点为 GBK（`Content-Type: charset=gbk`），本项目 http 层按响应头解码，无需特殊处理。\n【VIP 分布】实测《神农医婿》645 章中 **605 章带 `span.vip`**（41 章起几乎全为 VIP），\n免费章集中在前 40 章 → 正好落在本项目「只抓免费章节」的射程内。\n【付费信号不猜】章节页的「账号余额/本次花费」等字样属站点通用模板，**未**写入 vip_markers，\n以免误锁；受保护章节一律由目录层 `span.vip` 拦下、零请求。\n【正文容器】是 `#reader-content .chapter-item`（**不是** `.reader-content`——后者是导航条，\n只有 12 字；同一页 `.chapter-item` 出现两次，第 2 个是「下一章」导航，取首个命中即正文）。",
-  "match": ["shuhai.com"],
+  "match": [
+    "shuhai.com"
+  ],
   "book": {
     "url_pattern": "/book/(\\d+)",
     "info_url": "{origin}/book/{bid}.htm",
-    "title": ["@title"],
+    "title": [
+      "@title"
+    ],
     "title_pattern": "^\\s*([^-]+?)\\s*-",
-    "author": [".book-info-bookname"],
+    "author": [
+      ".book-info-bookname"
+    ],
     "author_pattern": "作者[:：]\\s*(.+?)\\s*$",
-    "intro": [".book-info-bookintro"],
-    "status": [".book-info-bookstate .state"],
-    "cover": [".book-cover-wrapper img"]
+    "intro": [
+      ".book-info-bookintro"
+    ],
+    "status": [
+      ".book-info-bookstate .state"
+    ],
+    "cover": [
+      ".book-cover-wrapper img"
+    ]
   },
   "catalog": {
     "pages": {
@@ -38,7 +51,12 @@
   "chapter": {
     "title_selector": ".chapter-name",
     "content_selector": "#reader-content .chapter-item",
-    "strip_selectors": [".chapter-name", ".chaper-info", "script", "style"],
+    "strip_selectors": [
+      ".chapter-name",
+      ".chaper-info",
+      "script",
+      "style"
+    ],
     "ad_patterns": [
       "书海小说网",
       "请记住本站",

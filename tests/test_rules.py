@@ -35,13 +35,15 @@ class TestLoadRules(unittest.TestCase):
              "hanwujinian.com",                              # 停用存根（正文对未登录不下发）
              "faloo.com",                                    # 正版·含 VIP（目录分段判 VIP）
              "linovelib.com",                                 # 轻小说译作聚合站（纯 HTTP）
-             "linovel.net"})                                  # 停用存根（站点已关闭·侵权）
+             "linovel.net",                                   # 停用存根（站点已关闭·侵权）
+             "soushuwang.cc"})                                # 免费镜像族（搜书网/速读小说/bqg142）
         enabled = {r.id for r in rules.values() if r.enabled}
         self.assertEqual(enabled, {"shuquge.com", "bqgbe.cc", "biqu520.net",
                                    "fanqienovel.com", "zongheng.com", "qimao.com",
                                    "17k.com", "qidian.com", "shuhai.com",
                                    "tadu.com", "ciyuanji.com",
-                                   "faloo.com", "linovelib.com"})
+                                   "faloo.com", "linovelib.com",
+                                   "soushuwang.cc"})
         for r in rules.values():
             self.assertTrue(r.free_only, f"{r.id} 必须声明 free_only")
         for r in rules.values():
@@ -123,6 +125,24 @@ class TestLoadRules(unittest.TestCase):
         self.assertEqual(r.chapter_cfg["content_selector"], "#TextContent")
         # 作者与书名揉在同一元素 → 必须配 author_pattern
         self.assertIn("author_pattern", r.book_cfg)
+
+    def test_pool_field_and_mirror_pool(self):
+        """每条规则都要有池子；免费镜像池里至少 5 条启用。"""
+        rules = load_rules()
+        for r in rules.values():
+            self.assertIn(r.pool, ("正版", "免费镜像"), f"{r.id} 缺少合法 pool")
+        mirrors = [r for r in rules.values() if r.pool == "免费镜像" and r.enabled]
+        self.assertGreaterEqual(len(mirrors), 5)
+        self.assertTrue(any(r.pool == "正版" for r in rules.values()))
+
+    def test_mirror_family_rule_covers_three_domains(self):
+        """镜像族规则：三个域共用一条规则，且配了章节内分页。"""
+        r = load_rules()["soushuwang.cc"]
+        self.assertTrue(r.enabled)
+        self.assertEqual(set(r.match), {"soushuwang.cc", "bqg142.cc", "soduo.cc"})
+        self.assertIn("下一页", r.chapter_cfg["next_page"]["text_contains"])
+        self.assertEqual(r.chapter_cfg["next_page"]["continue_when"], "same_base_id")
+        self.assertEqual(r.pool, "免费镜像")
 
     def test_vip_site_rule_is_enabled_and_guards_vip(self):
         """回归：含 VIP 的正版站（纵横）必须是**启用**状态。

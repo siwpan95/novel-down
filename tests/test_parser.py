@@ -707,6 +707,68 @@ class TestDropLeadingTitleParagraph(unittest.TestCase):
         self.assertEqual(res["paragraphs"][0], "第1章 起")
 
 
+class TestGuessContentContainer(unittest.TestCase):
+    """自动识别正文容器：选择器全失配时的兜底（站点轻微改版可自愈）。
+
+    思路来自 pingcode 那篇方法论文章：正文的特征是「汉字多 + 标点密度高 +
+    有段落块 + 链接文字占比低」。
+    """
+
+    PROSE = "这是一段用于测试的正文内容，句子里必须有汉字和标点符号。" * 12  # > 200 汉字
+
+    def _page(self, selector="div.nope"):
+        from noveldown.rules import Rule
+        body = "".join(f"<p>{self.PROSE}</p>" for _ in range(3))
+        html = (
+            "<html><body>"
+            "<div class='nav'>" + "".join(f"<a href='/n{i}'>导航链接{i}</a>" for i in range(20)) + "</div>"
+            "<div class='wrap'><article class='prose'>" + body + "</article></div>"
+            "<div class='rec'>" + "".join(f"<a href='/r{i}'>推荐位书名{i}</a>" for i in range(20)) + "</div>"
+            "</body></html>")
+        rule = Rule({
+            "id": "t.gc", "name": "T", "match": ["x.com"], "free_only": True,
+            "book": {"url_pattern": "/x/(\\d+)"},
+            "catalog": {"item_selector": "a"},
+            "chapter": {"content_selector": selector},
+        }).validate()
+        return rule, html
+
+    def test_picks_deepest_body_not_nav(self):
+        from noveldown.parser import guess_content_container, make_soup
+        _, html = self._page()
+        el = guess_content_container(make_soup(html))
+        self.assertIsNotNone(el)
+        # 应选到最贴身的正文容器，而不是含导航/推荐位的外层
+        self.assertEqual(el.get("class"), ["prose"])
+
+    def test_returns_none_without_prose(self):
+        from noveldown.parser import guess_content_container, make_soup
+        html = ("<html><body><div>" + "".join(
+            f"<a href='/n{i}'>短链接{i}</a>" for i in range(50)) + "</div></body></html>")
+        self.assertIsNone(guess_content_container(make_soup(html)))
+
+    def test_integration_selector_miss_uses_auto(self):
+        """content_selector 写错时，自动识别兜底并留痕。"""
+        rule, html = self._page("div.never-matches")
+        res = parse_chapter_page(rule, html, "https://x.com/x/1", "1")
+        self.assertGreater(len(res["paragraphs"]), 2)
+        self.assertIn("自动识别", res["extract_note"])
+
+    def test_auto_content_can_be_disabled(self):
+        rule, html = self._page("div.never-matches")
+        rule.chapter_cfg["auto_content"] = False
+        res = parse_chapter_page(rule, html, "https://x.com/x/1", "1")
+        self.assertEqual(res["paragraphs"], [])
+        self.assertEqual(res["extract_note"], "")
+
+    def test_configured_selector_still_wins(self):
+        """能命中配置选择器时不要走自动识别（否则会破坏既有规则）。"""
+        rule, html = self._page("article.prose")
+        res = parse_chapter_page(rule, html, "https://x.com/x/1", "1")
+        self.assertGreater(len(res["paragraphs"]), 2)
+        self.assertNotIn("自动识别", res["extract_note"])
+
+
 
 if __name__ == "__main__":
     unittest.main()

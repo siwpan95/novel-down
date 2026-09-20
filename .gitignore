@@ -39,8 +39,11 @@ Thumbs.db
 desktop.ini
 .DS_Store
 
-# --- 本地临时 ---
-.tmptest/
+# --- 本地临时 / 调试残留（一律不入仓）---
+.tmptest*
+*.orig
+*.rej
+*.bak
 .screenshot_tmp/
 *.tmp
 *.log

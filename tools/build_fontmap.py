@@ -17,13 +17,13 @@
 用法
 ----
     # 维护者：重建「随仓索引」（需联网下载 17MB 参考字体，一次性）
-    F:\\Python314\\python.exe tools\\build_fontmap.py --shipped --force
+    python tools\\build_fontmap.py --shipped --force
 
     # 开发：只在本地缓存目录生成一份（不覆盖随仓索引）
-    F:\\Python314\\python.exe tools\\build_fontmap.py --out output
+    python tools\\build_fontmap.py --out output
 
     # 校验随仓索引可读、条目数正常
-    F:\\Python314\\python.exe tools\\build_fontmap.py --verify
+    python tools\\build_fontmap.py --verify
 
 依赖：fontTools（+ brotli，读 woff2 时需要；建索引读 otf 不需要）
 来源与许可证见 docs/REFERENCE.md 第四节（OFL-1.1）。

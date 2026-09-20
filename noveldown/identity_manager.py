@@ -3,7 +3,7 @@
 """
 浏览器身份管理器（身份池 + 请求头构建）。
 
-[复用来源] G:/repos/webcopier/webcopier/identity_manager.py
+[复用来源] 本家 webcopier 仓/webcopier/identity_manager.py
 许可证：内部项目（全哥创建）。
 抽取范围：BrowserIdentityManager 全文 + 模块级单例。
 改造点：

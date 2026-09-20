@@ -1,11 +1,14 @@
 {
   "id": "ciweimao.com",
   "name": "刺猬猫",
+  "pool": "正版",
   "enabled": false,
   "free_only": true,
   "requires_js": false,
   "demo_url": "https://www.ciweimao.com/book/100144407",
   "disabled_reason": "人机验证（红线）：任意章节页 307 → /signup/man_machine_verify?source=book_chapter_detail，页标题「验证码 - 刺猬猫」，引用 geetest（极验）、加载 /signup/verifyimg。换书、带 ci_session cookie + Referer 均持续 307；**本机真 Chrome + headed + 反检测浏览器仍落在验证码页**（#J_BookCnt 不存在）——属「给人的图形验证码」而非「给浏览器的 JS 挑战」。本项目不做需人工参与的环节，故不实现。",
   "notes": "实探记录（2026-09-20）：\n  · 首页 / 书籍页 200（nginx + PHP/7.4.33），可直接读；\n  · 完整目录 /chapter-list/{bid} 200、351 KB、817 章全部列出\n    （结构 div.book-chapter-box > h4.sub-tit 卷名 > ul.book-chapter-list > li > a）；\n  · 但**任意章节页** 307 → /signup/man_machine_verify，页标题「验证码 - 刺猬猫」，\n    引用 geetest（极验）、加载 /signup/verifyimg；\n  · 换书 / 带 ci_session + Referer 均持续 307；全书首章（通常免费）同样被拦；\n  · **本机真 Chrome + headed + 反检测浏览器仍落在验证码页**，正文容器 #J_BookCnt 不存在；\n  · 站点有付费模型（页面含 J_BladePrice / J_OwnBlade /「已购买」等猫币购买痕迹）。\n\n【判据（可复用）】用本机真 Chrome（headed）跑一次目标章节页：\n  · 仍被挡 → 属「给人的图形验证码」→ 不做（本条）；\n  · 能过   → 属「给浏览器的 JS 挑战」→ 用 anti_detect 浏览器路由可解（见 qidian.com）。\n\n【为什么留成存根而不是删掉】`find_rule()` 命中停用规则会**报出原因**，\n`python -m noveldown sites` 也会列出——避免半年后有人再花两小时重试一遍。",
-  "match": ["ciweimao.com"]
+  "match": [
+    "ciweimao.com"
+  ]
 }

@@ -1,6 +1,7 @@
 {
   "id": "qimao.com",
   "name": "七猫免费小说（正版·全免费）",
+  "pool": "正版",
   "enabled": true,
   "free_only": true,
   "predecode": false,

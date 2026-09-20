@@ -1,20 +1,40 @@
 {
   "id": "zongheng.com",
   "name": "纵横中文网（正版·含 VIP）",
+  "pool": "正版",
   "enabled": true,
   "free_only": true,
   "predecode": false,
   "requires_js": false,
   "demo_url": "https://book.zongheng.com/book/1217799.html",
   "notes": "★ 这条规则正是「站点含 VIP ≠ 站点不可用」的例证：本书 705 章里只有 55 章免费、650 章是 VIP，但那 55 章属于本项目射程。VIP 章在**目录层**就带 class=\"vip col-4\"，第 3 层拦截直接命中 → 标记 locked，**一次请求都不发**。\n\n实测坑（都靠探针定出来，不是猜的）：\n1. **站点跨三个子域**，且只有一处有完整目录：\n   huayu.zongheng.com/showchapter/{bid}.html → 700 章 + 650 个 li.vip ✅\n   book.zongheng.com/showchapter/{bid}.html → 只有 1 章（最新章节试读）\n   www.zongheng.com/showchapter/{bid}.html  → 同样只有 1 章\n   故 info_url 硬编码 book 子域，再由书籍页的 <a class=\"all-catalog\"> 自动跳到 huayu 目录。\n2. **目录与正文都是服务端渲染**（纯 HTTP 可取，约 240KB）——用 Chrome 无头浏览器打开 showchapter 页反而只能看到 2 个章节链接（JS 版是懒加载的），所以这条规则**不需要**浏览器路由。\n3. 正文容器 div.reader-content 服务端直出；免费章 51 段/3177 字，VIP 章只有 6 段/233 字并命中「请先登录」——第 4 层付费墙是第二道保险。\n4. 章节 URL 形如 read.zongheng.com/chapter/{bid}/{cid}.html，cid 升序＝阅读顺序（已核验：第1章 68222875 < 第九章 68246041）。",
-  "match": ["zongheng.com", "huayu.zongheng.com", "read.zongheng.com"],
+  "match": [
+    "zongheng.com",
+    "huayu.zongheng.com",
+    "read.zongheng.com"
+  ],
   "book": {
     "url_pattern": "/(?:book|showchapter|info|chapter)/(\\d{5,})",
     "info_url": "https://book.zongheng.com/book/{bid}.html",
-    "title": [".book-info .book-name", ".book-name", "h1"],
-    "author": [".au-name", ".book-author .au-name", ".book-info a[href*='people']"],
-    "intro": ["meta[name='description']", ".book-dec", ".book-info .book-dec"],
-    "cover": [".book-img img", "meta[property='og:image']"],
+    "title": [
+      ".book-info .book-name",
+      ".book-name",
+      "h1"
+    ],
+    "author": [
+      ".au-name",
+      ".book-author .au-name",
+      ".book-info a[href*='people']"
+    ],
+    "intro": [
+      "meta[name='description']",
+      ".book-dec",
+      ".book-info .book-dec"
+    ],
+    "cover": [
+      ".book-img img",
+      "meta[property='og:image']"
+    ],
     "status": []
   },
   "catalog": {

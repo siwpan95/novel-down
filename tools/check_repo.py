@@ -19,15 +19,17 @@ FictionDown 是 GPL-3.0、novel-downloader 是 AGPL-3.0-or-later，本项目是 
 4. 不跟踪产物与缓存（output/ state/ cache/ dist/ build/）
 5. 不跟踪凭据（复用 noveldown.freeguard.selfcheck）
 6. 文档一致性：docs/REFERENCE.md 必须为每个第三方来源同时给出**上游 URL**与**许可证**
+7. 生产代码（noveldown/ tools/ tests/）不得写死本机绝对路径（解释器安装目录/用户目录/开发盘）
 
 用法：
-    F:\\Python314\\python.exe tools\\check_repo.py
-    F:\\Python314\\python.exe tools\\check_repo.py --selfcheck   # 注入假违规，证明门禁有效
+    python tools\\check_repo.py
+    python tools\\check_repo.py --selfcheck   # 注入假违规，证明门禁有效
 退出码：0 通过；1 失败
 """
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 
@@ -46,6 +48,19 @@ FORBIDDEN_DIR_PARTS = (
     "output/", "state/", "cache/", "dist/", "build/", "release/", ".venv/",
 )
 FORBIDDEN_ARCHIVE_EXT = (".zip", ".tar.gz", ".tgz", ".7z", ".rar", ".xz", ".bz2")
+
+# 生产代码里不得写死**本机环境路径**（解释器安装目录 / 用户目录 / 本机开发盘）。
+# 实测踩过：报错指引里写死 `F://Python314//python.exe`，换盘符/换 Python 就废了。
+# 正确做法是自发现：`sys.executable`（解释器）、`os.environ`（系统目录）、`shutil.which`（外部命令）。
+# 注意：这里只查**生产代码**（noveldown/ 与 tools/*.py），文档里的来源记账（如 本家 webcopier 仓）
+# 属溯源信息，不在本项范围内。
+HARDCODED_PATH_RE = re.compile(
+    r"[A-Za-z]:[\\/]+(?:Python\d|Users|repos|local|notpython|assets)\b")
+SCAN_CODE_DIRS = ("noveldown", "tools", "tests")
+
+# 调试残留 / 草稿文件名特征（实测踩过：调试用的 .tmptest_*.html 被 git add -A 带进仓并推送）
+JUNK_NAME_RE = re.compile(r"(?:^|/)(?:\.tmptest|\.pytest_cache|__pycache__)|"
+                         r"\.(?:orig|rej|bak|tmp|log|swp)$|(?:^|/)\.DS_Store$", re.I)
 
 # 每个第三方来源：文档里必须同时出现「上游 URL」与「许可证标识」
 EXPECTED_THIRD_PARTY = (
@@ -120,6 +135,11 @@ def check(root_dir=ROOT, tracked=None) -> list:
         if f.lower().endswith(FORBIDDEN_ARCHIVE_EXT):
             bad.append(("3 无归档文件", f))
 
+    # --- 8. 无调试残留/草稿文件 ---
+    for f in tracked:
+        if JUNK_NAME_RE.search(f):
+            bad.append(("8 无调试残留", f))
+
     # --- 4. 大文件（> 5 MiB 且非图片）---
     for f in tracked:
         p = os.path.join(root_dir, f)
@@ -135,6 +155,29 @@ def check(root_dir=ROOT, tracked=None) -> list:
     if not res["ok"]:
         for p, line, what, src in res["violations"]:
             bad.append(("5 无凭据", f"{p}:{line} [{what}] {src[:70]}"))
+
+    # --- 7. 生产代码里不得写死本机绝对路径 ---
+    for sub in SCAN_CODE_DIRS:
+        d = os.path.join(root_dir, sub)
+        if not os.path.isdir(d):
+            continue
+        for dirpath, dirnames, filenames in os.walk(d):
+            dirnames[:] = [x for x in dirnames if x != "__pycache__"]
+            for fn in filenames:
+                if not fn.endswith(".py"):
+                    continue
+                fp = os.path.join(dirpath, fn)
+                try:
+                    with open(fp, "r", encoding="utf-8") as fh:
+                        for i, line in enumerate(fh, 1):
+                            if line.lstrip().startswith("#"):
+                                continue
+                            m = HARDCODED_PATH_RE.search(line)
+                            if m:
+                                bad.append(("7 无硬编码本机路径",
+                                            f"{os.path.relpath(fp, root_dir)}:{i} {m.group(0)}"))
+                except (OSError, UnicodeDecodeError):
+                    continue
 
     # --- 6. 文档一致性：来源链接 + 许可证 ---
     doc_path = os.path.join(root_dir, REFERENCE_DOC)
@@ -165,11 +208,12 @@ def _selfcheck() -> int:
     fake = ["LICENSE", "noveldown/cli.py", "docs/REFERENCE.md",
             "_ref/FictionDown-master/LICENSE",      # 违规 2/1
             "big.zip",                              # 违规 3
+            ".tmptest_dump.html",                   # 违规 8
             "output/x.txt"]                         # 违规 2
     bad = check(tracked=fake)
     items = {b[0] for b in bad}
     ok = True
-    for expect in ("1 许可文件唯一", "2 无第三方/产物目录", "3 无归档文件"):
+    for expect in ("1 许可文件唯一", "2 无第三方/产物目录", "3 无归档文件", "8 无调试残留"):
         hit = expect in items
         ok = ok and hit
         print(f"  [{ 'PASS' if hit else 'FAIL' }] 检出「{expect}」")
@@ -218,6 +262,8 @@ def main():
     print(f"  6 借鉴记账完整：{len(EXPECTED_THIRD_PARTY)} 个来源均有上游链接 + 许可证 + 不入仓声明 ✓")
     print()
     print(f"  第三方来源清单见 {REFERENCE_DOC}（只记来源与许可，不含其源码）")
+    print("  7 生产代码无硬编码本机路径（解释器 / 用户目录 / 开发盘）  ✓")
+    print("  8 无调试残留 / 草稿文件                           ✓")
     return 0
 
 

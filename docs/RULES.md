@@ -15,14 +15,14 @@ noveldown/rules/<站点ID>.json
 
 ```bat
 :: 1. 用探针看清站点结构
-F:\Python314\python.exe tools\probe_site.py "https://新站点.com/book/123/"
+python tools\probe_site.py "https://新站点.com/book/123/"
 
 :: 2. 照探针输出填 JSON
 :: 3. 自检：抓目录 + 抽 1 章
-F:\Python314\python.exe -m noveldown probe "https://新站点.com/book/123/"
+python -m noveldown probe "https://新站点.com/book/123/"
 
 :: 4. 上线
-F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --limit 5
+python -m noveldown fetch "https://新站点.com/book/123/" --limit 5
 ```
 
 ---
@@ -859,13 +859,13 @@ key = ";".join(op + "|" + ",".join(f"{x:g}/{y:g}" for x, y in pts)
 
 ```bat
 :: 什么都不用做 —— 轮廓索引已随仓库分发，运行时零下载
-F:\Python314\python.exe -m noveldown probe "https://fanqienovel.com/page/<bookId>"
+python -m noveldown probe "https://fanqienovel.com/page/<bookId>"
 
 :: （仅维护者）从 OFL-1.1 参考字体重建随仓索引，需联网下载约 17MB
-F:\Python314\python.exe tools\build_fontmap.py --shipped --force
+python tools\build_fontmap.py --shipped --force
 
 :: 校验随仓索引可读、条目数正常
-F:\Python314\python.exe tools\build_fontmap.py --verify
+python tools\build_fontmap.py --verify
 ```
 
 依赖：`fontTools`（+ `brotli`，读 woff2 时需要）。**只影响这类站点**，
@@ -882,19 +882,19 @@ F:\Python314\python.exe tools\build_fontmap.py --verify
 
 ```bat
 :: 看规则是否加载、字段取值
-F:\Python314\python.exe -m noveldown rules
+python -m noveldown rules
 
 :: 单站规则自检（抓目录 + 抽 1 章，打印每一环的命中数）
-F:\Python314\python.exe -m noveldown probe "URL"
+python -m noveldown probe "URL"
 
 :: 未知站点的原始结构（select / 链接形状 / 正文容器候选 / base64 命中）
-F:\Python314\python.exe tools\probe_site.py "URL"
+python tools\probe_site.py "URL"
 ```
 
 离线回归测试：
 
 ```bat
-F:\Python314\python.exe -m unittest discover -s tests -t .
+python -m unittest discover -s tests -t .
 ```
 
 新增规则后建议把该站的**目录页与章节页各存一份**到 `tests/fixtures/`，

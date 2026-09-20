@@ -27,7 +27,11 @@
 """
 
 import os
+import sys
 import time
+
+# 当前解释器路径（**自发现**，不写死任何盘符/目录）——报错指引里用它。
+PY = sys.executable or "python"
 
 DEFAULT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
@@ -35,7 +39,7 @@ DEFAULT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 # ============================================================
 #  反检测（anti-detect）
 # ============================================================
-# [复用来源] G:/repos/webcopier/webcopier/playwright_utils.py（AntiDetectBrowser）
+# [复用来源] 本家 webcopier 仓/webcopier/playwright_utils.py（AntiDetectBrowser）
 # 许可证：内部项目（全哥创建，本家复用，见 docs/REFERENCE.md 第一节）。
 # 抽取范围：DEFAULT_LAUNCH_ARGS + channel=chrome/headed 的本地 Chrome 用法。
 # 改造点：接入本项目的规则体系（规则里用 browser.anti_detect 开关），
@@ -119,15 +123,15 @@ def deps_available() -> tuple:
         import playwright  # noqa: F401
     except ImportError:
         return False, ("缺少 playwright。安装：\n"
-                       "  F:\\Python314\\python.exe -m pip install playwright\n"
-                       "  F:\\Python314\\python.exe -m playwright install chromium")
+                       f"  {PY} -m pip install playwright\n"
+                       f"  {PY} -m playwright install chromium")
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
             p.chromium.executable_path
     except Exception as e:
         return False, (f"Chromium 内核不可用：{e}\n"
-                       f"  修复：F:\\Python314\\python.exe -m playwright install chromium")
+                       f"  修复：{PY} -m playwright install chromium")
     return True, ""
 
 
@@ -142,7 +146,7 @@ class BrowserFetcher:
     def __init__(self, headless: bool = True, timeout: int = 45000,
                  user_agent: str = DEFAULT_UA, log=None,
                  anti_detect: bool = False, channel: str = "", args=None,
-                 stealth_js: str = None):
+                 stealth_js: str = None, proxy: str = ""):
         self.headless = headless
         self.timeout = timeout
         self.user_agent = user_agent or DEFAULT_UA
@@ -153,12 +157,35 @@ class BrowserFetcher:
         # 可选 stealth 脚本：显式传入 > 环境变量 > 无（详见模块常量处说明）
         self.stealth_js = (stealth_js if stealth_js is not None
                            else os.environ.get(STEALTH_ENV_VAR, ""))
+        # 代理：Chromium **不读** HTTP_PROXY/HTTPS_PROXY 环境变量（requests 会读），
+        # 所以「只在代理下可达」的站点必须显式把代理交给浏览器，否则报 ERR_TIMED_OUT。
+        # 传 "env" 表示沿用环境变量里的代理。
+        self.proxy = self._resolve_proxy(proxy)
         self._pw = None
         self._browser = None
         self._ctx = None
         self._page = None
 
     # ------------------------------------------------------------
+    @staticmethod
+    def _resolve_proxy(proxy) -> str:
+        """把规则里的 proxy 配置解析成 playwright 需要的 URL（空串 = 不用代理）。
+
+        · `""` / `False` / None → 不用代理
+        · `"env"` / True         → 取环境变量 HTTPS_PROXY / HTTP_PROXY
+        · 其它字符串             → 当作代理 URL 直接用
+        """
+        if not proxy:
+            return ""
+        if proxy is True or str(proxy).lower() == "env":
+            for k in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy",
+                      "ALL_PROXY", "all_proxy"):
+                v = os.environ.get(k)
+                if v:
+                    return v
+            return ""
+        return str(proxy)
+
     def launch_kwargs(self) -> dict:
         """构造 playwright `launch()` 的参数（**不启动浏览器**，便于单测）。
 
@@ -171,6 +198,8 @@ class BrowserFetcher:
         用户自备 stealth 脚本（若已配置）。
         """
         kwargs = {}
+        if self.proxy:
+            kwargs["proxy"] = {"server": self.proxy}
         if self.anti_detect:
             kwargs["channel"] = self.channel or "chrome"
             kwargs["headless"] = False
@@ -300,7 +329,25 @@ class BrowserFetcher:
                     page.wait_for_timeout(1200)
                 except Exception:
                     pass
-            return page.content()
+            # 取 DOM。⚠ 有些站点会做**多跳 JS 跳转**（实测搜书网：章节页是「加载中」中转页
+            # → /userverify → 跳去 bqg142.cc 的 hash 路由），此刻 `page.content()` 会抛
+            # `Unable to retrieve content because the page is navigating and changing the content`。
+            # 这属于「还在导航」，等一下重试即可 —— 不要把它当成失败。
+            last = None
+            for _ in range(4):
+                try:
+                    return page.content()
+                except Exception as e:
+                    last = e
+                    if ("navigating" not in str(e)
+                            and "changing the content" not in str(e)):
+                        raise
+                    try:
+                        page.wait_for_load_state("domcontentloaded", timeout=8000)
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(1000)
+            raise last
         finally:
             try:
                 page.close()

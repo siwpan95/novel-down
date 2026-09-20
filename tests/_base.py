@@ -4,8 +4,8 @@
 离线单元测试（不联网，全部基于 fixtures/ 与合成样本）。
 
 运行：
-    cd G:\\local\\novel-down
-    F:\\Python314\\python.exe -m unittest discover -s tests -v
+    cd 本仓（novel-down）
+    python -m unittest discover -s tests -v
 """
 
 import os

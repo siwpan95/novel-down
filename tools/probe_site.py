@@ -7,8 +7,8 @@
 结构特征全部打印出来，便于照着 docs/RULES.md 填 JSON。
 
 用法：
-    F:\\Python314\\python.exe tools\\probe_site.py "https://site.com/book/123/"
-    F:\\Python314\\python.exe tools\\probe_site.py "https://site.com/123/456.html" --chapter
+    python tools\\probe_site.py "https://site.com/book/123/"
+    python tools\\probe_site.py "https://site.com/123/456.html" --chapter
 
 输出包含：
   · 页面编码 / 大小 / 最终 URL（是否跳转）

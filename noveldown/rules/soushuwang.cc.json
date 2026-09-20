@@ -1,0 +1,74 @@
+{
+  "id": "soushuwang.cc",
+  "name": "搜书网 / 速读小说（笔趣阁镜像族）",
+  "pool": "免费镜像",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": true,
+  "fetch_mode": "browser",
+  "demo_url": "https://www.soushuwang.cc/book/103466/",
+  "notes": "★ 免费阅读镜像站（笔趣阁系），2026-09-20 实测。来源：全哥给的 novel-spider 程序书源。\n\n【形态】\n  · 书籍页 `/book/{bid}/` **服务端渲染**：`h1`/`.info h1` 是书名，\n    `.small span:nth-child(1)` 是「作者：xxx」；目录 `div.listmain dl` → `dd > a`\n    （实测 71 章 `/book/{bid}/{cid}.html`）。\n  · **章节页是 JS 反爬中转页**：200 但只有 1227B、标题「加载中……」，内容是一段内联 JS——\n    读 `getsite` cookie，无则探测几个 `m.b*` 域名的 favicon 并种 cookie，\n    然后 `location.href = \"/userverify\" + location.hash`。`/userverify` 返回的页面只加载\n    `jquery` + `read.js`（8KB，实测**只是阅读设置：护眼/关灯/字号 cookie，没有内容接口**），\n    正文由后续前端路由拉取。\n    → **必须 `fetch_mode: browser`**：真浏览器走完这段 cookie/路由舞蹈后，\n      **域名会跳到 `bqg142.cc`**（同一家的另一个镜像），最终渲染出正文。\n  · 正文容器：`div#chaptercontent`（class `Readarea`），实测 **7149 汉字**、无 `<p>`（靠 `<br>` 分段）。\n    （顺带：本项目 v0.8.0 新增的「自动识别正文容器」在探测时**独立找到了同一个容器**。）\n\n【match 覆盖两个域】实测 `soushuwang.cc` 的章节页会 302/JS 跳到 `bqg142.cc`，\n故 `match` 同时收 `bqg142.cc`；两者的 URL 形态一致（`/book/{bid}/`、章节 `/book/{bid}/{cid}.html`\n或 hash 形式 `#/book/{bid}/{cid}.html`），`url_pattern` 用 `/book/(\\d+)` 两边都能取到 bid。\n\n【代理】本机 requests 走系统代理（`HTTP_PROXY` 已设置、`trust_env` 默认开启）；\n直连时该站与本轮其它候选站均不可达 —— 它是**经代理可达**。\n\n【族规则】实测 soduo.cc（速读小说）与本站**同一套模板**：书籍页 /book/{bid}/、章节 /book/{bid}/{cid}.html、正文 #chaptercontent，故并入同一规则（match 三个域）。\n【稳定性】这类镜像站**抽风是通病**（同一 URL 时而 200 时而超时）——不要凭一次失败判死，靠重试与断点续爬。",
+  "match": [
+    "soushuwang.cc",
+    "bqg142.cc",
+    "soduo.cc"
+  ],
+  "book": {
+    "url_pattern": "/book/(\\d+)",
+    "info_url": "{origin}/book/{bid}/",
+    "title": [
+      ".info h1",
+      "h1"
+    ],
+    "author": [
+      ".small span:nth-child(1)"
+    ],
+    "author_pattern": "作者[:：]\\s*(.+)"
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single",
+      "url": "{origin}/book/{bid}/"
+    },
+    "item_selector": "div.listmain dl dd a, ul.section-list li a",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/(?P<cid>\\d+)\\.html"
+    },
+    "url_template": "{origin}/book/{bid}/{cid}.html",
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first"
+  },
+  "chapter": {
+    "title_selector": "h1, .info h1",
+    "content_selector": "div#chaptercontent",
+    "content_selectors": [
+      "div#chaptercontent",
+      ".Readarea",
+      "div#content",
+      "div.content"
+    ],
+    "strip_selectors": [
+      "script",
+      "style"
+    ],
+    "ad_patterns": [
+      "笔趣阁",
+      "请记住本站",
+      "手机版阅读",
+      "最新网址"
+    ],
+    "next_page": {
+      "selector": "a",
+      "text_contains": "下一页",
+      "continue_when": "same_base_id",
+      "href_pattern": "/(?P<cid>\\d+)(?:_\\d+)?\\.html"
+    }
+  },
+  "browser": {
+    "anti_detect": true,
+    "wait_selector": "#chaptercontent",
+    "wait_ms": 2500
+  }
+}

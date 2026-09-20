@@ -153,6 +153,7 @@ class Downloader:
                 channel=bcfg.get("channel", ""),
                 args=bcfg.get("args"),
                 stealth_js=bcfg.get("stealth_js"),
+                proxy=bcfg.get("proxy", ""),
                 log=self.log).start()
             self.log("  浏览器路由已启动")
         return self._browser_fetcher

@@ -1,6 +1,7 @@
 {
   "id": "qidian.com",
   "name": "起点中文网（正版·含 VIP）",
+  "pool": "正版",
   "enabled": true,
   "free_only": true,
   "predecode": false,

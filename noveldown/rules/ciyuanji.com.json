@@ -1,6 +1,7 @@
 {
   "id": "ciyuanji.com",
   "name": "次元姬",
+  "pool": "正版",
   "enabled": true,
   "free_only": true,
   "predecode": false,
@@ -8,13 +9,19 @@
   "fetch_mode": "browser",
   "demo_url": "https://www.ciyuanji.com/chapter/1288_2186094.html",
   "notes": "★ 正版站（Next.js SSR），2026-09-20 实测。\n\n【没有书籍页】实测 `/book/{id}`、`/book/{id}.html`、`/novel/{id}`、`/bookdetail/{id}`\n等 9 种形态**全部 404**，页面 DOM 里也 0 个书籍页链接 → 入口只能是**章节页**\n`/chapter/{bid}_{cid}.html`。故本规则把 `url_pattern` 定在章节页上，\n`info_url` 与 `catalog.json.url` 都用 `{url}`（留空即用来源页，见 parser 默认值）。\n\n【一条规则吃下整类 SSR 站】Next.js 把数据序列化进 `<script id=\"__NEXT_DATA__\">`，\n里面同时有：\n  · 目录：`props.pageProps.bookChapter.chapterList`（673 章，扁平数组）\n    → 新增通用能力 `catalog.json.json_source`（先从 HTML 里取 JSON 段，再按 items_path 取值）\n  · 逐章付费标记 **`isFee`**（实测该书 26 免费 / 647 付费，值域 \"0\"/\"1\"）\n  · 作者：`props.pageProps.bookChapter.authorName`\n    → 新增通用能力 `book.*` 的 `@json:<path>`（Next.js 站的书名/作者常只在数据块里）\n书名用 `@title` + `title_pattern`（`<title>` = 「书名-章节名-免费小说阅读-次元姬小说」）。\n\n⚠【正文是服务端加密的，必须走浏览器】纯 HTTP 拿到的\n`props.pageProps.chapterContent.content` 是 **base64 密文**（中文 0 字、`re.search` 打不出任何汉字），\n页面自己用前端 JS 解密后再渲染。所以本规则 **fetch_mode: browser**：\n浏览器渲染后正文正常（实测 2835 字可见文本 / 2046 汉字 / 74 个 <p>）。\n口径说明：这不属于「破解加密」——我们**没有逆向它的密钥或解密算法**，\n只是用真浏览器把页面渲染出来，读站点对所有访客展示的内容（无登录、无验证码）。\n\n【正文容器】`article.chapter_article__vWEkb` 是 CSS-Modules 的**哈希类名**，\n重新构建就会变 → 用属性前缀选择器 `article[class^='chapter_article__']` 抗哈希漂移。\n同理侧栏目录是 `section.chapter_main__*`，不要用它当正文容器\n（它含侧栏，中文量 10103 远大于正文的 2046）。\n\n【排序】必须用 `document_order`：`chapterList` 的顺序即阅读顺序，\n而 `chapterId` 是随机长 ID，按 cid 数值排序会错位。",
-  "match": ["ciyuanji.com"],
+  "match": [
+    "ciyuanji.com"
+  ],
   "book": {
     "url_pattern": "/chapter/(\\d+)_\\d+",
     "info_url": "{url}",
-    "title": ["@title"],
+    "title": [
+      "@title"
+    ],
     "title_pattern": "^\\s*([^-]+)",
-    "author": ["@json:props.pageProps.bookChapter.authorName"]
+    "author": [
+      "@json:props.pageProps.bookChapter.authorName"
+    ]
   },
   "catalog": {
     "mode": "json_api",
@@ -25,7 +32,9 @@
       "cid_field": "chapterId",
       "title_field": "chapterName",
       "vip_field": "isFee",
-      "vip_truthy": ["1"]
+      "vip_truthy": [
+        "1"
+      ]
     },
     "url_template": "{origin}/chapter/{bid}_{cid}.html",
     "sort": "document_order",
@@ -35,7 +44,10 @@
     "title_selector": "h1",
     "content_selector": "article[class^='chapter_article__']",
     "paragraph_selector": "p",
-    "strip_selectors": ["script", "style"]
+    "strip_selectors": [
+      "script",
+      "style"
+    ]
   },
   "browser": {
     "anti_detect": true

@@ -50,6 +50,10 @@ import hashlib
 import json
 import os
 import re
+import sys
+
+# 当前解释器路径（**自发现**，不写死盘符）——报错指引里用它。
+PY = sys.executable or "python"
 
 PUA_START, PUA_END = 0xE000, 0xF8FF
 FONT_EXT_RE = ("woff2", "woff", "otf", "ttf")
@@ -299,7 +303,7 @@ def load_ref_index(path: str) -> dict:
         raise FontDecodeError(
             f"缺少字体轮廓索引：{path}\n"
             f"正常安装应随仓自带 noveldown/fontmaps/{REF_INDEX_BIN}。"
-            f"若确实缺失，请跑：F:\\Python314\\python.exe tools\\build_fontmap.py --shipped")
+            f"若确实缺失，请跑：{PY} tools\\build_fontmap.py --shipped")
     with gzip.open(path, "rt", encoding="utf-8") as f:
         return {h: cp for h, cp in json.load(f).items()}
 
@@ -458,5 +462,5 @@ def deps_available() -> tuple:
         pass
     if missing:
         return False, ("缺少依赖：" + "、".join(missing)
-                       + "。安装：F:\\Python314\\python.exe -m pip install fontTools brotli")
+                       + f"。安装：{PY} -m pip install fontTools brotli")
     return True, ""

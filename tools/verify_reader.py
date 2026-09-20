@@ -8,7 +8,7 @@
 最后输出截图，供人眼复核。
 
 用法：
-    F:\\Python314\\python.exe tools\\verify_reader.py "output\\某本书\\某本书.html"
+    python tools\\verify_reader.py "output\\某本书\\某本书.html"
 """
 
 import os

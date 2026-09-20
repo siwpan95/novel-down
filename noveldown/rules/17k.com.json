@@ -1,6 +1,7 @@
 {
   "id": "17k.com",
   "name": "17K小说网（正版）",
+  "pool": "正版",
   "enabled": true,
   "free_only": true,
   "predecode": false,

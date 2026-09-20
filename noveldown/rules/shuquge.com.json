@@ -1,21 +1,36 @@
 {
   "id": "shuquge.com",
   "name": "书趣阁",
+  "pool": "免费镜像",
   "enabled": true,
   "free_only": true,
   "predecode": false,
   "requires_js": false,
   "demo_url": "https://www.shuquge.com/txt/207266/index.html",
   "notes": "标准笔趣阁结构：div.listmain > dl > dd > a 为目录；正文在 div#content 内静态存在，但容器首位嵌有 div#center_tip 水印，若不剔除会截断正文（实测踩坑）。首页 <dt> 有两组，第一组是「最新章节」倒序回显，靠 cid 去重+升序排序自动消除。",
-  "match": ["shuquge.com", "xshuquge.net"],
+  "match": [
+    "shuquge.com",
+    "xshuquge.net"
+  ],
   "book": {
     "url_pattern": "/txt/(\\d+)/",
     "info_url": "{origin}/txt/{bid}/index.html",
-    "title": ["meta[property='og:novel:book_name']"],
-    "author": ["meta[property='og:novel:author']"],
-    "intro": ["meta[property='og:description']", "div.intro"],
-    "cover": ["meta[property='og:image']"],
-    "status": ["meta[property='og:novel:status']"]
+    "title": [
+      "meta[property='og:novel:book_name']"
+    ],
+    "author": [
+      "meta[property='og:novel:author']"
+    ],
+    "intro": [
+      "meta[property='og:description']",
+      "div.intro"
+    ],
+    "cover": [
+      "meta[property='og:image']"
+    ],
+    "status": [
+      "meta[property='og:novel:status']"
+    ]
   },
   "catalog": {
     "pages": {
@@ -33,7 +48,11 @@
   "chapter": {
     "title_selector": "h1",
     "content_selector": "div#content",
-    "strip_selectors": ["div#center_tip", "script", "style"],
+    "strip_selectors": [
+      "div#center_tip",
+      "script",
+      "style"
+    ],
     "next_page": {
       "selector": "a",
       "text_contains": "下一章",

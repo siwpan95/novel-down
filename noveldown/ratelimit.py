@@ -3,7 +3,7 @@
 """
 限速器：全局限速 + 抖动。
 
-[复用来源] G:/repos/webcopier/webcopier/engine.py 的 RateLimiter 类
+[复用来源] 本家 webcopier 仓/webcopier/engine.py 的 RateLimiter 类
 许可证：内部项目（全哥创建）。
 抽取范围：delay / jitter / wait 的限速语义与线程锁实现。
 改造点：拆为独立模块；新增 min_interval 自适应（命中反爬后全局降速）。

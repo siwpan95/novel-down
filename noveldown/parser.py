@@ -665,6 +665,62 @@ def extract_paragraphs(container, ad_patterns):
     return paragraphs, ads
 
 
+_CJK_PUNCT = "，。！？、；：…—～·「」『』“”‘’（）《》〈〉,.!?;:"
+
+
+def guess_content_container(soup, min_cjk: int = 200):
+    """**自动识别**正文容器（规则里的选择器全部失配时的兜底）。
+
+    思路（借自 pingcode 那篇方法论文章）：正文区域有几个稳定特征——
+    汉字多、**标点密度高**（成句成段）、有多个段落块（`<p>`/`<br>`）、
+    且**链接文字占比低**（导航/侧栏/推荐位全是链接）。
+
+    打分：`score = 汉字数 × 标点系数 × 段落系数 × (1 - 链接占比)`
+    **标点系数是按候选里最高标点密度取相对值**（而不是「超过阈值就算 1」）——
+    正文的标点密度明显高于「正文 + 推荐位/导航」的外层 wrapper，
+    用相对值才能把两者区分开（实测踩过：只用绝对阈值 + 按汉字最多挑，
+    会选中含「推荐本书」的外层，而漏掉真正的正文容器）。
+
+    选法：先按 score 取到最高分的 90% 以内的候选，再在其中取**最深**（最贴身）的那个。
+    """
+    cands = []
+    for el in soup.find_all(("div", "article", "section", "td")):
+        try:
+            text = el.get_text(" ", strip=True)
+        except Exception:
+            continue
+        cjk = 0
+        for ch in text:
+            if "\u4e00" <= ch <= "\u9fff":
+                cjk += 1
+        if cjk < min_cjk:
+            continue
+        punct = sum(1 for ch in text if ch in _CJK_PUNCT)
+        blocks = len(el.find_all(("p", "br")))
+        link_chars = sum(len(a.get_text(strip=True) or "")
+                         for a in el.find_all("a"))
+        cands.append({
+            "el": el,
+            "cjk": cjk,
+            "punct_ratio": punct / max(1, len(text)),
+            "blocks": blocks,
+            "link_ratio": link_chars / max(1, len(text)),
+            "depth": len(list(el.parents)),
+        })
+    if not cands:
+        return None
+    max_punct = max(c["punct_ratio"] for c in cands) or 1.0
+    for c in cands:
+        punct_f = c["punct_ratio"] / max_punct          # 相对标点密度
+        block_f = min(1.0, c["blocks"] / 2.0)           # 至少 2 个块才算分段正文
+        link_f = max(0.1, 1.0 - min(0.9, c["link_ratio"]))
+        c["score"] = c["cjk"] * punct_f * block_f * link_f
+    top = max(c["score"] for c in cands)
+    keep = [c for c in cands if c["score"] >= top * 0.9]
+    keep.sort(key=lambda c: (c["depth"], c["score"]), reverse=True)
+    return keep[0]["el"]
+
+
 def parse_chapter_page(rule, html: str, url: str, current_cid: str,
                        expect_title: str = None):
     """解析单个正文页。
@@ -691,13 +747,13 @@ def parse_chapter_page(rule, html: str, url: str, current_cid: str,
     if t_el is not None:
         title = clean_page_title(t_el.get_text())
 
-    container = select_first(soup, cfg.get("content_selectors") or cfg.get("content_selector"))
-    paragraphs, ads, extract_note = [], 0, ""
-    if container is not None:
-        # 在**深拷贝**上剔除元素。
-        # 坑（实测踩过）：直接 decompose 原容器会把 div.read_btn 也删掉，
-        # 而续页判定恰恰要读它里面的「下一章」链接，导致分页章节只抓到第 1 页。
-        work = copy.copy(container)
+    def _extract_from(cont):
+        """从一个容器抽段落（在**深拷贝**上剔除噪声元素）。
+
+        坑（实测踩过）：直接 decompose 原容器会把 div.read_btn 也删掉，
+        而续页判定恰恰要读它里面的「下一章」链接，导致分页章节只抓到第 1 页。
+        """
+        work = copy.copy(cont)
         for sel in cfg.get("strip_selectors") or []:
             for el in work.select(sel):
                 el.decompose()
@@ -706,29 +762,49 @@ def parse_chapter_page(rule, html: str, url: str, current_cid: str,
         # （实测起点：<p><span class="content-text">痛！</span><span class="review">…999…</span></p>，
         #  整块取文本会得到「痛！999」）。
         para_sel = cfg.get("paragraph_selector")
+        ps, ad, note = [], 0, ""
         if para_sel:
-            paragraphs, ads = [], 0
             for node in work.select(para_sel):
                 line = _norm_space(node.get_text(" "))
                 if not line:
                     continue
                 if _is_ad_line(line, cfg.get("ad_patterns")):
-                    ads += 1
+                    ad += 1
                     continue
-                paragraphs.append(line)
+                ps.append(line)
         # 回退：段落选择器**一个都没命中**（站点改版 / 换了渲染变体）时，
         # 退回「容器整体切分」——否则整章会**静默变空**（比多几个噪声字严重得多）。
         # 回退结果同样干净：strip_selectors 已在上面剔掉段评数等附加节点。
-        if not paragraphs:
-            paragraphs, ads = extract_paragraphs(work, cfg.get("ad_patterns"))
+        if not ps:
+            ps, ad = extract_paragraphs(work, cfg.get("ad_patterns"))
             if para_sel:
-                extract_note = f"段落选择器「{para_sel}」未命中，已回退为容器整体切分"
+                note = f"段落选择器「{para_sel}」未命中，已回退为容器整体切分"
+        return ps, ad, note
 
+    container = select_first(soup,
+                             cfg.get("content_selectors") or cfg.get("content_selector"))
+    paragraphs, ads, extract_note = [], 0, ""
+    if container is not None:
+        paragraphs, ads, extract_note = _extract_from(container)
+
+    # 兜底：`content_selector(s)` 没选到容器、或选到了却抽不出段落（站点改版）时，
+    # **自动识别**正文容器（见 guess_content_container）。默认开启，
+    # 规则里写 "auto_content": false 可关掉。
+    if not paragraphs and cfg.get("auto_content", True):
+        guess = guess_content_container(soup)
+        if guess is not None and guess is not container:
+            gp, ga, _ = _extract_from(guess)
+            if gp:
+                paragraphs, ads = gp, ga
+                why = ("正文容器选择器未命中" if container is None
+                       else "已命中的容器抽不出正文")
+                extract_note = f"{why}，已自动识别正文容器"
+
+    if paragraphs:
         # 首段即标题（无 class 可剔的站点，如飞卢）：仅当与目录标题**完全相同**时删除
-        if (cfg.get("drop_leading_title_paragraph") and paragraphs
-                and expect_title):
-            if _norm_space(paragraphs[0]) == _norm_space(expect_title):
-                paragraphs.pop(0)
+        if (cfg.get("drop_leading_title_paragraph") and expect_title
+                and _norm_space(paragraphs[0]) == _norm_space(expect_title)):
+            paragraphs.pop(0)
 
     # 续页判定
     next_url = None

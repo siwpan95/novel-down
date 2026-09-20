@@ -7,7 +7,7 @@
 等于把第三方正文发布出去。所以这里用一段明确标注为示例的自撰占位文字。
 
 用法：
-    F:\\Python314\\python.exe tools\\make_screenshot.py
+    python tools\\make_screenshot.py
 """
 
 import os

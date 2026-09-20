@@ -1,21 +1,36 @@
 {
   "id": "biqu520.net",
   "name": "笔趣阁（biqu520）",
+  "pool": "免费镜像",
   "enabled": true,
   "free_only": true,
   "predecode": true,
   "requires_js": false,
   "demo_url": "https://www.biqu520.net/books_9484/",
   "notes": "与 bqgbe.cc 同一套模板。差异：目录页 /chapters_{bid}/{page} 的章节项用 <a onclick=\"随机函数名(章节ID);\">（无 href），需从 onclick 取 cid 并按 read_rewrite 模板拼 URL；分页由页面 <select> 的 option 给出（2384 章 = 27 页）。正文同样 base64 内联，需预解码。",
-  "match": ["biqu520.net"],
+  "match": [
+    "biqu520.net"
+  ],
   "book": {
     "url_pattern": "/books_(\\d+)/",
     "info_url": "{origin}/books_{bid}/",
-    "title": ["meta[property='og:novel:book_name']", "h1"],
-    "author": ["meta[property='og:novel:author']"],
-    "intro": ["meta[property='og:novel:description']", "meta[name='description']"],
-    "cover": ["meta[property='og:image']"],
-    "status": ["meta[property='og:novel:status']"]
+    "title": [
+      "meta[property='og:novel:book_name']",
+      "h1"
+    ],
+    "author": [
+      "meta[property='og:novel:author']"
+    ],
+    "intro": [
+      "meta[property='og:novel:description']",
+      "meta[name='description']"
+    ],
+    "cover": [
+      "meta[property='og:image']"
+    ],
+    "status": [
+      "meta[property='og:novel:status']"
+    ]
   },
   "catalog": {
     "pages": {
@@ -38,7 +53,13 @@
   "chapter": {
     "title_selector": "div.word_read h3",
     "content_selector": "div.word_read",
-    "strip_selectors": ["h2.layout-tit", "h3", "div.read_btn", "script", "style"],
+    "strip_selectors": [
+      "h2.layout-tit",
+      "h3",
+      "div.read_btn",
+      "script",
+      "style"
+    ],
     "next_page": {
       "selector": "div.read_btn a",
       "text_contains": "下一章",

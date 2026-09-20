@@ -19,8 +19,8 @@
 > 所以标题检查只扫「首个可导出章节标题之后」的区域，避免误报。
 
 用法：
-    F:\\Python314\\python.exe tools\\verify_artifacts.py "output\\<书名>_<站点>"
-    F:\\Python314\\python.exe tools\\verify_artifacts.py "output\\<书名>_<站点>" --state output\\state\\x.json
+    python tools\\verify_artifacts.py "output\\<书名>_<站点>"
+    python tools\\verify_artifacts.py "output\\<书名>_<站点>" --state output\\state\\x.json
 退出码：0 通过；1 失败
 """
 

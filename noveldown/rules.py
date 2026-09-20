@@ -47,6 +47,8 @@ class Rule:
         self.name = raw.get("name", self.id)
         self.match = list(raw.get("match") or [])
         self.enabled = bool(raw.get("enabled", True))
+        # 池子：把规则按来源性质分类展示（正版 / 免费镜像）。只影响展示与统计，不影响抓取。
+        self.pool = raw.get("pool", "")
         self.free_only = bool(raw.get("free_only", False))
         self.predecode = bool(raw.get("predecode", True))
         self.notes = raw.get("notes", "")
@@ -207,7 +209,7 @@ def site_overview(rules: dict = None) -> list:
     out = []
     for r in sorted(rules.values(), key=lambda x: (not x.enabled, x.id)):
         out.append({
-            "id": r.id, "name": r.name, "enabled": r.enabled,
+            "id": r.id, "name": r.name, "enabled": r.enabled, "pool": r.pool,
             "requires_js": r.requires_js, "demo_url": r.demo_url,
             "reason": "" if r.enabled else (r.disabled_reason or r.notes or "未说明"),
         })

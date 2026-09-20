@@ -99,24 +99,33 @@ def cmd_sites(args):
     print(f"{APP_TITLE}")
     active = [r for r in rules.values() if r.enabled]
     disabled = [r for r in rules.values() if not r.enabled]
-    print(f"站点规则共 {len(rules)} 条：启用 {len(active)}，停用 {len(disabled)}\n")
+    pools = {}
+    for r in rules.values():
+        pools.setdefault(r.pool or "未分类", []).append(r)
+    pool_desc = " / ".join(f"{k} {len(v)}" for k, v in pools.items())
+    print(f"站点规则共 {len(rules)} 条：启用 {len(active)}，停用 {len(disabled)}")
+    print(f"分池：{pool_desc}\n")
 
-    print(f"  {'规则 ID':<18} {'名称':<20} {'说明'}")
-    print("  " + "-" * 86)
-    for item in site_overview(rules):
-        if item["enabled"]:
-            flag = " [需JS]" if item["requires_js"] else ""
-            print(f"  {item['id']:<18} {item['name']:<20} 可用{flag}　{item['demo_url']}")
-        else:
-            print(f"  {item['id']:<18} {item['name']:<20} 停用（{item['reason'][:40]}…）")
+    for pool in sorted(pools, key=lambda p: (p == "未分类", p)):
+        items = sorted(pools[pool], key=lambda r: (not r.enabled, r.id))
+        print(f"  【{pool}】{len(items)} 条（启用 {sum(1 for r in items if r.enabled)}）")
+        print(f"    {'规则 ID':<18} {'名称':<22} 说明")
+        for r in items:
+            if r.enabled:
+                flag = " [需JS]" if r.requires_js else ""
+                print(f"    {r.id:<18} {r.name:<22} 可用{flag}　{r.demo_url}")
+            else:
+                reason = r.disabled_reason or r.notes or "未说明"
+                print(f"    {r.id:<18} {r.name:<22} 停用（{reason[:34]}…）")
+        print()
 
-    print()
     print("  说明：**含 VIP 章节不构成拒绝理由** —— 一本小说通常前几十章免费。")
     print("        拦截发生在**章节级**：目录标 VIP 的章不请求，正文命中付费墙的丢弃。")
     print("        [需JS] 表示该站需浏览器路由（fetch_mode=browser）渲染。")
+    print("        「正版」= 有授权平台；「免费镜像」= 非授权的免费来源（笔趣阁系镜像 / 译作聚合）。")
     if disabled:
         print("        上表「停用」均为**具体可复核的原因**（技术障碍如 WAF/需浏览器会话/目录靠 JS，"
-              "或项目红线如人机验证），非「因为含 VIP」。")
+              "或项目红线如人机验证/登录墙），非「因为含 VIP」。")
     if POLICY_DENYLIST:
         print(f"  项目声明不支持的域名：{', '.join(POLICY_DENYLIST)}")
     else:

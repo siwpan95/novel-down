@@ -5,6 +5,66 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.8.0] - 2026-09-20
+
+落地 pingcode 那篇的新点子（自动识别正文容器），并把规则按来源**分池**；
+另新增免费镜像族的第 5 条规则。
+
+### Added
+
+- **`guess_content_container()`：自动识别正文容器**（`chapter.auto_content`，默认开）。
+  打分 = `汉字数 × 标点系数 × 段落系数 × (1 − 链接文字占比)`，再在最高分 90% 以内取**最深**的那个。
+  触发时机：`content_selector(s)` 没选到容器、**或选到了却抽不出段落**（站点改版）→ 自动兜底并留痕
+  （备注写「…已自动识别正文容器」）。规则里写 `"auto_content": false` 可关闭。
+- **浏览器路由支持代理**（`browser.proxy`）：Chromium **不读** `HTTP_PROXY/HTTPS_PROXY`
+  环境变量（requests 会读），所以「只在代理下可达」的站点走浏览器路由会报 `ERR_TIMED_OUT`。
+  规则里写 `"proxy": "env"` 即沿用环境变量里的代理，也可直接给代理 URL。
+- **规则分池 `pool`**：`正版` / `免费镜像` 两类，`sites` 命令按池分组展示
+  （当前 19 条：正版 13 / 免费镜像 6）。
+- **站点：免费镜像族（`soushuwang.cc` / `bqg142.cc` / `soduo.cc`）**
+  —— 一条规则覆盖三个域（同一套模板）：书籍页 `/book/{bid}/`、目录
+  `div.listmain dl dd a, ul.section-list li a`、正文 `div#chaptercontent` 或 `div#content`。
+  章节页是 **JS 反爬中转页**（「加载中……」→ 种 `getsite` cookie → `/userverify` → 跳 `bqg142.cc`
+  的 hash 路由），故走 `fetch_mode: browser`；**章节内自带分页**（`下一页` → `{cid}_2.html`）
+  由 `next_page.continue_when=same_base_id` 处理。
+  实测：搜书网 2 章 6746 字、速读小说 30 章（2 章导出）3846 字，校对 PASS。
+
+### Fixed
+
+- **自动识别容器的选取逻辑错了**：原实现「先按汉字数取 90% 以上、再取最深」，
+  于是**忽略了自己算出的分数**。实测速读小说章节页：正文 `div#content`（749 汉字、
+  无链接）旁边还有个含「推荐本书」的外层（883 汉字），结果选中了外层 →
+  首段变成「推荐本书」。改为**按分数选**（并把标点系数从「绝对阈值」改成
+  **候选间相对值**，正文的标点密度明显高于 wrapper），修正后正确选中 `div#content`。
+- **`page.content()` 导航竞态**：站点做多跳 JS 跳转时（搜书网：中转页 → `/userverify` → 跨域 hash 路由），
+  playwright 会抛 `Unable to retrieve content because the page is navigating and changing the content`。
+  已加等差重试（识别该错误 → 等 `domcontentloaded` → 再取，最多 4 次），不再当成失败。
+
+### Changed
+
+- **撤销一条我自己加的约束**：此前文档里写着「不主动新增盗版镜像站」——**那不是全哥的要求**，
+  全哥最初的意见恰恰相反（过度防御导致可用规则全是盗版站）。现改为**按池分类**（`正版` / `免费镜像`），
+  不设人为限制；候选站只要实测能用就收进对应池子。
+
+### Docs
+
+- 记入两条环境/风险事实：
+  1. **本机 requests 走系统代理**（`HTTP_PROXY/HTTPS_PROXY` 已设置、`trust_env` 默认开），
+     而 **curl 不读**这些变量 —— 这才是「curl 000 但 requests 200」的**主因**（此前归因于 TLS 栈差异，不准确）。
+  2. **抽风是盗版镜像站的通病**（同一 URL 时而 200 时而超时，实测搜书网/速读小说多次）——
+     探测时**不要凭一次失败判死**，运行期靠重试 + 断点续爬。
+- 新增参考记账：Gitee `xioo/shuyuan`（fork 自 `no-mystery/shuyuan`）与书源仓库
+  `shuyuan.yiove.com` —— 那是给**阅读APP(Legado)** 用的书源配置，**格式与本项目不通用**，
+  仅作**站点候选池**；⚠ 记入风险台账：**阅读APP 已因侵权违法、为免担责而删除其开源源码**。
+  另：`www.shudugu.org`（速读谷）**未死** —— requests 侧 SSLError，但真浏览器可正常打开，
+  属链接不稳定，已更正此前「不可达」的判断。
+
+### Tests
+
+- 170 → **177**。新增：自动识别容器（选中贴身正文而非含导航/推荐位的外层、无正文时返回 None、
+  选择器失配时兜底留痕、`auto_content:false` 可关、**命中配置选择器时不得越权接管**）、
+  池子字段与免费镜像池数量、镜像族规则形态（三域 + 分页）。
+
 ## [0.7.1] - 2026-09-20
 
 按「接着做轻之文库 / 哔哩轻小说」推进 + 评阅全哥新给的 5 篇参考与 1 个程序。
@@ -503,7 +563,7 @@
   「导出拒绝」「成品无付费字样」。
 - **阅读器真实浏览器验证** `tools/verify_reader.py`：Playwright + Chromium
   实际操作 UI 并断言 30 项（目录/翻页/键盘/搜索/进度记忆/主题/移动端抽屉/无 JS 错误）。
-- **复用层**：从本家 `G:\repos\webcopier` 按「复制优于共享」抽取
+- **复用层**：从本家 `本家 webcopier 仓` 按「复制优于共享」抽取
   HTTP / 身份池（1373 条）/ 限速器，并**彻底移除 Cookie 与登录路径**。
 
 ### Changed（相对复用源的改进）
