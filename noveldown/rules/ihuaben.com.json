@@ -1,0 +1,82 @@
+{
+  "id": "ihuaben.com",
+  "name": "话本小说（正版·同人/原创免费阅读）",
+  "pool": "正版",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://www.ihuaben.com/book/12259567.html",
+  "notes": "★ 话本小说（全哥 2026-09-21 指出也是正版站），当日实测。题名自称「同人文、原创小说免费在线阅读」。\n\n【形态】\n  · 书籍页 `/book/{bid}.html`，**目录就在页内**：章节链接形如 `/book/{bid}/{cid}.html`（实测 36~48 条）。\n  · ⭐ 目录页有两个块，**必须只取正文列表**：\n    - `div.newestChapters` = 顶部「最新章节」回显（倒序，与列表重复）；\n    - `div.chapter-list`  = **正文完整列表** ← 用这个。\n    只取后者可一次性排除「回显 + 开始阅读/立即阅读 等导航项」，比逐条写 deny 词干净。\n    （⚠ 试过 `dedupe=keep_last`：它不会改变被保留项的**位置**，回显仍排在头部 —— 选择器分块才是对的解法。）\n  · 章节页 `/book/{bid}/{cid}.html`，正文容器 **`div#contentsource`**（class `nbcontent`，\n    实测 1004~1769 汉字）。\n  · 元信息从 `<title>` 取（`《书名》(连载) - 作者 - 话本小说` / `书名免费阅读-作者-…`）。\n\n⚠【踩过的坑】我最初随手抽到两本**公告类**书（《话本作者攻略大全》《话本小黑屋》），\n  它们的章节页整页只有 1400 余汉字、正文容器为空 → 差点误判「话本正文是 JS 渲染的」。\n  换两本**真正的小说**（如 `12259567`）就正常了。\n  → 教训：**判断「正文能否取到」要拿足够多个样本，别被维基/公告类页面骗了**。\n\n【VIP】该站主力是免费阅读，实测目录里未见锁标记；\n  仍按项目六层约束：目录若出现锁标记即锁、正文命中付费墙即丢、导出前终检。\n\n⚠ 法律：正版平台的**免费章节**。",
+  "match": [
+    "ihuaben.com"
+  ],
+  "book": {
+    "url_pattern": "/book/(\\d+)\\.html",
+    "info_url": "{url}",
+    "title": [
+      "@title"
+    ],
+    "title_pattern": "^《?(.+?)》?\\s*(?:\\(|免费阅读|最新章节|-)",
+    "author": [
+      "@title"
+    ],
+    "author_pattern": "[-–]\\s*([^-–]+?)\\s*[-–]\\s*(?:话本小说|$)",
+    "intro": [
+      "meta[name='description']"
+    ],
+    "cover": [
+      "meta[property='og:image']"
+    ]
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single"
+    },
+    "item_selector": "div.chapter-list a, .chapter-list a",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/book/\\d+/(?P<cid>\\d+)\\.html"
+    },
+    "sort": "document_order",
+    "dedupe": "keep_first",
+    "item_deny_text": [
+      "最新章节",
+      "开始阅读",
+      "立即阅读",
+      "加入书架",
+      "查看更多",
+      "全部章节",
+      "签约标准",
+      "关于我们",
+      "联系我们",
+      "帮助中心",
+      "用户协议",
+      "隐私政策",
+      "意见反馈"
+    ]
+  },
+  "chapter": {
+    "title_selector": "h1, .title",
+    "content_selector": "div#contentsource",
+    "content_selectors": [
+      "div#contentsource",
+      ".nbcontent"
+    ],
+    "strip_selectors": [
+      "script",
+      "style",
+      ".comment",
+      "#comment",
+      ".footer",
+      ".nav"
+    ],
+    "ad_patterns": [
+      "话本小说",
+      "请记住本站",
+      "加入书架",
+      "手机版阅读"
+    ]
+  }
+}

@@ -544,6 +544,24 @@
 **待定**：先记着，等正版池规模再大一些，做成 `tools/check_official.py` 之类的机械门禁
 （与 `tools/check_repo.py` 同思路：把"约定"变成可跑的检查）。
 
+### 12.7 第三批（v0.8.7，按全哥指示 ①创世/话本 ②得间）
+
+| 站点 | 结论 |
+|---|---|
+| **创世中文网 `chuangshi.qq.com`** | ✅ **已接入**（从存根翻案）。**目录页真路由是 `/chapter/{bid}`** —— 书籍页无目录、`/book/{id}/catalog` 是 301、渲染也没用；靠 `tools/hunt_api.py` 监听请求 + 点「查看全部」才找到。纯 HTTP 可取；`a.catalogueItem` + `span.icon-lock` + `/read/{bid}/{seq}` + `#article` **与云起逐项一致** |
+| **话本小说 `ihuaben.com`** | ✅ **已接入**。正文容器 `div#contentsource`；⚠ **目录有两块，只取 `div.chapter-list`**（`div.newestChapters` 是顶部回显，`dedupe` 改不了它的位置） |
+| 得间免费小说 `idejian.com` | ⛔ **停用（APP 独占）**。证据：**HTTPS 证书已失效**；http 首页渲染后仅 18 个链接、无书籍入口；**监听全部请求 = 0 条 XHR**（不是接口难找，是页面上根本没有内容）；`m./h5./wap./yd.` 子域全部 DNS 不解析 |
+
+**下一批优先目标（v0.8.7 实测探明的活线索）**
+
+| 目标 | 状态 | 备注 |
+|---|---|---|
+| `shushan.zhangyue.net`（书山中文网） | 存活 ✓ | 掌阅系免费阅读站，title「免费小说在线阅读」 |
+| `m.zhangyue.com`（掌阅小说网移动站） | 存活 ✓ | 掌阅系，**比得间本体有价值** —— 得间只是它的导流页 |
+| 磨铁 `motie.com` / 豆瓣阅读 `read.douban.com` | 存活 ✓ | 未探 |
+| 书旗 `shuqi.com` / 掌阅 `zhangyue.com` 根路径 | 403 / 企业站 | 试 `t.shuqi.com`、`m.zhangyue.com` |
+| 微信读书 `weread.qq.com` | 存活 ✓ | 预计登录墙 → 存根 |
+
 **下一批候选（已初筛，按优先级）**
 
 | 候选 | 状态 | 备注 |

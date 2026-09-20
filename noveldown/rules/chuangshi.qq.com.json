@@ -2,14 +2,75 @@
   "id": "chuangshi.qq.com",
   "name": "创世中文网（阅文·含 VIP）",
   "pool": "正版",
-  "enabled": false,
+  "enabled": true,
   "free_only": true,
   "predecode": false,
-  "requires_js": true,
-  "fetch_mode": "browser",
-  "demo_url": "https://chuangshi.qq.com/detail/55829495",
-  "disabled_reason": "目录不在书籍页、也不在目录页，需抓 XHR 接口（2026-09-21 实测）。证据：① 书籍页 `/detail/{bid}` 纯 HTTP 的 `a.catalogueItem` = 0（仅 12 个 /read/ 链接）；② `/book/{bid}/catalog` 纯 HTTP 只 9 个链接，那些还是「最近更新」侧栏里**别的书**的；③ 用真 Chrome（headed + 反检测）渲染 `/book/{bid}/catalog` 与 `/book/{bid}`，等 6 秒后 `a.catalogueItem`=0、**本书**的 /read/{bid}/ 链接也是 0 —— 说明目录由 XHR 异步下发，或藏在 SPA 的客户端路由里。下一步：用 Playwright 监听 `page.on('request')` 点一次「目录」看接口（同 1.17/1.13 的做法）。⚠ 注意：**不要**按「URL 形状与云起相同」就并进云起规则 —— 已验证目录位置不同（教训见 yuewen-yunqi 的 notes）。",
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://chuangshi.qq.com/detail/60754862",
+  "notes": "★ 阅文集团旗下的创世中文网，2026-09-21 实测。**含 VIP，只抓免费章**。\n\n【⭐ 目录页的真路由是 `/chapter/{bid}` —— 这一条花了不少时间才找到】\n  踩过的三条错路（都记下来，避免重复）：\n    · 书籍页 `/detail/{bid}`：`a.catalogueItem` = **0**（只有十余个 /read/ 链接，是「最近更新」）；\n    · `/book/{bid}/catalog`：**301 跳转**（不是目录路由，会跳到首页）；\n    · 真 Chrome 渲染书籍页与上述路径：**依然没有**本书的章节链接。\n  最后**用浏览器监听网络请求**（tools/hunt_api.py）+ 点击页面上写着「查看全部」的\n  `div.link-entry`，才看出它跳到 **`/chapter/{bid}`** —— 那才是目录页。\n  → 纯 HTTP 可取（96 KB），**无需浏览器路由**。\n\n【和云起书院是同款前端组件】**目录项 `a.catalogueItem`、锁标记 `span.icon-lock`、\n  章节页 `/read/{bid}/{seq}`、正文容器 `#article` —— 四项逐项一致**，\n  差别只在「目录在哪个 URL」：云起在书籍页 `/detail/{bid}` 里，创世在独立页 `/chapter/{bid}`。\n  （教训：我先前按首页链接形状就断定两站同模板并合并成一条规则 → 创世 0 章；\n   现在按**书籍页/目录页里的容器**比对，才确认确实同组件、只是目录位置不同。）\n\n【VIP】`span.icon-lock` → `catalog.vip_child_selector`，目录层锁掉、零请求\n  （实测该书 76 章里 24 章带锁）。\n\n【正文】`/read/{bid}/{seq}`，容器 `#article`（class `isTxt chapter-box`）。\n  `{seq}` 是**章节序号** → `sort=cid_numeric_asc`。\n\n⚠ 法律：正版平台的**免费章节**。付费章不请求、不导出。",
   "match": [
     "chuangshi.qq.com"
-  ]
+  ],
+  "book": {
+    "url_pattern": "/detail/(\\d+)",
+    "info_url": "{url}",
+    "title": [
+      "@title"
+    ],
+    "title_pattern": "^(.+?)最新章节",
+    "author": [
+      "meta[property='og:novel:author']",
+      ".author-name a",
+      "a[href*='/author/']"
+    ],
+    "intro": [
+      "meta[name='description']"
+    ],
+    "cover": [
+      "meta[property='og:image']"
+    ]
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single",
+      "url": "{origin}/chapter/{bid}"
+    },
+    "item_selector": "a.catalogueItem",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/read/\\d+/(?P<cid>\\d+)"
+    },
+    "url_template": "{origin}/read/{bid}/{cid}",
+    "vip_child_selector": "span.icon-lock",
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first",
+    "item_deny_text": [
+      "最新章节"
+    ]
+  },
+  "chapter": {
+    "title_selector": "h1",
+    "content_selector": "#article",
+    "content_selectors": [
+      "#article",
+      ".chapter-box",
+      "#bookRead"
+    ],
+    "strip_selectors": [
+      "script",
+      "style",
+      ".chapter-nav",
+      ".read-nav",
+      ".footer"
+    ],
+    "ad_patterns": [
+      "创世中文网",
+      "加入书架",
+      "手机版阅读",
+      "请记住本站",
+      "上QQ阅读APP看书",
+      "第一时间看更新"
+    ]
+  }
 }

@@ -1,0 +1,15 @@
+{
+  "id": "idejian.com",
+  "name": "得间免费小说（掌阅系·APP 独占）",
+  "pool": "正版",
+  "enabled": false,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": true,
+  "fetch_mode": "browser",
+  "demo_url": "http://www.idejian.com/",
+  "disabled_reason": "【PC 端没有可读的书籍页 —— 是纯落地壳页】（2026-09-21 实测）。证据：\n① **HTTPS 证书已失效**：`https://www.idejian.com/` 浏览器直接报 `net::ERR_CERT_DATE_INVALID`（Python 侧则是 SSLError）→ 只能走 http。\n② http 首页能打开（title「得间免费小说 - 阅读有滋味，免费在得间」），但用真 Chrome 渲染后**全页只有 18 个链接**，且没有一个指向书籍/章节 —— 指向的是合作方（`shushan.zhangyue.net`、`yc.ireader.com.cn`、`hongshu.com`、`quyuewang.cn`）与备案站。\n③ **一条 XHR 都没发**（用 tools/hunt_api.py 监听全部请求 = 0 条）→ 不是「接口没找到」，而是**页面上根本没有目录/正文**。\n④ 移动/分享子域全不存在：`m.` / `h5.` / `wap.` / `yd.idejian.com` 均 **DNS 不解析**。\n→ 结论：得间 PC 端只是**导流到 APP 的落地页**，与米读/熊猫同类（APP 独占）。\n\n【顺带发现的两条可用线索】得间隶属**掌阅系**（页面引用 `zhangyuecdn.com`），而实测这两个掌阅站是**活的且有内容**：\n  · `shushan.zhangyue.net`（书山中文网，免费阅读）\n  · `m.zhangyue.com`（掌阅小说网移动站）\n→ 已记入 docs/NEW_SITES_PLAN.md §12.7 作为下一批优先目标（比得间本体有价值）。",
+  "match": [
+    "idejian.com"
+  ]
+}
