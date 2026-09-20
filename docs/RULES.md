@@ -55,6 +55,7 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | `info_url` | 书籍页 URL 模板，支持 `{origin}` `{bid}` `{url}` |
 | `title` / `author` / `intro` / `cover` / `status` | 候选 CSS 选择器**数组**，按序取第一个命中；`meta[...]` 取 `content` 属性，其余取文本。特殊值 **`@title`** = 文档 `<title>` 文本 |
 | `title_pattern` | 可选正则，对 `title` 结果做清洗（如 `^(.*?)(?:免费阅读|最新章节)` 去掉站点后缀） |
+| `@json:<path>` | `book.title`/`author`/`intro`… 的**特殊取值**：从页面的 SSR 数据块（默认 `script#__NEXT_DATA__`，可用 `book.json_source` 改）按 `a.b.c` 路径取字段。Next.js/Nuxt 站的书名/作者常只在数据块里（次元姬） |
 | `author_pattern` | 可选正则，对 `author` 结果做清洗/抽取（书海书名与作者同格：`神农医婿 作者: 方长` → `作者[:：]\s*(.+?)\s*$`） |
 
 ### `catalog`
@@ -69,6 +70,7 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | `pages.max_pages` | 目录页上限，默认 80 |
 | `pages.max_rounds` | 迭代轮数上限，默认 4 |
 | `mode` | `html`（默认）\| `json_api`（目录来自 JSON 接口，见下） |
+| `json.json_source` | 可选。**JSON 嵌在 HTML 里**时的容器 CSS（Next.js `<script id="__NEXT_DATA__">`、Nuxt `__NUXT__`）：先取出那段 JSON，再照常按 `items_path` 取值 → 一条规则吃下整类 SSR 站 |
 | `json` | `json_api` 模式的配置：`url`（模板，支持 `{origin}/{bid}` 与 `{cookie:NAME}` 占位符）、`items_path`（如 `data.chapters`）、**`flatten_field`**（卷→章嵌套展开，如 `cs`）、`cid_field`、`title_field`、**`vip_field`**、`vip_truthy` |
 | `item_selector` | 章节项选择器（`html` 模式必需）。**也可选中容器**：此时 href 从内嵌 `<a>` 取、**标题取容器文本**（书海 33% 的 `<a>` 文本为空，只选 `<a>` 会丢标题） |
 | `id_from.mode` | `href`（从链接取）\| `onclick`（从 onclick 取） |
@@ -95,6 +97,7 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | `body_api` | 正文来自 **JSON 接口**时的配置（塔读：章节页是空壳）。`url` 支持 `{origin}/{bid}/{cid}/{seq}`（seq = 章节序号，从 1 起）；`content_field` 取字段；`drop` 按 `equals_base64_of: cid` 剔除站点水印段。取到的 HTML 会被包成 `div.nd-api-body`，后续选择器照常用 |
 | `content_selector` | ✓ 正文容器 CSS（用 `body_api` 时填 `div.nd-api-body`） |
 | `content_selectors` | 可选**候选列表**（同一站不同请求可能给不同容器；按序取第一个命中） |
+| `drop_leading_title_paragraph` | 可选布尔。正文首段**就是标题行**、且该元素无 class 可剔时（飞卢 `div.noveContent > p:first`）开启；**仅当首段与目录标题完全相同**时才删除 —— 宁可不删，也不吃掉真正的首段 |
 | `paragraph_selector` | 可选。**按段落元素逐个取文本**，而非整块容器文本。用于 `<p>` 里混着段评数/点赞数等附加节点的站点（如起点 `span.content-text`）。**未命中时会自动回退为容器整体切分**，并把原因写进章节备注（`extract_note`），避免整章静默变空 |
 | `strip_selectors` | 需从容器内剔除的元素（导航 / 标题 / 脚本 / 水印） |
 | `vip_markers` | 可选。**整页**付费特征词/类名（付费信号不在正文里、而在 CSS 文件名或页面元素上的站点，如 17K 的 `chapter_vip`） |
@@ -131,7 +134,7 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 
 ---
 
-## 实例：十种典型形态
+## 实例：十二种典型形态
 
 A–H 覆盖从「标准免费站」到「反检测浏览器 + JSON 接口目录」的全部难度梯度。
 新增站点时，先在本节找最接近的一条照抄，再改选择器。
@@ -581,6 +584,119 @@ A–H 覆盖从「标准免费站」到「反检测浏览器 + JSON 接口目录
    真人浏览器稳定（始终 7 隐藏 / 70 可见）。→ **每章只取一次**，别用 `--force` 反复重抓。
 
 > 《仙妻如云》实测：2416 章全免费；3 章 5501 字，校对 + 产物终检 PASS。
+
+### K. SSR 数据块即目录 + 章节页即入口（ciyuanji.com，Next.js）
+
+**正版·含 VIP**。该站**没有书籍页**——`/book/{id}`、`/book/{id}.html`、`/novel/{id}`、
+`/bookdetail/{id}` 等 9 种形态**全 404**，DOM 里也 0 个书籍页链接。
+入口只能是**章节页** `/chapter/{bid}_{cid}.html`，而它自带全部需要的东西：
+Next.js 把数据序列化进 `<script id="__NEXT_DATA__">`，里面有
+`props.pageProps.bookChapter.chapterList`（673 章 + 逐章 `isFee`）
+与 `props.pageProps.bookChapter.authorName`。
+
+```json
+{
+  "id": "ciyuanji.com", "free_only": true, "fetch_mode": "browser",
+  "match": ["ciyuanji.com"],
+  "book": {
+    "url_pattern": "/chapter/(\\d+)_\\d+",
+    "info_url": "{url}",
+    "title": ["@title"], "title_pattern": "^\\s*([^-]+)",
+    "author": ["@json:props.pageProps.bookChapter.authorName"]
+  },
+  "catalog": {
+    "mode": "json_api",
+    "json": {
+      "url": "{url}",
+      "json_source": "script#__NEXT_DATA__",
+      "items_path": "props.pageProps.bookChapter.chapterList",
+      "cid_field": "chapterId", "title_field": "chapterName",
+      "vip_field": "isFee", "vip_truthy": ["1"]
+    },
+    "url_template": "{origin}/chapter/{bid}_{cid}.html",
+    "sort": "document_order"
+  },
+  "chapter": {
+    "title_selector": "h1",
+    "content_selector": "article[class^='chapter_article__']",
+    "paragraph_selector": "p"
+  },
+  "browser": {"anti_detect": true}
+}
+```
+
+关键点：
+
+1. **`url`/`info_url` 用 `{url}`**（即用户给的那个 URL）：我们的 `catalog.pages.mode=single`
+   在没有 `pages.url` 时就用来源页、`info_url` 默认也是 `{url}` —— 所以「没有书籍页」
+   这类站不需要新机制，把入口定在章节页即可。
+2. **`json_source`**：JSON 嵌在 HTML 里时先取出来再按 `items_path` 走（v0.7.0 新增）。
+3. **`@json:<path>`** 取作者：作者只在数据块里，页面上没有稳定选择器（v0.7.0 新增）。
+4. **`content_selector` 用属性前缀**：`article.chapter_article__vWEkb` 是 CSS-Modules 的
+   **哈希类名**，重新构建就会变 → 写 `article[class^='chapter_article__']` 抗漂移。
+   ⚠ 别用外层 `section.chapter_main__*`（含侧栏，中文量 10103 vs 正文 2046）。
+5. ⚠ **正文是服务端加密的**：纯 HTTP 拿到的 `chapterContent.content` 是 base64 密文
+   （中文 0 字），页面用前端 JS 解密。所以必须 `fetch_mode: browser`。
+   **口径**：不属于「破解加密」——没有逆向密钥/算法，只是用真浏览器渲染页面、
+   读站点对**所有访客**展示的内容（无登录、无验证码）。
+
+> 实测《大唐：我真没想当神仙》：673 章 = **26 免费 + 647 VIP**（`isFee`），
+> VIP 章零请求；3 章 10370 字，校对 + 产物终检 PASS。
+
+### L. 免费/VIP 按**分段**判定 + 2 MB 目录页（faloo.com）
+
+**正版·含 VIP**，**纯 HTTP**（服务端渲染）。书籍页 `/{bid}.html` 一次给出**全部章节**
+（实测 12188 章，页面约 **2 MB**）；章节 URL 是 `/{bid}_{cid}.html`（**协议相对**写法 `//b.faloo.com/…`）。
+
+```json
+{
+  "id": "faloo.com", "free_only": true,
+  "match": ["faloo.com"],
+  "book": {
+    "url_pattern": "/(\\d{6,})(?:_\\d+)?\\.html",
+    "info_url": "{origin}/{bid}.html",
+    "title": ["@title"], "title_pattern": "^\\s*([^_]+)",
+    "author": ["@title"], "author_pattern": "^[^_]+_([^_]+?)(?:小说|著)"
+  },
+  "catalog": {
+    "pages": {"mode": "single", "url": "{origin}/{bid}.html"},
+    "item_selector": "#mulu div.DivTr a",
+    "volume_selector": "div.DivVip",
+    "vip_volume_markers": ["VIP"],
+    "id_from": {"mode": "href", "pattern": "/(?P<b>\\d+)_(?P<cid>\\d+)\\.html"},
+    "url_template": "{origin}/{bid}_{cid}.html",
+    "sort": "cid_numeric_asc"
+  },
+  "chapter": {
+    "title_selector": "h1",
+    "content_selector": "div.noveContent",
+    "paragraph_selector": "p",
+    "drop_leading_title_paragraph": true
+  }
+}
+```
+
+关键点：
+
+1. **免费/VIP 的分界在「分段」上，不在逐章标记上**：`#mulu` 的直接子元素依次是
+   `div.TitleDiv` → `div.C-Fo-Z-ML-TitleBox` → `div.DivTable`（**免费**，49 章，单元格 `DivTd3`）
+   → **`div.DivVip`**（文本含「VIP章节部分」）→ `div.DivTable`（**VIP**，12139 章，单元格 `DivTd`）。
+   逐章**没有任何 VIP class/图标**（实测目录内 vip 图标数 = 0）
+   → `volume_selector: "div.DivVip"` + `vip_volume_markers: ["VIP"]`（v0.6.0 的能力）。
+2. **`item_selector` 要用行容器**：`#mulu div.DivTr a`。别用 `#mulu a[href]`
+   （会把「VIP充值 / VIP用户单章订阅」等功能链接也吃进来），也别用 `div.DivTd3 a`
+   （只取免费表，丢掉「12139 章被拦下」的会计）。
+3. **首段就是标题行**且无 class 可剔 → `drop_leading_title_paragraph: true`
+   （v0.7.0 新增；仅当首段与目录标题**完全相同**时才删）。
+4. ⚠ **2 MB 页面踩到 lxml 的静默截断**：见下方「大页面/畸形 HTML」告警。
+
+> 实测《洪荒：推演神话法，打造至高洪荒》：12188 章 = **49 免费 + 12139 VIP**，
+> VIP 零请求；3 章 6087 字，校对 + 产物终检 PASS。
+
+> ⚠ **大页面 / 畸形 HTML 必读**：`make_soup` 优先 lxml，但 **lxml 会静默丢内容**。
+> 实测飞卢这张 2 MB 页面：原文 `<a>` 12356 个、章节 12188 个，lxml 只解析出 3128 个 `<a>`、
+> 3058 章，**且不报错**。本仓已加 `_parse_looks_complete()` 完整性校验（比对原文与树里
+> `<a>/<div>/<p>` 数量，明显不符就退回 `html.parser`）。自己写解析器时务必做同样的校验。
 
 ---
 

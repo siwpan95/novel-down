@@ -481,7 +481,8 @@ class Downloader:
                     html = html + "\n" + api_html
             if first_html is None:
                 first_html = html
-            info = parse_chapter_page(self.rule, html, url, ch.cid)
+            info = parse_chapter_page(self.rule, html, url, ch.cid,
+                                     expect_title=ch.title)
             pages.append(url)
             if not title and info["title"]:
                 title = info["title"]

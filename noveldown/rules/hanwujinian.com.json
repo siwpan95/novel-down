@@ -1,0 +1,11 @@
+{
+  "id": "hanwujinian.com",
+  "name": "寒武纪年",
+  "enabled": false,
+  "free_only": true,
+  "requires_js": true,
+  "demo_url": "https://www.hanwujinian.com/book/101697",
+  "disabled_reason": "正文对未登录访客不下发（登录/付费墙，红线）：章节页 /read/{bid}/{cid} 返回 200、能显示章节名与「字数:2623字」，但**页面 HTML 与渲染后的 DOM 里都没有正文**（全页汉字仅 630~697 个，全是导航/元信息/书评），且 reader.js 里**没有任何正文接口**（只有 comment/report 两个 api.php 接口）——真 Chrome + headed 渲染 10 秒后依然无正文。页面模板含「全本购买弹窗」「付费订阅」「包月特权」，属付费/包月模式。本项目不做登录/付费，故不实现。",
+  "notes": "实探记录（2026-09-20）：\n  · 首页 200 / 360 KB；书籍页 /book/{bid} 200 / 178 KB（og:novel:book_name 有值）；\n  · **完整目录 /catalog/{bid} 200 / 177 KB，87 个 /read/{bid}/{cid} 章节链接**；\n  · 章节页 /read/{bid}/{cid} 200 / 129 KB，`<title>` 正常（书名-章节名-作者-站点）；\n  · **正文不在 HTML**：全页汉字 697（浏览器渲染后 630），最大中文元素就是 <html> 本身；\n  · reader.js（71 KB）里只有 `/api.php/api/comment_app/sendCommentApi`、\n    `sendReplyCommentApi`、`report_app/reportCommentData` 三个接口，**没有正文接口**；\n  · 浏览器渲染 10 秒后网络日志里也没有任何正文请求 → 正文未下发；\n  · 页面含「全本购买弹窗」「付费订阅」「您已享受包月特权」等模板 → 付费/包月站。\n\n【重要更正】上一轮我据「首页 200、章节页 200、最大中文元素 697 字」判断\n「寒武纪年可直接做（零新代码）」——**那是错的**：697 字是**元信息**（章节名+字数+书评），\n不是正文。教训：**判断「正文是否在 HTML 里」不能只看页面是否存在/是否有中文**，\n必须比对该章**声明的字数**（本例「字数:2623字」）与实际可取文本量做一个数量级对比，\n并检查有没有正文接口调用。\n\n【页内 slider_captcha.js 与「获取验证码」】属登录/注册弹窗，不是阅读拦截。\n\n【若将来要做】需要先确认是否存在**未登录可读**的免费章节（例如换一本「免费」类目的书、\n或移动端 /index.php/wap 路由）——本轮未穷尽这两条路径，故按「未找到合法可取路径」记为停用。",
+  "match": ["hanwujinian.com"]
+}

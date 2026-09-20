@@ -1,0 +1,53 @@
+{
+  "id": "faloo.com",
+  "name": "飞卢小说网",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "demo_url": "https://b.faloo.com/1000082.html",
+  "notes": "★ 正版·含 VIP，2026-09-20 实测。**纯 HTTP 即可**（服务端渲染）。\n\n【目录：整本在一个页面里，但 2 MB】书籍页 `/{bid}.html` 一次给出**全部章节**：\n实测《洪荒：推演神话法，打造至高洪荒》**12188 章**，章节链接 12188 个（`//b.faloo.com/{bid}_{cid}.html`，\n注意是**协议相对**写法，靠 `urljoin` 解析）。页面体积约 2 MB → 目录耗时约 4s，属正常。\n\n【免费 / VIP 的分界在「分段」上，不在逐章标记上】`#mulu` 的直接子元素依次是：\n  `div.TitleDiv.muluh2`（《书名》目录）\n  → `div.C-Fo-Z-ML-TitleBox`（书名 正文）\n  → `div.DivTable` ← **免费章节表**（49 章，单元格 class 为 `DivTd3`）\n  → **`div.DivVip.viph2`** ← 文本「…小说VIP章节部分」，**分界就在这里**\n  → `div.DivTable` ← **VIP 章节表**（12139 章，单元格 class 为 `DivTd`）\n逐章**没有**任何 VIP class 或图标（实测目录内 vip 图标数 = 0），\n所以只能用**分段名**判定 → `volume_selector: \"div.DivVip\"` + `vip_volume_markers: [\"VIP\"]`\n（本项目 v0.6.0 新增的能力，见 docs/RULES.md 字段表）。\n效果：49 章可抓，12139 章全部标 locked 且**零请求**。\n\n【章节项选择器】`#mulu div.DivTr a`：`div.DivTr` 是每一行的容器，\n实测其内链接**只有** `{bid}_{cid}.html` 一种形态（12188 个），不含卷/推荐链接。\n⚠ 不要用 `div.DivTd3 a`（只取免费表、丢会计）；也不要用 `#mulu a[href]`\n（会把 `C-Fo-Z-ML-TitleBox` 里的「VIP充值 / VIP用户单章订阅」等功能链接也吃进来）。\n\n【正文】服务端渲染在 `div.noveContent`（实测第 1 章 2080 汉字 / 161 个 `<p>`），\n首段**就是标题行**（`<p>` 无 class，用 strip_selectors 剔不掉）\n→ 本规则开启 `chapter.drop_leading_title_paragraph`：仅当首段与目录标题**完全相同**时删除，\n宁可不删也不会吃掉真正的首段。\n外层 `div.c_left#center` 更大（2541 汉字）但含导航，不用。\n\n【书名/作者】书籍页 `<title>` = 「书名_作者小说_全本小说下载_飞卢小说网」，\n用 `@title` + 两个正则取（`title_pattern` / `author_pattern`），无需元素选择器。",
+  "match": [
+    "faloo.com"
+  ],
+  "book": {
+    "url_pattern": "/(\\d{6,})(?:_\\d+)?\\.html",
+    "info_url": "{origin}/{bid}.html",
+    "title": [
+      "@title"
+    ],
+    "title_pattern": "^\\s*([^_]+)",
+    "author": [
+      "@title"
+    ],
+    "author_pattern": "^[^_]+_([^_]+?)(?:小说|著)"
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single",
+      "url": "{origin}/{bid}.html"
+    },
+    "item_selector": "#mulu div.DivTr a",
+    "volume_selector": "div.DivVip",
+    "vip_volume_markers": [
+      "VIP"
+    ],
+    "id_from": {
+      "mode": "href",
+      "pattern": "/(?P<b>\\d+)_(?P<cid>\\d+)\\.html"
+    },
+    "url_template": "{origin}/{bid}_{cid}.html",
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first"
+  },
+  "chapter": {
+    "title_selector": "h1",
+    "content_selector": "div.noveContent",
+    "paragraph_selector": "p",
+    "strip_selectors": [
+      "script",
+      "style"
+    ],
+    "drop_leading_title_paragraph": true
+  }
+}

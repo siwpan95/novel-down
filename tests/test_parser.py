@@ -574,6 +574,139 @@ class TestAuthorPattern(unittest.TestCase):
         self.assertEqual(info["title"], "神农医婿")
         self.assertEqual(info["author"], "方长")
 
+class TestSsrJsonSources(unittest.TestCase):
+    """JSON 嵌在 HTML 里的两类通用能力（Next.js / Nuxt 站）。
+
+    实测来源：次元姬 `ciyuanji.com` —— 目录在
+    `<script id="__NEXT_DATA__">` 的 `props.pageProps.bookChapter.chapterList`，
+    作者在同一数据块的 `...bookChapter.authorName`。
+    """
+
+    def _rule(self, **book_over):
+        from noveldown.rules import Rule
+        book = {"url_pattern": "/chapter/(\\d+)_\\d+", "info_url": "{url}"}
+        book.update(book_over)
+        return Rule({
+            "id": "t.cyj", "name": "T", "match": ["ciyuanji.com"],
+            "free_only": True,
+            "book": book,
+            "catalog": {"mode": "json_api", "json": {
+                "url": "{url}",
+                "json_source": "script#__NEXT_DATA__",
+                "items_path": "props.pageProps.bookChapter.chapterList",
+                "cid_field": "chapterId", "title_field": "chapterName",
+                "vip_field": "isFee", "vip_truthy": ["1"],
+            }, "url_template": "{origin}/chapter/{bid}_{cid}.html",
+                "sort": "document_order"},
+            "chapter": {"content_selector": "div.c"},
+        }).validate()
+
+    HTML = ('<html><head><title>大唐：我真没想当神仙-第十四章 送礼-免费小说阅读-次元姬小说</title>'
+            '</head><body><script id="__NEXT_DATA__">'
+            '{"props":{"pageProps":{"bookChapter":{"bookName":"大唐：我真没想当神仙",'
+            '"authorName":"蓝白","chapterList":['
+            '{"chapterId":435750,"chapterName":"第一章 起","isFee":"0"},'
+            '{"chapterId":435751,"chapterName":"第二章 承","isFee":"1"}]}}}}'
+            '</script></body></html>')
+
+    def test_json_source_extracts_catalog_from_html(self):
+        from noveldown.parser import collect_json_catalog
+        items, locked = collect_json_catalog(
+            self._rule(), self.HTML, "1288", "https://www.ciyuanji.com")
+        self.assertEqual([i["cid"] for i in items], ["435750"])
+        self.assertEqual([l["cid"] for l in locked], ["435751"])
+        self.assertEqual(items[0]["title"], "第一章 起")
+        self.assertEqual(items[0]["url"],
+                         "https://www.ciyuanji.com/chapter/1288_435750.html")
+
+    def test_json_source_missing_block_raises_with_hint(self):
+        from noveldown.parser import collect_json_catalog
+        with self.assertRaises(ValueError) as ctx:
+            collect_json_catalog(self._rule(), "<html>无数据块</html>",
+                                 "1288", "https://x")
+        self.assertIn("json_source", str(ctx.exception))
+
+    def test_book_author_from_ssr_json_block(self):
+        """`book.author` 支持 `@json:<path>` —— 作者只在数据块里时用。"""
+        rule = self._rule(**{
+            "title": ["@title"],
+            "title_pattern": "^\\s*([^-]+)",
+            "author": ["@json:props.pageProps.bookChapter.authorName"],
+        })
+        info = parse_book_info(rule, self.HTML,
+                               "https://www.ciyuanji.com/chapter/1288_1.html", "1288")
+        self.assertEqual(info["title"], "大唐：我真没想当神仙")
+        self.assertEqual(info["author"], "蓝白")
+
+    def test_book_json_path_missing_falls_back(self):
+        rule = self._rule(**{
+            "author": ["@json:props.pageProps.nope.nope", ".author-el"],
+        })
+        html = self.HTML.replace("</body>", '<div class="author-el">备用作者</div></body>')
+        info = parse_book_info(rule, html,
+                               "https://www.ciyuanji.com/chapter/1288_1.html", "1288")
+        self.assertEqual(info["author"], "备用作者")
+
+
+class TestLxmlCompletenessGuard(unittest.TestCase):
+    """lxml 在畸形 HTML 上会**静默丢内容**，必须有完整性守卫。
+
+    实测（飞卢书籍页 2 MB）：原文 `<a>` 12356 个，lxml 只解析出 3128 个，
+    章节数从 12188 缩水到 3058，且不报错。
+    """
+
+    def test_detects_truncated_parse(self):
+        from noveldown.parser import _parse_looks_complete
+        raw = "<div class='x'><a href='/1'>t</a></div>" * 100
+        tiny = make_soup("<a href='/1'>t</a>")
+        self.assertFalse(_parse_looks_complete(raw, tiny))
+
+    def test_accepts_faithful_parse(self):
+        from noveldown.parser import _parse_looks_complete
+        raw = "<div class='x'><a href='/1'>t</a></div>" * 100
+        self.assertTrue(_parse_looks_complete(raw, make_soup(raw)))
+
+    def test_small_pages_not_flagged(self):
+        """小页面不做这个校验（阈值以下一律放行），避免误伤。"""
+        from noveldown.parser import _parse_looks_complete
+        raw = "<a href='/1'>t</a><a href='/2'>u</a>"
+        self.assertTrue(_parse_looks_complete(raw, make_soup(raw)))
+
+
+class TestDropLeadingTitleParagraph(unittest.TestCase):
+    """首段即标题（无 class 可剔）时按目录标题精确删除；不匹配就不删。"""
+
+    def _rule(self, **ch_over):
+        from noveldown.rules import Rule
+        ch = {"content_selector": "div.c"}
+        ch.update(ch_over)
+        return Rule({
+            "id": "t.dt", "name": "T", "match": ["x.com"], "free_only": True,
+            "book": {"url_pattern": "/x/(\\d+)"},
+            "catalog": {"item_selector": "a"},
+            "chapter": ch,
+        }).validate()
+
+    HTML = "<html><body><div class='c'><p>第1章 起</p><p>正文一</p><p>正文二</p></div></body></html>"
+
+    def test_drops_when_matches(self):
+        res = parse_chapter_page(self._rule(drop_leading_title_paragraph=True),
+                                 self.HTML, "https://x.com/x/1", "1",
+                                 expect_title="第1章 起")
+        self.assertEqual(res["paragraphs"], ["正文一", "正文二"])
+
+    def test_keeps_when_not_matching(self):
+        res = parse_chapter_page(self._rule(drop_leading_title_paragraph=True),
+                                 self.HTML, "https://x.com/x/1", "1",
+                                 expect_title="第1章 别的标题")
+        self.assertEqual(res["paragraphs"], ["第1章 起", "正文一", "正文二"])
+
+    def test_off_by_default(self):
+        res = parse_chapter_page(self._rule(), self.HTML, "https://x.com/x/1", "1",
+                                 expect_title="第1章 起")
+        self.assertEqual(res["paragraphs"][0], "第1章 起")
+
+
 
 if __name__ == "__main__":
     unittest.main()

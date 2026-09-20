@@ -30,12 +30,16 @@ class TestLoadRules(unittest.TestCase):
              "tadu.com",                                     # 正版（正文来自 JSON 接口 body_api）
              "ciweimao.com",                                 # 停用存根（人机验证红线）
              "xrzww.com",                                    # 停用存根（正文需登录，红线）
-             "youdubook.com"})                                # 停用存根（同息壤，登录墙）
+             "youdubook.com",                                # 停用存根（同息壤，登录墙）
+             "ciyuanji.com",                                 # 正版（Next.js；目录+正文都在 __NEXT_DATA__）
+             "hanwujinian.com",                              # 停用存根（正文对未登录不下发）
+             "faloo.com"})                                   # 正版·含 VIP（目录分段判 VIP）
         enabled = {r.id for r in rules.values() if r.enabled}
         self.assertEqual(enabled, {"shuquge.com", "bqgbe.cc", "biqu520.net",
                                    "fanqienovel.com", "zongheng.com", "qimao.com",
                                    "17k.com", "qidian.com", "shuhai.com",
-                                   "tadu.com"})
+                                   "tadu.com", "ciyuanji.com",
+                                   "faloo.com"})
         for r in rules.values():
             self.assertTrue(r.free_only, f"{r.id} 必须声明 free_only")
         for r in rules.values():
@@ -57,7 +61,8 @@ class TestLoadRules(unittest.TestCase):
         """
         rules = load_rules()
         disabled = {r.id for r in rules.values() if not r.enabled}
-        self.assertEqual(disabled, {"ciweimao.com", "xrzww.com", "youdubook.com"})
+        self.assertEqual(disabled, {"ciweimao.com", "xrzww.com", "youdubook.com",
+                                    "hanwujinian.com"})
         r = rules["ciweimao.com"]
         self.assertGreater(len(r.disabled_reason), 40)
         # 原因必须点出**红线性质**（人机验证）与实测证据（man_machine_verify）
@@ -84,6 +89,21 @@ class TestLoadRules(unittest.TestCase):
         self.assertIn("readNovelByWeb", rules["xrzww.com"].notes)
         self.assertIn("directoryList", rules["xrzww.com"].notes)
         self.assertIn("xrzww", rules["youdubook.com"].disabled_reason)
+
+    def test_ssr_json_catalog_rule_shape(self):
+        """次元姬：JSON 嵌在 HTML 里（json_source）+ 章节页即入口（无书籍页）。"""
+        rules = load_rules()
+        r = rules["ciyuanji.com"]
+        self.assertTrue(r.enabled)
+        self.assertEqual(r.fetch_mode, "browser")
+        j = r.catalog_cfg["json"]
+        self.assertEqual(j["json_source"], "script#__NEXT_DATA__")
+        self.assertEqual(j["vip_field"], "isFee")
+        # 入口是章节页（该站没有书籍页）
+        self.assertIn("chapter", r.book_cfg["url_pattern"])
+        self.assertEqual(r.catalog_cfg["sort"], "document_order")
+        # 正文容器用属性前缀选择器抗 CSS-Modules 哈希漂移
+        self.assertIn("class^=", r.chapter_cfg["content_selector"])
 
     def test_vip_site_rule_is_enabled_and_guards_vip(self):
         """回归：含 VIP 的正版站（纵横）必须是**启用**状态。

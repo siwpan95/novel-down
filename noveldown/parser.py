@@ -42,12 +42,37 @@ def origin_of(url: str) -> str:
     return f"{p.scheme}://{p.netloc}"
 
 
+def _parse_looks_complete(html: str, soup) -> bool:
+    """粗略校验解析是否**丢了内容**（lxml 在畸形 HTML 上会静默截断）。
+
+    判据：原文里 `<a` / `<div` / `<p` 的出现次数，与树里对应标签数相比；
+    数量级明显不符（< 60%）就认为这份解析不可信。阈值取宽一点，
+    只抓「大批量丢失」这种严重情况。
+    """
+    raw = html or ""
+    for tag in ("a", "div", "p"):
+        want = raw.count("<" + tag)
+        if want >= 50 and len(soup.find_all(tag)) < want * 0.6:
+            return False
+    return True
+
+
 def make_soup(html: str) -> BeautifulSoup:
-    """构造 BeautifulSoup；优先 lxml，缺失回退 html.parser。"""
+    """构造 BeautifulSoup；优先 lxml，**但会校验完整性**，不可信则退回 html.parser。
+
+    为什么需要校验：lxml 快，但对畸形 HTML 会**静默丢内容**。
+    实测（2026-09-20，飞卢书籍页 `b.faloo.com/1000082.html`，2 MB）：
+    原文 `<a>` 12356 个、章节链接 12188 个；lxml 只解析出 3128 个 `<a>`、3058 个章节，
+    且**不报任何错** —— 目录静默从 12188 章缩水到 3058 章。
+    `html.parser` 同样输入则完整。
+    """
     try:
-        return BeautifulSoup(html, "lxml")
+        soup = BeautifulSoup(html, "lxml")
+        if _parse_looks_complete(html, soup):
+            return soup
     except Exception:
-        return BeautifulSoup(html, "html.parser")
+        pass
+    return BeautifulSoup(html, "html.parser")
 
 
 def select_first(soup, selectors):
@@ -105,6 +130,25 @@ def clean_page_title(s: str) -> str:
 #  书籍信息
 # ------------------------------------------------------------
 
+def _from_json_block(soup, book_cfg, path: str):
+    """从页面里的 SSR 数据块取字段（`book.*` 的 `@json:<path>` 用）。
+
+    默认找 `script#__NEXT_DATA__`（Next.js 约定）；可用 `book.json_source` 覆盖。
+    """
+    import json as _json
+
+    sel = (book_cfg.get("json_source") or "script#__NEXT_DATA__")
+    el = select_one_safe(soup, sel)
+    if el is None:
+        return None
+    raw = el.get_text() or el.string or ""
+    try:
+        data = _json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    return _dig(data, path)
+
+
 def parse_book_info(rule, html: str, url: str, bid: str) -> dict:
     """解析书籍元信息（标题/作者/简介/封面/状态）。
 
@@ -112,6 +156,9 @@ def parse_book_info(rule, html: str, url: str, bid: str) -> dict:
       `@title` —— 取文档 `<title>` 的文本。SPA 站点（七猫）的书籍页里书名
       常只出现在 `<title>` 里，配合 `book.title_pattern` 正则清洗即可
       （如 `^(.*?)免费阅读` 去掉站点后缀）。
+      `@json:<path>` —— 从页面里的 **SSR 数据块**（默认 `script#__NEXT_DATA__`，
+      可用 `book.json_source` 改）按 `a.b.c` 路径取字段。Next.js/Nuxt 站的书名、
+      作者往往只在数据块里、页面上没有稳定选择器（实测次元姬）。
     """
     soup = make_soup(html)
     cfg = rule.book_cfg
@@ -123,6 +170,11 @@ def parse_book_info(rule, html: str, url: str, bid: str) -> dict:
             if sel == "@title":
                 if soup.title and soup.title.string:
                     return soup.title.string.strip()
+                continue
+            if sel.startswith("@json:"):
+                val = _from_json_block(soup, cfg, sel[len("@json:"):])
+                if val not in (None, ""):
+                    return str(val)
                 continue
             el = select_one_safe(soup, sel)
             if el is not None:
@@ -507,11 +559,24 @@ def collect_json_catalog(rule, text: str, bid: str, origin: str):
     **额外好处**：这类接口常带**逐章 VIP 字段**（如七猫的 `is_vip`、起点的 `vip`），
     比 HTML class 标记更可靠 —— 第 3 层据此就能判定，连请求都不发。
 
+    **JSON 嵌在 HTML 里**（`cfg["json_source"]`）：Next.js / Nuxt 这类 SSR 框架会把数据
+    序列化进页面（`<script id="__NEXT_DATA__">…`），正文与目录都在里面。
+    此时先用 CSS 选择器把那段 JSON 取出来，再照常按 `items_path` 取值。
+    → 这样一条 `catalog` 规则就能吃下整类 SPA 站（实测次元姬 `ciyuanji.com`）。
+
     Returns: (items, locked)
     """
     import json as _json
 
     cfg = rule.catalog_cfg.get("json") or {}
+    # SSR 框架：JSON 在页面的某个 <script> 里，先取出来
+    src_sel = cfg.get("json_source")
+    if src_sel:
+        el = select_one_safe(make_soup(text), src_sel)
+        if el is None:
+            raise ValueError(
+                f"json_source={src_sel!r} 在页面里取不到（SSR 数据块可能改名/移动）")
+        text = el.get_text() or el.string or ""
     try:
         data = _json.loads(text)
     except (ValueError, TypeError) as e:
@@ -600,7 +665,8 @@ def extract_paragraphs(container, ad_patterns):
     return paragraphs, ads
 
 
-def parse_chapter_page(rule, html: str, url: str, current_cid: str):
+def parse_chapter_page(rule, html: str, url: str, current_cid: str,
+                       expect_title: str = None):
     """解析单个正文页。
 
     Returns: {
@@ -609,6 +675,12 @@ def parse_chapter_page(rule, html: str, url: str, current_cid: str):
 
     `extract_note` 非空表示正文抽取**走了回退路径**（段落选择器未命中）——
     调用方应把它并进章节备注，便于发现站点改版。
+
+    `expect_title` 是目录给出的章节标题。当规则开了
+    `chapter.drop_leading_title_paragraph` 且正文首段与它**完全相同**时删除首段
+    （有些站把标题写成正文容器里的第一个无 class `<p>`，用选择器剔不掉；
+    实测飞卢 `div.noveContent > p:first` 就是标题行）。
+    只在**完全相同**时才删 —— 宁可不删，也不能把真正的首段吃掉。
     """
     cfg = rule.chapter_cfg
     html2, dstats = predecode(html, enabled=rule.predecode)
@@ -651,6 +723,12 @@ def parse_chapter_page(rule, html: str, url: str, current_cid: str):
             paragraphs, ads = extract_paragraphs(work, cfg.get("ad_patterns"))
             if para_sel:
                 extract_note = f"段落选择器「{para_sel}」未命中，已回退为容器整体切分"
+
+        # 首段即标题（无 class 可剔的站点，如飞卢）：仅当与目录标题**完全相同**时删除
+        if (cfg.get("drop_leading_title_paragraph") and paragraphs
+                and expect_title):
+            if _norm_space(paragraphs[0]) == _norm_space(expect_title):
+                paragraphs.pop(0)
 
     # 续页判定
     next_url = None
