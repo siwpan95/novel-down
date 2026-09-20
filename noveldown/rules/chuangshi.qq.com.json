@@ -1,0 +1,15 @@
+{
+  "id": "chuangshi.qq.com",
+  "name": "创世中文网（阅文·含 VIP）",
+  "pool": "正版",
+  "enabled": false,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": true,
+  "fetch_mode": "browser",
+  "demo_url": "https://chuangshi.qq.com/detail/55829495",
+  "disabled_reason": "目录不在书籍页、也不在目录页，需抓 XHR 接口（2026-09-21 实测）。证据：① 书籍页 `/detail/{bid}` 纯 HTTP 的 `a.catalogueItem` = 0（仅 12 个 /read/ 链接）；② `/book/{bid}/catalog` 纯 HTTP 只 9 个链接，那些还是「最近更新」侧栏里**别的书**的；③ 用真 Chrome（headed + 反检测）渲染 `/book/{bid}/catalog` 与 `/book/{bid}`，等 6 秒后 `a.catalogueItem`=0、**本书**的 /read/{bid}/ 链接也是 0 —— 说明目录由 XHR 异步下发，或藏在 SPA 的客户端路由里。下一步：用 Playwright 监听 `page.on('request')` 点一次「目录」看接口（同 1.17/1.13 的做法）。⚠ 注意：**不要**按「URL 形状与云起相同」就并进云起规则 —— 已验证目录位置不同（教训见 yuewen-yunqi 的 notes）。",
+  "match": [
+    "chuangshi.qq.com"
+  ]
+}

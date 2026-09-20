@@ -1,0 +1,80 @@
+{
+  "id": "yuewen-hongxiu",
+  "name": "红袖读书 / 小说阅读网（阅文·免费阅读线）",
+  "pool": "正版",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://www.hongxiu.com/book/33358861104391807",
+  "notes": "★ 阅文集团**免费阅读线**（红袖读书 + 小说阅读网），2026-09-21 实测。\n\n【形态】\n  · 书籍页 `/book/{bid}`（雪花 ID），首页 238 个书籍链接，**服务端渲染**（纯 HTTP 可取）。\n  · 目录**就在书籍页里**（320 条 `a[href*='/chapter/']`，形如 `/chapter/{bid}/{cid}`）。\n  · 章节页 `/chapter/{bid}/{cid}`，正文容器 **`div.read-content`**（id `j_readContent`，实测 1995 汉字 / 80 段）。\n  · 元信息走 `og:novel:*`（book_name / author / status / category）—— 比猜选择器可靠。\n\n【两域同模板】`hongxiu.com` 与 `readnovel.com` 是**同一后端**：\n  实测把红袖的书籍 ID 直接拼到小说阅读网的 `/book/{bid}` 上就能打开，\n  章节 URL 形状也完全一致（`/chapter/{bid}/{cid}`）→ 并入同一规则。\n\n【目录顺序】页面把**最新章节回显**放在列表顶部（同一个 cid 出现两次），\n  故用 `cid_numeric_asc` 排序 + `keep_first` 去重：cid 是本平台的雪花 ID，\n  与阅读顺序同向（已用「前 5 章是第1章…、后 3 章是番外」核对）。\n\n【免费/VIP】该线是「免费阅读」，实测目录里**未见**锁标记（对照：云起/创世同属阅文，\n  目录里有 `span.icon-lock`）。仍按项目六层约束处理：目录若出现锁标记即锁、\n  正文命中付费墙即丢、导出前终检。\n\n⚠ 法律：正版平台的**免费章节**。仅抓免费部分，付费章一律不请求、不导出。",
+  "match": [
+    "hongxiu.com",
+    "readnovel.com"
+  ],
+  "book": {
+    "url_pattern": "/book/(\\d+)",
+    "info_url": "{url}",
+    "title": [
+      "meta[property='og:novel:book_name']",
+      "@title"
+    ],
+    "author": [
+      "meta[property='og:novel:author']"
+    ],
+    "intro": [
+      "meta[property='og:description']",
+      "meta[name='description']"
+    ],
+    "status": [
+      "meta[property='og:novel:status']"
+    ],
+    "cover": [
+      "meta[property='og:image']"
+    ]
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single"
+    },
+    "item_selector": "a[href*='/chapter/']",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/chapter/\\d+/(?P<cid>\\d+)"
+    },
+    "url_template": "{origin}/chapter/{bid}/{cid}",
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first",
+    "item_deny_text": [
+      "免费试读",
+      "开始阅读",
+      "最新章节",
+      "加入书架",
+      "立即阅读"
+    ]
+  },
+  "chapter": {
+    "title_selector": ".j_chapterName, h1",
+    "content_selector": "div.read-content",
+    "content_selectors": [
+      "div.read-content",
+      "#j_readContent",
+      "div.read-main-wrap"
+    ],
+    "strip_selectors": [
+      "script",
+      "style",
+      ".chapter-nav",
+      ".j_chapterNav",
+      ".read-footer"
+    ],
+    "ad_patterns": [
+      "红袖读书",
+      "小说阅读网",
+      "请记住本站",
+      "加入书架",
+      "手机版阅读"
+    ]
+  }
+}

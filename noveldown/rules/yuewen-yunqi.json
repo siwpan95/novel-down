@@ -1,0 +1,73 @@
+{
+  "id": "yuewen-yunqi",
+  "name": "云起书院（阅文·含 VIP）",
+  "pool": "正版",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://yunqi.qq.com/detail/47334692",
+  "notes": "★ 阅文集团旗下的云起书院 / 创世中文网，2026-09-21 实测。**含 VIP，只抓免费章**。\n\n【形态】\n  · 书籍页 `/detail/{bid}`，目录**就在书籍页里**：`a.catalogueItem`（父级 `<li class=\"list\">`）。\n  · 章节页 `/read/{bid}/{seq}`，正文容器 **`#article`**（class `isTxt chapter-box`，实测 1815 字 / 66 段）。\n  · 元信息走 `og:novel:*`。\n\n【为什么只覆盖云起】`chuangshi.qq.com` 的 URL 形状与云起**完全相同**\n  （`/detail/{bid}` + `/read/{bid}/{seq}`），但**目录不在书籍页里**：\n  创世书籍页实测 `a.catalogueItem` = 0（只有 12 个 /read/ 链接），\n  目录在 `/book/{bid}/catalog` 且**是 JS 渲染的**（只 9 个链接）→ 需浏览器路由，\n  故单独一条规则，见 `chuangshi-qq.json`。\n  ⚠ 教训：我一开始按**首页链接形状**相同就判定两站同模板 —— 那是错的，\n  必须比对**书籍页里的目录容器**才能下结论。\n\n⚠【`{cid}` 其实是**章节序号**，不是 ID】\n  `/read/{bid}/{seq}` 里的第三段是**顺序号**（实测该书 1~679）。\n  本规则据此用 `cid_numeric_asc`（序号即阅读顺序，正合适）。\n  ⚠ 但**不能**把它当成「与顺序无关的 ID」去做别的推断 —— 同类坑见 docs/RULES.md 案例 J（塔读）。\n\n【目录是「回显 + 列表」】页面顶部先倒序回显最新章节（679→1），再给完整列表（1→679），\n  同一个 seq 出现**两次** → `dedupe=keep_first` 消解。\n\n【VIP 判定】实测**免费章 = seq 1~20、VIP 章 = 21~679**，标记是目录项里的\n  `span.icon-lock` → 用 `catalog.vip_child_selector` 在**目录层**锁掉，**零请求**。\n  （引擎的检查范围 = 目录项自身 + 链接元素的父级；该 span 在 `<li>` 里，正好命中。）\n\n⚠ 法律：正版平台的**免费章节**。付费章不请求、不导出。",
+  "match": [
+    "yunqi.qq.com"
+  ],
+  "book": {
+    "url_pattern": "/detail/(\\d+)",
+    "info_url": "{url}",
+    "title": [
+      "meta[property='og:novel:book_name']",
+      "@title"
+    ],
+    "author": [
+      "meta[property='og:novel:author']"
+    ],
+    "intro": [
+      "meta[property='og:description']",
+      "meta[name='description']"
+    ],
+    "status": [
+      "meta[property='og:novel:status']"
+    ],
+    "cover": [
+      "meta[property='og:image']"
+    ]
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single"
+    },
+    "item_selector": "a.catalogueItem",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/read/\\d+/(?P<cid>\\d+)"
+    },
+    "url_template": "{origin}/read/{bid}/{cid}",
+    "vip_child_selector": "span.icon-lock",
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first"
+  },
+  "chapter": {
+    "title_selector": "h1",
+    "content_selector": "#article",
+    "content_selectors": [
+      "#article",
+      ".chapter-box",
+      "#bookRead"
+    ],
+    "strip_selectors": [
+      "script",
+      "style",
+      ".chapter-nav",
+      ".read-nav",
+      ".footer"
+    ],
+    "ad_patterns": [
+      "云起书院",
+      "创世中文网",
+      "加入书架",
+      "手机版阅读",
+      "请记住本站"
+    ]
+  }
+}

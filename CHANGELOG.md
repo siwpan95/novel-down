@@ -5,6 +5,50 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.8.5] - 2026-09-21
+
+**正版方面开始实行**（镜像铺开按指示暂时收尾）。新增 **2 条正版族规则（覆盖 3 个域名）**
++ 1 条停用存根；正版池 13 → **16 条**（启用 9 → 11）。
+
+### Added
+
+- **`yuewen-hongxiu`：红袖读书 / 小说阅读网**（阅文·免费阅读线，**2 域一条规则**）
+  · 书籍页 `/book/{bid}`，目录**就在书籍页里**（`a[href*='/chapter/']`，形如 `/chapter/{bid}/{cid}`）
+  · 正文容器 `div.read-content`（id `j_readContent`）
+  · 元信息走 `og:novel:*`（book_name / author / status）
+  · 实测《重生换宗…》：**316 章全免费**、第1章「身死」起、番外「魂归」收尾、正文 2384 字，校对 PASS
+  · **两域同一后端**：把红袖的书籍 ID 直接拼到 `readnovel.com/book/{bid}` 就能打开、
+    章节 URL 形状也一致 → 并入同一规则（已验证两域结果完全一致）
+- **`yuewen-yunqi`：云起书院**（阅文·含 VIP）
+  · 书籍页 `/detail/{bid}`、目录 `a.catalogueItem`、章节 `/read/{bid}/{seq}`
+  · 正文容器 `#article`（class `isTxt chapter-box`）
+  · **VIP 在目录层就锁掉**：实测该书 **679 章 = 20 免费 + 659 VIP**，
+    标记是目录项里的 `span.icon-lock` → `catalog.vip_child_selector`，**659 章零请求**
+  · ⚠ `{seq}` 是**章节序号**（1~679），不是与顺序无关的 ID —— 故 `sort=cid_numeric_asc`
+
+### 已知存根
+
+- **`chuangshi.qq.com`（创世中文网）→ 停用存根**。URL 形状与云起**完全一样**
+  （`/detail/{bid}` + `/read/{bid}/{seq}`），但**目录不在书籍页里**：
+  实测书籍页 `a.catalogueItem`=0；`/book/{bid}/catalog` 纯 HTTP 只有 9 个链接
+  （还是「最近更新」侧栏里**别的书**的）；**用真 Chrome 渲染后仍是 0**
+  → 目录由 XHR 异步下发，需监听请求找接口（同 §1.17 的做法）。存根里写明了已试路径与证据。
+
+### 教训（已写进规则 notes 与 skill）
+
+- ⚠ **判断「两站同模板」要比对「书籍页里的目录容器」，不能只看首页链接形状**。
+  我一开始按首页链接形状相同就断定创世与云起同模板、并入一条规则 —— 那是错的，
+  两站只是 URL 形状一样、目录位置不同。**首页形状是线索，书籍页结构才是证据。**
+
+### Notes
+
+- 测试 190 全绿；门禁 8 项 PASS。
+- **测试又去掉一处「写死清单」**：`test_disabled_stub_documents_why` 原本写死了停用规则 id 集合
+  （起点翻案、创世新增都要改它）。改为守真正的不变量「**每条停用规则都有足够具体的
+  `disabled_reason`**」+ 几个长期存根仍在。
+- 下一步正版候选（按 docs/NEW_SITES_PLAN.md §12）：得间免费小说（**PC 端是 JS SPA，需浏览器+接口**）、
+  逐浪、潇湘书院、掌阅、磨铁、豆瓣阅读、书旗（根路径 403）、晋江（根路径 403 但 `m.jjwxc.net` 待试）。
+
 ## [0.8.4] - 2026-09-21
 
 **三处着力点全部推进**：镜像族规则 38 → **111 条**，覆盖域名 203 → **367 个**

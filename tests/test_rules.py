@@ -54,13 +54,25 @@ class TestLoadRules(unittest.TestCase):
     def test_disabled_stub_documents_why(self):
         """停用规则是**调研记录存根**：必须写明原因，且原因要具体（可复核）。
 
-        当前唯一的停用规则是刺猬猫（人机验证红线）——
         存根的价值在于 `find_rule()` 能直接报出原因，避免重复调研。
+
+        ⚠ 这里**不写死停用规则清单**：存根会随调研推进而增减
+        （实测：起点从停用翻案成可用、创世新增为存根），
+        写死清单会让每次变动都得改测试，且掩盖真正的不变量 ——
+        真正的不变量是「**每条停用规则都有足够具体的 disabled_reason**」。
         """
         rules = load_rules()
+        for r in rules.values():
+            if r.enabled:
+                continue
+            self.assertTrue(r.disabled_reason,
+                            f"{r.id} 停用却没写 disabled_reason")
+            self.assertGreater(len(r.disabled_reason), 40,
+                               f"{r.id} 的 disabled_reason 太短，不足以复核")
         disabled = {r.id for r in rules.values() if not r.enabled}
-        self.assertEqual(disabled, {"ciweimao.com", "xrzww.com", "youdubook.com",
-                                    "hanwujinian.com", "linovel.net"})
+        # 几个长期存根必须仍在（防止被误删）
+        for key in ("ciweimao.com", "xrzww.com", "youdubook.com"):
+            self.assertIn(key, disabled)
         r = rules["ciweimao.com"]
         self.assertGreater(len(r.disabled_reason), 40)
         # 原因必须点出**红线性质**（人机验证）与实测证据（man_machine_verify）
