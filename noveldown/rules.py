@@ -82,7 +82,12 @@ class Rule:
             if key not in self.raw:
                 raise RuleError(f"{self.id}: 缺少 '{key}' 段")
         if not self.raw["catalog"].get("item_selector"):
-            raise RuleError(f"{self.id}: catalog.item_selector 不能为空")
+            cat = self.raw["catalog"]
+            if cat.get("mode") != "json_api":
+                raise RuleError(f"{self.id}: catalog.item_selector 不能为空"
+                                f"（或改用 catalog.mode=json_api 并配 catalog.json）")
+            if not (cat.get("json") or {}).get("url"):
+                raise RuleError(f"{self.id}: json_api 模式必须提供 catalog.json.url")
         if not self.raw["chapter"].get("content_selector"):
             raise RuleError(f"{self.id}: chapter.content_selector 不能为空")
         if self.fetch_mode not in ("http", "browser"):

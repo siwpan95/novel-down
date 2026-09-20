@@ -89,6 +89,10 @@ class Book:
     status: str = ""
     volumes: List[str] = field(default_factory=list)
     chapters: List[Chapter] = field(default_factory=list)
+    # 目录排序策略：cid_numeric_asc / document_order。
+    # 校对时据此决定要不要检查「章节号单调」——document_order 的站点
+    # （雪花 ID，如番茄/七猫）本来就不单调，检查它只会产生误报。
+    catalog_sort: str = "cid_numeric_asc"
 
     # ---------------- 派生属性 ----------------
     @property

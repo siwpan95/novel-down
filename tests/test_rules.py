@@ -21,23 +21,30 @@ class TestLoadRules(unittest.TestCase):
         self.assertEqual(
             set(rules),
             {"shuquge.com", "bqgbe.cc", "biqu520.net",       # 免费阅读站
-             "fanqienovel.com",                              # 正版·免费平台
+             "fanqienovel.com",                              # 正版·免费平台（字体反爬）
              "zongheng.com",                                 # 正版·含 VIP（只抓免费章）
-             "qidian.com", "17k.com", "qimao.com"})           # 调研存根
+             "qimao.com",                                    # 正版·全免费（JSON 接口目录）
+             "qidian.com", "17k.com"})                        # 调研存根
         enabled = {r.id for r in rules.values() if r.enabled}
         self.assertEqual(enabled, {"shuquge.com", "bqgbe.cc", "biqu520.net",
-                                   "fanqienovel.com", "zongheng.com"})
+                                   "fanqienovel.com", "zongheng.com", "qimao.com"})
         for r in rules.values():
             self.assertTrue(r.free_only, f"{r.id} 必须声明 free_only")
         for r in rules.values():
-            if r.enabled:
-                self.assertTrue(r.catalog_cfg.get("item_selector"))
-                self.assertTrue(r.chapter_cfg.get("content_selector"))
+            if not r.enabled:
+                continue
+            cat = r.catalog_cfg
+            # 启用的规则必须有目录来源：HTML 选择器 或 JSON 接口
+            self.assertTrue(
+                cat.get("item_selector") or
+                (cat.get("mode") == "json_api" and (cat.get("json") or {}).get("url")),
+                f"{r.id} 缺少目录来源")
+            self.assertTrue(r.chapter_cfg.get("content_selector"))
 
     def test_disabled_rules_are_documentation_stubs(self):
         """停用规则是「调研记录存根」：必须写明为何做不到，且原因应是技术性的。"""
         rules = load_rules()
-        for rid in ("qidian.com", "17k.com", "qimao.com"):
+        for rid in ("qidian.com", "17k.com"):
             r = rules[rid]
             self.assertFalse(r.enabled)
             self.assertGreater(len(r.disabled_reason), 20, f"{rid} 需写明停用原因")
@@ -70,6 +77,21 @@ class TestLoadRules(unittest.TestCase):
         # 别名域（xshuquge.net）也要能命中
         self.assertEqual(find_rule("http://www.xshuquge.net/txt/1/index.html", rules).id,
                          "shuquge.com")
+
+    def test_json_api_rule_shape(self):
+        """七猫用 JSON 接口目录 + 逐章 is_vip + 浏览器路由 —— 三者都要在规则里。"""
+        r = load_rules()["qimao.com"]
+        self.assertEqual(r.catalog_cfg.get("mode"), "json_api")
+        j = r.catalog_cfg.get("json") or {}
+        self.assertIn("{bid}", j.get("url", ""))
+        self.assertEqual(j.get("items_path"), "data.chapters")
+        self.assertEqual(j.get("vip_field"), "is_vip")
+        self.assertTrue(r.catalog_cfg.get("url_template"))
+        self.assertEqual(r.fetch_mode, "browser")
+        self.assertTrue(r.chapter_cfg.get("browser_wait_selector"))
+        # 书名靠 <title> + 正则清洗（SPA 页面里书的标题选择器不稳）
+        self.assertIn("@title", r.book_cfg.get("title"))
+        self.assertTrue(r.book_cfg.get("title_pattern"))
 
     def test_matching_disabled_rule_reports_reason(self):
         """命中的规则被停用时必须报出原因，而不是含糊的「没有规则」。

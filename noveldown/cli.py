@@ -156,8 +156,10 @@ def cmd_probe(args):
     t0 = time.time()
     try:
         book = d.discover()
-    finally:
-        pass
+    except Exception as e:
+        d.close()          # 异常时也要释放浏览器，否则会留下未清理的 Playwright 任务
+        print(f"\n[失败] 目录发现出错：{e}", file=sys.stderr)
+        return 6
     dt = time.time() - t0
     print()
     print("=" * 62)

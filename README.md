@@ -15,8 +15,10 @@
 ## 特性
 
 - **规则驱动**：一个站点一个 JSON，加站不改代码。内置 5 个实测可用站点规则。
-- **双路由取页**：纯 HTTP 为主；目录靠 JS 渲染的站点可切**真实浏览器路由**
+- **双路由取页**：纯 HTTP 为主；目录靠 JS 渲染、或站点有 WAF 的，可切**真实浏览器路由**
   （`fetch_mode: browser`，Playwright/Chromium）。
+- **两种目录来源**：HTML 选择器，或 **JSON 接口**（`catalog.mode=json_api`）——
+  后者常带**逐章 VIP 字段**（七猫 `is_vip`、起点 `vip`），比 HTML class 更可靠。
 - **反爬五件套处理**：JS 内联 base64 正文、**字体反爬（PUA 码位）**、
   目录倒序回显、CSS 隐藏列表项、多页目录。
 - **章节归一化**：全收集 → 去重 → 排序编号（`cid` 升序或 `document_order`），
@@ -94,6 +96,7 @@ F:\Python314\python.exe -m noveldown selfcheck
 
 | 站点 | 类型 | 匹配域名 | 章节数 | 实测结果 |
 |---|---|---|---|---|
+| **七猫免费小说** | 正版·免费阅读 | `qimao.com` | **708（20 可读 / 688 APP独占）** | 目录走 **JSON 接口**，逐章带 `is_vip`；688 章标记 locked、**零请求**；20 章 43 065 字 |
 | **纵横中文网** | 正版·含 VIP | `zongheng.com` | **700（50 免费 / 650 VIP）** | 650 章在**目录层**带 `class="vip col-4"` → 标记 locked、**零请求**；50 章免费正文 163 576 字 |
 | **番茄小说** | 正版·免费阅读 | `fanqienovel.com` | 966 | 目录 967 链接→966 章；正文 **362/362 个字体混淆码位全部还原** |
 | 书趣阁 | 免费阅读站 | `shuquge.com` / `xshuquge.net` | 1582 | 第 1 章 106 段 / 2865 字，过滤 2 行广告 |
@@ -104,13 +107,16 @@ F:\Python314\python.exe -m noveldown selfcheck
 > 「站点含 VIP」不是拒绝理由——那 50 章免费内容在射程内；VIP 章由**目录层的 class 标记**
 > 拦下，`fetch` 全程只发出 50 次章节请求（已用 `tools/verify_artifacts.py` 机械验证）。
 
-另有 3 条**停用规则存根**，逐条记录正版站的技术障碍（**不是**「因为含 VIP」）：
+另有 2 条**停用规则存根**，逐条记录正版站的技术障碍（**不是**「因为含 VIP」）：
 
 | 站点 | 障碍 |
 |---|---|
-| 起点 `qidian.com` | WAF：首页与子域均返回 202 + `x-waf-captcha-referer`，页面加载 `probe.js` 探针，**不下发会话令牌**；无头浏览器同样被挡（需人机验证） |
+| 起点 `qidian.com` | **腾讯云 Chaos VM**（`__TENCENT_CHAOS_VM`，95KB 虚拟机式 JS 挑战）：首页与子域均返回 202 + `x-waf-captcha-referer`，不下发会话令牌；无头 Chromium 等 42s 也不放行且 `navigator.webdriver=true` 被识别 |
 | 17K `17k.com` | 目录页仅 5.8KB，靠 JS 异步加载；实测书号已失效，未复核 |
-| 七猫 `qimao.com` | 首页/书籍页在浏览器里能渲染（373 个书籍链接、页面内 0 个 pay/vip 标记），但章节目录需点击才加载 |
+
+> **七猫的 688 章不是付费墙，是 APP 墙**：web 端只放前 20 章，其余章正文被替换成
+> 「下载【七猫免费小说APP】，继续在APP内免费畅读全本内容」。那段占位文字有 78 字，
+> **高于最小字数阈值**——不拦就会被当成正常正文存下来。已把「APP 墙」补进第 4 层特征词。
 
 `python -m noveldown sites` 会列出全部规则与停用原因。
 
@@ -171,7 +177,7 @@ novel-down/
 ├── tools/verify_reader.py     真实浏览器验证 HTML 阅读器（Playwright）
 ├── tools/make_screenshot.py   生成 README 演示截图（用自撰文本，不含第三方正文）
 ├── tools/check_repo.py        仓库卫生门禁（本仓不含第三方源码 / 凭据 / 产物）
-├── tests/                     113 个用例（含端到端拦截集成测试）+ fixtures
+├── tests/                     121 个用例（含端到端拦截集成测试）+ fixtures
 ├── docs/
 │   ├── REFERENCE.md           借鉴记账（来源 + 许可证 + 范围 + 排除项）
 │   ├── RULES.md               规则格式与三种典型形态
@@ -209,10 +215,10 @@ F:\Python314\python.exe -m pip install -r requirements.txt
 F:\Python314\python.exe -m unittest discover -s tests -t .
 ```
 
-**113 个用例，约 2 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
+**121 个用例，约 2 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
 目录归一化（含 `document_order`/`keep_last`）、目录页发现、正文提取、
 免费六层拦截、四格式导出（含 EPUB 结构与 XML 合法性校验）、
-断点续爬状态机、规则校验、校对报告、字体反爬解码。
+断点续爬状态机、规则校验、校对报告、字体反爬解码、JSON 接口目录、书名清洗。
 
 另有四项**端到端**验证：
 

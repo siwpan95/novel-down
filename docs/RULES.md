@@ -53,7 +53,8 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 |---|---|
 | `url_pattern` | 从书籍 URL 提取 `bid` 的正则，**捕获组 1 即 bid** |
 | `info_url` | 书籍页 URL 模板，支持 `{origin}` `{bid}` `{url}` |
-| `title` / `author` / `intro` / `cover` / `status` | 候选 CSS 选择器**数组**，按序取第一个命中；`meta[...]` 取 `content` 属性，其余取文本 |
+| `title` / `author` / `intro` / `cover` / `status` | 候选 CSS 选择器**数组**，按序取第一个命中；`meta[...]` 取 `content` 属性，其余取文本。特殊值 **`@title`** = 文档 `<title>` 文本 |
+| `title_pattern` | 可选正则，对 `title` 结果做清洗（如 `^(.*?)(?:免费阅读|最新章节)` 去掉站点后缀） |
 
 ### `catalog`
 
@@ -66,7 +67,9 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | `pages.link_pattern` | `auto`/`links` 模式：匹配目录页跳转链接的正则（支持 `{bid}`） |
 | `pages.max_pages` | 目录页上限，默认 80 |
 | `pages.max_rounds` | 迭代轮数上限，默认 4 |
-| `item_selector` | 章节项 `<a>` 的 CSS 选择器 |
+| `mode` | `html`（默认）\| `json_api`（目录来自 JSON 接口，见下） |
+| `json` | `json_api` 模式的配置：`url`（模板，支持 `{origin}/{bid}`）、`items_path`（如 `data.chapters`）、`cid_field`、`title_field`、**`vip_field`**、`vip_truthy` |
+| `item_selector` | 章节项 `<a>` 的 CSS 选择器（`html` 模式必需） |
 | `id_from.mode` | `href`（从链接取）\| `onclick`（从 onclick 取） |
 | `id_from.pattern` | 必须含 **命名捕获组 `(?P<cid>...)`** |
 | `url_template` | 可选。支持 `{origin}` `{bid}` `{cid}`；不填则 `urljoin(页面URL, href)` |
@@ -84,6 +87,7 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | 字段 | 说明 |
 |---|---|
 | `title_selector` | 可选。正文页标题（会自动剥离「（第N页）」后缀） |
+| `browser_wait_selector` | 可选。**章节页**专用的浏览器等待条件（与顶层 `browser.wait_selector` 解耦——书籍页与章节页往往要等不同元素） |
 | `content_selector` | ✓ 正文容器 CSS |
 | `strip_selectors` | 需从容器内剔除的元素（导航 / 标题 / 脚本 / 水印） |
 | `next_page.selector` | 分页导航链接选择器 |
@@ -304,6 +308,57 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 5. 这条规则**没走浏览器路由**：目录与正文都是服务端渲染，纯 HTTP 可取（240KB）。
    用无头浏览器反而只看到 2 个章节链接。**先用实测证据决定路由。**
 
+### F. JSON 接口目录 + 浏览器过 WAF（qimao.com）
+
+**正版**「免费阅读 + 广告」平台。目录不在 HTML 里，而在 JSON 接口；站点又有阿里云 WAF。
+
+```json
+{
+  "id": "qimao.com", "free_only": true, "fetch_mode": "browser",
+  "match": ["qimao.com"],
+  "book": {
+    "url_pattern": "/shuku/(\\d+)",
+    "info_url": "{origin}/shuku/{bid}/",
+    "title": ["@title", ".title"],
+    "title_pattern": "^(.*?)(?:免费阅读|最新章节)"
+  },
+  "browser": {"wait_ms": 1200},
+  "catalog": {
+    "mode": "json_api",
+    "json": {
+      "url": "{origin}/qimaoapi/api/book/chapter-list?book_id={bid}",
+      "items_path": "data.chapters",
+      "cid_field": "id", "title_field": "title",
+      "vip_field": "is_vip", "vip_truthy": ["1", "true"]
+    },
+    "url_template": "{origin}/shuku/{bid}-{cid}/",
+    "sort": "document_order"
+  },
+  "chapter": {
+    "title_selector": "h2.chapter-title",
+    "content_selector": "div.chapter-detail-wrap-content",
+    "browser_wait_selector": "div.chapter-detail-wrap-content"
+  }
+}
+```
+
+关键实测发现：
+
+1. **目录接口带逐章 `is_vip`** —— 比 HTML class 更可靠，第 3 层据此判定、连请求都不发。
+   实测该书 708 章：`is_vip=0` 只有 **20 章**，其余 688 章是 `1`。
+2. **`is_vip=1` 不是付费墙，是 APP 墙**：web 端把这些章的正文替换成
+   「下载【七猫免费小说APP】，继续在APP内免费畅读全本内容」。
+   那段占位文字 **78 字 > 最小字数阈值 50** —— 不显式拦截就会被当成正常正文存下来。
+   → 第 4 层已补「APP 墙」特征词（见 `constants.PAYWALL_MARKERS`）。
+3. **接口必须带 `Accept: application/json`**：只带 `Referer` 仍会被回 23670 字节的
+   SPA 外壳（首字符是 `<`，不是 `{`）。
+4. **站点有阿里云 WAF**（`acw_tc` / `acw_sc__v2`）：纯 HTTP 拿不到数据，
+   用浏览器跑一次 WAF 的 JS 后就放行 → `fetch_mode: browser`。
+   浏览器路由下**取 JSON 必须用页面内 `fetch()`**，不能用 `page.goto`
+   （Chrome 会把 JSON 包成 `<pre>` 的 HTML 文档，破坏解析）。
+5. **书名只在 `<title>` 里**（SPA），且带「免费阅读-七猫中文网」后缀 →
+   用 `@title` + `title_pattern` 清洗。
+
 ---
 
 ## 浏览器路由（`fetch_mode: browser`）
@@ -332,6 +387,14 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 - **不参与任何凭据环节**：不注入 Cookie、不登录、不接管你的浏览器会话。
   若站点要求完成人机验证（captcha），本路由同样会失败——那是需要人参与的步骤，
   代码里不做绕过。
+- **每个导航用独立页面**（实测踩过）：Nuxt/Next 这类 SPA 在文档加载后会立即做客户端
+  路由，复用同一个 page 连续 `goto` 会互相中断 → `net::ERR_ABORTED` 且内容为空
+  （七猫 20 章全 failed）。改为每次 `new_page()`（同 context，WAF cookie 保留）。
+- **不能进线程池**（实测踩过）：Playwright 同步对象绑定创建它的线程，
+  `ThreadPoolExecutor` 会新建线程 → `Cannot switch to a different thread`。
+  browser 模式必须主线程顺序抓。
+- **`net::ERR_ABORTED` 要容错**：SPA 场景下先捕获再等目标元素，
+  配合 `browser_wait_selector` 比死等固定毫秒更稳。
 - **先试 HTTP 再上浏览器**：实测有反直觉的情况——纵横的 `showchapter` 页用无头浏览器
   打开只看到 2 个章节链接（JS 版是懒加载的），而**纯 HTTP 取到的静态 HTML 里有完整
   700 章**。所以不要默认"JS 站就得用浏览器"，先用 `probe_site.py` 与

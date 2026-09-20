@@ -123,48 +123,106 @@ class BrowserFetcher:
         """
         if self._page is None:
             self.start()
-        pg = self._page
-        pg.goto(url, wait_until=wait_until, timeout=self.timeout)
-
-        for sel in (click_selectors or []):
+        ctx = self._ctx
+        # 每次导航用**独立页面**。
+        # 实测踩过（七猫，Nuxt SPA）：复用同一个 page 连续 goto 时，
+        # 上一次的客户端路由会把新的文档级导航中断掉 → net::ERR_ABORTED，
+        # 而且内容是空的（20 章全 failed）。独立页面彻底规避这类状态串扰；
+        # context 复用 → WAF 下发的匿名 cookie 仍然带着，不重复过墙。
+        page = ctx.new_page()
+        try:
             try:
-                el = pg.query_selector(sel)
-                if el:
-                    el.click(timeout=8000)
-                    pg.wait_for_timeout(1500)
-                    self.log(f"  浏览器路由：已点击「{sel}」", "info")
+                page.goto(url, wait_until=wait_until, timeout=self.timeout)
+            except Exception as e:
+                msg = str(e)
+                if ("ERR_ABORTED" in msg or "interrupted" in msg
+                        or "frame was detached" in msg):
+                    self.log("  浏览器路由：导航被 SPA 客户端路由中断，继续等目标元素", "warn")
                 else:
-                    self.log(f"  浏览器路由：未找到「{sel}」（跳过）", "warn")
-            except Exception as e:
-                self.log(f"  浏览器路由：点击「{sel}」失败（跳过）：{e}", "warn")
+                    raise
 
-        if wait_selector:
+            for sel in (click_selectors or []):
+                try:
+                    el = page.query_selector(sel)
+                    if el:
+                        el.click(timeout=8000)
+                        page.wait_for_timeout(1500)
+                        self.log(f"  浏览器路由：已点击「{sel}」", "info")
+                    else:
+                        self.log(f"  浏览器路由：未找到「{sel}」（跳过）", "warn")
+                except Exception as e:
+                    self.log(f"  浏览器路由：点击「{sel}」失败（跳过）：{e}", "warn")
+
+            if wait_selector:
+                try:
+                    page.wait_for_selector(wait_selector,
+                                           timeout=min(self.timeout, 30000))
+                except Exception as e:
+                    self.log(f"  浏览器路由：等待「{wait_selector}」超时，按现状取 DOM：{e}",
+                             "warn")
+            if wait_ms:
+                page.wait_for_timeout(wait_ms)
+            if scroll:
+                try:
+                    page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+                    page.wait_for_timeout(1200)
+                except Exception:
+                    pass
+            return page.content()
+        finally:
             try:
-                pg.wait_for_selector(wait_selector, timeout=min(self.timeout, 30000))
-            except Exception as e:
-                self.log(f"  浏览器路由：等待「{wait_selector}」超时，按现状取 DOM：{e}", "warn")
-        if wait_ms:
-            pg.wait_for_timeout(wait_ms)
-        if scroll:
-            try:
-                pg.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
-                pg.wait_for_timeout(1200)
+                page.close()
             except Exception:
                 pass
-        return pg.content()
 
     def fetch_bytes(self, url: str) -> bytes:
         """经由浏览器上下文取二进制（会在页面内 fetch，故带同源会话）。"""
+        import base64
+        b64 = self._in_page_fetch(url, binary=True)
+        return base64.b64decode(b64)
+
+    def fetch_text(self, url: str) -> str:
+        """经由浏览器上下文取**原始文本**（JSON 接口用）。
+
+        关键：不能用 `page.goto()` —— Chrome 会把 JSON 响应包成一个 `<pre>`
+        的 HTML 文档，`page.content()` 拿到的就不是原始 JSON 了。
+        页面内 `fetch()` 返回的是原始响应体，且同源请求会自动带上
+        站点下发的匿名反爬 cookie（如阿里云 WAF 的 `acw_sc__v2`）——
+        这正是纯 HTTP 路由拿不到的东西。
+        """
+        return self._in_page_fetch(url, binary=False)
+
+    def _in_page_fetch(self, url: str, binary: bool):
+        """在「同源的空页面」里发起 fetch。
+
+        每次用独立页面：同 context → WAF cookie 已在，不必重复过墙；
+        独立页面 → 不受上一次导航残留状态影响。
+        """
         if self._page is None:
             self.start()
-        pg = self._page
-        b64 = pg.evaluate(
-            """async (u) => {
-                 const r = await fetch(u, {credentials:'same-origin'});
-                 const b = await r.arrayBuffer();
-                 let s = ''; const a = new Uint8Array(b);
-                 for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]);
-                 return btoa(s);
-               }""", url)
-        import base64
-        return base64.b64decode(b64)
+        from urllib.parse import urlparse
+        p = urlparse(url)
+        origin = f"{p.scheme}://{p.netloc}/"
+        page = self._ctx.new_page()
+        try:
+            try:
+                page.goto(origin, wait_until="domcontentloaded", timeout=self.timeout)
+            except Exception as e:
+                if "ERR_ABORTED" not in str(e):
+                    raise
+            return page.evaluate(
+                """async ([u, bin]) => {
+                     const r = await fetch(u, {credentials:'same-origin',
+                                               headers:{'Accept':'application/json, text/plain, */*'}});
+                     if (bin) {
+                       const b = await r.arrayBuffer(); const a = new Uint8Array(b);
+                       let s = ''; for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]);
+                       return btoa(s);
+                     }
+                     return await r.text();
+                   }""", [url, binary])
+        finally:
+            try:
+                page.close()
+            except Exception:
+                pass

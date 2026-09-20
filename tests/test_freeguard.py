@@ -133,6 +133,19 @@ class TestLayer4PaywallAndLength(unittest.TestCase):
         _, status2, _ = check_content(["   ", ""])
         self.assertEqual(status2, STATUS_EMPTY)
 
+    def test_app_wall_blocked(self):
+        """APP 墙也是付费墙：web 端只给「下载APP」提示，正文拿不到。
+
+        实测（七猫）：is_vip=1 的章节正文 = 2 段 78 字的 APP 提示，
+        **78 > 最小字数阈值 50** —— 不显式拦截就会被当成正常正文存下来。
+        """
+        for text in ("方式一（推荐）：下载【七猫免费小说APP】，继续在APP内免费畅读全本内容。",
+                     "本书为APP内阅读，请下载客户端阅读全文。",
+                     "请在APP内打开本章。"):
+            protected, status, why = check_content([text])
+            self.assertTrue(protected, f"应拦下 APP 墙：{text[:20]}")
+            self.assertEqual(status, STATUS_BLOCKED)
+
     def test_normal_content_passes(self):
         protected, status, why = check_content(["正常正文。" * 40])
         self.assertFalse(protected)

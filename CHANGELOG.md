@@ -5,6 +5,60 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.3.0] - 2026-09-20
+
+按投入产出继续补站点能力，补上「**JSON 接口目录**」这一整类来源。
+
+### Added
+
+- **正版站点规则：七猫免费小说**（`qimao.com`，字节/百度系「免费阅读 + 广告」平台）。
+  708 章 = 20 章 web 可读 + 688 章 **APP 独占**（不是付费墙）。
+- **`catalog.mode = "json_api"`** —— 目录来自 JSON 接口而非 HTML：
+  `items_path` / `cid_field` / `title_field` / **`vip_field`** / `vip_truthy` / `url_template`。
+  这类接口常带**逐章 VIP 字段**（七猫 `is_vip`、起点 `vip`），比 HTML class 标记更可靠，
+  第 3 层据此判定、连请求都不发。参考项目（backupqidian 的 `ajax/book/category`、
+  `_ref` 里的 Scrapy 爬虫）走的都是这条路。
+- **APP 墙识别**（第 4 层新增一类特征词）：不少中文小说站是「APP 优先」，
+  web 端只放前若干章。实测七猫第21章的"正文"是 2 段 78 字的
+  「下载【七猫免费小说APP】，继续在APP内免费畅读全本内容」——
+  **78 > 最小字数阈值 50**，不显式拦截就会被当成正常正文保存。
+  已补 `APP内免费畅读` / `请在APP` / `下载【` / `扫码下载` 等标记。
+- **`book.title` 支持 `@title` 伪选择器 + `book.title_pattern` 正则清洗**：
+  SPA 站点（七猫）书名只在文档 `<title>` 里且带站点后缀，
+  用 `^(.*?)(?:免费阅读|...)` 即可拿到干净书名。
+- **`chapter.browser_wait_selector`**：章节页专用等待条件（与书籍页解耦）。
+
+### Fixed
+
+- **浏览器路由不能复用同一个 page**：实测七猫（Nuxt SPA）连续 `goto` 时，
+  上一次的客户端路由会中断新的文档级导航 → `net::ERR_ABORTED`，**20 章全 failed**。
+  改为每次导航用独立页面（同 context，WAF cookie 保留）。
+- **浏览器路由不能走线程池**：Playwright 同步对象绑定创建它的线程，
+  `ThreadPoolExecutor` 会新建线程 → `Cannot switch to a different thread`。
+  browser 模式改为主线程顺序抓。
+- **browser 路由取 JSON 不能用 `page.goto`**：Chrome 会把 JSON 包成 `<pre>` 的 HTML
+  文档，破坏解析。改用页面内 `fetch()` 取原始响应体（同源请求自动带上 WAF cookie）。
+- **校对误报乱序**：`catalog.sort=document_order` 的站点（雪花 ID：番茄/七猫）
+  章节号本来就不单调，检查它只会误报。`Book.catalog_sort` 现在会传给校对层并跳过该检查。
+- **规则校验放宽**：`item_selector` 仅在非 json_api 模式下必需。
+
+### 实测订正
+
+- 起点：WAF 是**腾讯云 Chaos VM**（95KB 虚拟机式 JS 挑战），不是 2019 年那篇博客
+  说的"很业余"。无头 Chromium 等 42s 不放行、`navigator.webdriver=true` 被识别。
+  **`_ref` 里的 QidianCrawler（DrissionPage）选择器 `#bookName`/`.chapter-name`/
+  `.content-text` 已记录备用**；其 README 亦写明只有 VIP 章才需要用户手动登录。
+- 七猫接口必须带 `Accept: application/json`：只带 `Referer` 仍被回 23670 字节的 SPA 外壳。
+
+### 验证
+
+- 121 用例全绿（约 2s）；新增 JSON 接口目录、书名清洗、APP 墙拦截的测试。
+- 七猫 E2E：708 章 → 抓 20 / locked 688；43 065 字；校对 PASS；
+  `verify_artifacts` 证明 **locked 章零请求、零泄漏、无 APP 墙残留**。
+- 免费约束自检 PASS；仓库卫生门禁 PASS。
+
+---
+
 ## [0.2.0] - 2026-09-20
 
 承接 0.1.0 的拦截粒度修正，继续把「过度防御」的残留清掉，并补齐两个能力缺口。

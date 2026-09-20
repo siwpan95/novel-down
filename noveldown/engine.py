@@ -30,8 +30,9 @@ from .identity_manager import get_identity_manager
 from .models import (Book, STATUS_BLOCKED, STATUS_EMPTY, STATUS_FAILED,
                      STATUS_LOCKED, STATUS_OK, STATUS_PENDING)
 from .parser import (catalog_links_from_page, catalog_page_urls,
-                     collect_catalog_items, normalize_catalog, origin_of,
-                     parse_book_info, parse_chapter_page)
+                     collect_catalog_items, collect_json_catalog,
+                     normalize_catalog, origin_of, parse_book_info,
+                     parse_chapter_page)
 from .ratelimit import RateLimiter
 from .rules import find_rule, load_rules
 from .state import StateStore
@@ -81,10 +82,10 @@ class Downloader:
     # ========================================================
     #  HTTP
     # ========================================================
-    def _fetch(self, url: str, referer=None) -> str:
+    def _fetch(self, url: str, referer=None, wait_selector=None) -> str:
         # 浏览器路由：目录/正文靠 JS 渲染的站点（见 browser.py）
         if self.rule.fetch_mode == "browser":
-            return self._fetch_browser(url)
+            return self._fetch_browser(url, wait_selector)
 
         with self._lock:
             ident = self.idm.get_identity(self._ident)
@@ -112,6 +113,30 @@ class Downloader:
     # --------------------------------------------------------
     #  浏览器路由（可选依赖 playwright）
     # --------------------------------------------------------
+    def _fetch_raw(self, url: str, referer=None) -> str:
+        """取**原始文本**（JSON 接口用）。
+
+        浏览器路由下不能用 `pg.goto` —— Chrome 会把 JSON 包成
+        `<pre>` 的 HTML 文档，破坏解析。改用页面内 `fetch` 取原始响应体，
+        同源请求会自动带上 WAF 下发的匿名 cookie。
+        """
+        if self.rule.fetch_mode == "browser":
+            self.limiter.wait()
+            return self._browser().fetch_text(url)
+        return self._fetch(url, referer=referer)
+
+    def _collect_json_catalog(self, rule, bid, origin, book_url):
+        """按 catalog.mode=json_api 从接口取目录。"""
+        cfg = rule.catalog_cfg.get("json") or {}
+        tpl = cfg.get("url") or ""
+        url = (tpl.replace("{origin}", origin).replace("{bid}", bid)
+                  .replace("{url}", book_url))
+        self.log(f"[目录] JSON 接口 {url}")
+        text = self._fetch_raw(url, referer=book_url)
+        items, locked = collect_json_catalog(rule, text, bid, origin)
+        self.log(f"[目录] 接口返回：章节 {len(items)}，受保护 {len(locked)}")
+        return items, locked
+
     def _browser(self):
         """惰性创建并复用唯一的 BrowserFetcher（只在主线程里用）。"""
         if self._browser_fetcher is None:
@@ -126,12 +151,12 @@ class Downloader:
             self.log("  浏览器路由已启动（Chromium）")
         return self._browser_fetcher
 
-    def _fetch_browser(self, url: str) -> str:
+    def _fetch_browser(self, url: str, wait_selector: str = None) -> str:
         cfg = self.rule.browser_cfg
         self.limiter.wait()
         html = self._browser().fetch(
             url,
-            wait_selector=cfg.get("wait_selector"),
+            wait_selector=wait_selector or cfg.get("wait_selector"),
             wait_ms=int(cfg.get("wait_ms", 0)),
             click_selectors=cfg.get("click_selectors"),
             scroll=bool(cfg.get("scroll", False)),
@@ -183,31 +208,35 @@ class Downloader:
         info = parse_book_info(rule, book_html, book_url, bid)
         book = Book(site=rule.id, book_id=bid, url=book_url, **info)
 
-        # ---- 目录页发现（迭代展开）----
-        catalog_pages = self._discover_catalog_pages(rule, book_url, book_html,
-                                                     bid, origin)
-        self.log(f"[目录] 共 {len(catalog_pages)} 个目录页")
-
+        # ---- 目录收集：JSON 接口 或 HTML ----
         all_items, all_locked = [], []
-        for i, (pu, html) in enumerate(catalog_pages, 1):
-            if html is None:
-                self.log(f"[目录] 第 {i} 页抓取失败（跳过）：{pu}", "error")
-                continue
-            items, locked = collect_catalog_items(rule, html, pu, bid)
-            self.log(f"[目录] 第 {i}/{len(catalog_pages)} 页："
-                     f"章节 {len(items)}，受保护 {len(locked)}")
-            all_items.extend(items)
-            all_locked.extend(locked)
+        if rule.catalog_cfg.get("mode") == "json_api":
+            all_items, all_locked = self._collect_json_catalog(rule, bid, origin,
+                                                               book_url)
+        else:
+            catalog_pages = self._discover_catalog_pages(rule, book_url, book_html,
+                                                         bid, origin)
+            self.log(f"[目录] 共 {len(catalog_pages)} 个目录页")
+            for i, (pu, html) in enumerate(catalog_pages, 1):
+                if html is None:
+                    self.log(f"[目录] 第 {i} 页抓取失败（跳过）：{pu}", "error")
+                    continue
+                items, locked = collect_catalog_items(rule, html, pu, bid)
+                self.log(f"[目录] 第 {i}/{len(catalog_pages)} 页："
+                         f"章节 {len(items)}，受保护 {len(locked)}")
+                all_items.extend(items)
+                all_locked.extend(locked)
 
         for lk in all_locked:
-            lk["status"] = STATUS_LOCKED
-            lk["note"] = lk.get("reason", "目录标记为受保护")
+            lk.setdefault("status", STATUS_LOCKED)
+            lk.setdefault("note", lk.get("reason", "目录标记为受保护"))
 
         sort_mode = rule.catalog_cfg.get("sort", "cid_numeric_asc")
         dedupe = rule.catalog_cfg.get("dedupe", "keep_first")
         chapters = normalize_catalog(all_items + all_locked, sort_mode, dedupe)
 
         book.chapters = chapters
+        book.catalog_sort = sort_mode
         book.volumes = sorted({c.volume for c in chapters if c.volume})
         self.book = book
 
@@ -343,6 +372,22 @@ class Downloader:
     # ========================================================
     #  章节抓取
     # ========================================================
+    def _on_chapter_done(self, ch, store, book):
+        """单章收尾：落缓存、打日志、报进度、定期落状态。"""
+        with self._lock:
+            self._done += 1
+            n = self._done
+        store.save_chapter(ch)
+        if ch.status == STATUS_OK:
+            msg = f"[{n}/{self._total}] #{ch.index} {ch.title[:26]} ({ch.char_count}字)"
+        else:
+            msg = (f"[{n}/{self._total}] #{ch.index} {ch.title[:26]} "
+                   f"→ {ch.status}（{ch.note}）")
+        self.log(msg, "info" if ch.status == STATUS_OK else "warn")
+        self.progress(n, self._total, ch.title)
+        if n % STATE_SAVE_INTERVAL == 0:
+            store.save_state(book)
+
     def _fetch_one_chapter(self, ch) -> None:
         """抓取单章（含分页拼装）+ 免费章节校验。"""
         paragraphs, pages = [], []
@@ -356,7 +401,9 @@ class Downloader:
                 break
             seen.add(url)
             try:
-                html = self._fetch(url, referer=self.book.url)
+                html = self._fetch(url, referer=self.book.url,
+                                   wait_selector=self.rule.chapter_cfg.get(
+                                       "browser_wait_selector"))
             except Exception as e:
                 if pages:
                     break                     # 已有内容，续页失败就收尾
@@ -464,27 +511,29 @@ class Downloader:
 
         t0 = time.time()
         try:
-            with ThreadPoolExecutor(max_workers=concurrency) as pool:
-                futures = {pool.submit(self._fetch_one_chapter, c): c for c in pending}
-                for fut in as_completed(futures):
-                    ch = futures[fut]
+            if self.rule.fetch_mode == "browser":
+                # 浏览器路由**完全不进线程池**：Playwright 同步对象绑定创建它的线程，
+                # 线程池会新建线程 → 报 "Cannot switch to a different thread"。
+                # 主线程里顺序抓，语义也更清晰。
+                for ch in pending:
                     try:
-                        fut.result()
+                        self._fetch_one_chapter(ch)
                     except Exception as e:
                         ch.status = STATUS_FAILED
                         ch.note = f"未捕获异常：{e}"
-                    with self._lock:
-                        self._done += 1
-                        n = self._done
-                    store.save_chapter(ch)
-                    if ch.status == STATUS_OK:
-                        msg = f"[{n}/{self._total}] #{ch.index} {ch.title[:26]} ({ch.char_count}字)"
-                    else:
-                        msg = f"[{n}/{self._total}] #{ch.index} {ch.title[:26]} → {ch.status}（{ch.note}）"
-                    self.log(msg, "info" if ch.status == STATUS_OK else "warn")
-                    self.progress(n, self._total, ch.title)
-                    if n % STATE_SAVE_INTERVAL == 0:
-                        store.save_state(book)
+                    self._on_chapter_done(ch, store, book)
+            else:
+                with ThreadPoolExecutor(max_workers=concurrency) as pool:
+                    futures = {pool.submit(self._fetch_one_chapter, c): c
+                               for c in pending}
+                    for fut in as_completed(futures):
+                        ch = futures[fut]
+                        try:
+                            fut.result()
+                        except Exception as e:
+                            ch.status = STATUS_FAILED
+                            ch.note = f"未捕获异常：{e}"
+                        self._on_chapter_done(ch, store, book)
         finally:
             self.close()
 

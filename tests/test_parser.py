@@ -190,3 +190,91 @@ class TestChapterExtract(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestJsonApiCatalog(unittest.TestCase):
+    """JSON 接口目录（七猫形态）：比 HTML 更强的 VIP 判定来源。"""
+
+    def _rule(self, **json_over):
+        from noveldown.rules import Rule
+        cfg = {
+            "url": "{origin}/qimaoapi/api/book/chapter-list?book_id={bid}",
+            "items_path": "data.chapters",
+            "cid_field": "id", "title_field": "title",
+            "vip_field": "is_vip", "vip_truthy": ["1", "true"],
+        }
+        cfg.update(json_over)
+        return Rule({
+            "id": "t.qimao", "name": "T", "match": ["qimao.com"], "free_only": True,
+            "book": {"url_pattern": "/shuku/(\\d+)"},
+            "catalog": {"mode": "json_api", "json": cfg,
+                        "url_template": "{origin}/shuku/{bid}-{cid}/"},
+            "chapter": {"content_selector": "div.c"},
+        }).validate()
+
+    SAMPLE = ('{"data":{"chapters":['
+              '{"id":"1001","title":"第1章  起","is_vip":"0","index":"1"},'
+              '{"id":"1002","title":"第2章  承","is_vip":"1","index":"2"},'
+              '{"id":"1003","title":"第3章  转","is_vip":"0","index":"3"}]}}')
+
+    def test_parses_and_splits_vip(self):
+        from noveldown.parser import collect_json_catalog
+        items, locked = collect_json_catalog(self._rule(), self.SAMPLE, "999",
+                                            "https://www.qimao.com")
+        self.assertEqual([i["cid"] for i in items], ["1001", "1003"])
+        self.assertEqual([i["cid"] for i in locked], ["1002"])
+        self.assertEqual(items[0]["url"], "https://www.qimao.com/shuku/999-1001/")
+        self.assertEqual(items[0]["title"], "第1章 起")
+        self.assertIn("is_vip", locked[0]["note"])
+
+    def test_no_vip_field_keeps_all(self):
+        from noveldown.parser import collect_json_catalog
+        items, locked = collect_json_catalog(self._rule(vip_field=None),
+                                            self.SAMPLE, "999", "https://x")
+        self.assertEqual(len(items), 3)
+        self.assertEqual(locked, [])
+
+    def test_bad_json_raises_with_hint(self):
+        from noveldown.parser import collect_json_catalog
+        with self.assertRaises(ValueError) as ctx:
+            collect_json_catalog(self._rule(), "<html>SPA 外壳</html>", "9", "https://x")
+        self.assertIn("不是 JSON", str(ctx.exception))
+
+    def test_wrong_items_path_raises_with_keys(self):
+        from noveldown.parser import collect_json_catalog
+        with self.assertRaises(ValueError) as ctx:
+            collect_json_catalog(self._rule(items_path="data.nope"),
+                                 self.SAMPLE, "9", "https://x")
+        self.assertIn("取不到列表", str(ctx.exception))
+
+
+class TestTitlePattern(unittest.TestCase):
+    """书名清洗：SPA 站点书名只在 <title> 里，且带站点后缀。"""
+
+    def _rule(self, **over):
+        from noveldown.rules import Rule
+        book = {"url_pattern": "/s/(\\d+)",
+                "title": ["@title", ".title"],
+                "author": [".author"],
+                "title_pattern": "^(.*?)(?:免费阅读|最新章节)"}
+        book.update(over)
+        return Rule({"id": "t.x", "name": "T", "match": ["x.com"], "free_only": True,
+                     "book": book,
+                     "catalog": {"item_selector": "a",
+                                 "id_from": {"mode": "href", "pattern": "(?P<cid>\\d+)"}},
+                     "chapter": {"content_selector": "div.c"}}).validate()
+
+    def test_title_from_page_title_with_pattern(self):
+        from noveldown.parser import parse_book_info
+        html = ("<html><head><title>封总，太太想跟你离婚很久了免费阅读-七猫中文网</title>"
+                "</head><body><div class='title'>封总，太太想跟你离婚很久了 9.2分</div>"
+                "<div class='author'>云中觅</div></body></html>")
+        info = parse_book_info(self._rule(), html, "https://x/s/1/", "1")
+        self.assertEqual(info["title"], "封总，太太想跟你离婚很久了")
+        self.assertEqual(info["author"], "云中觅")
+
+    def test_falls_back_to_selector_when_no_page_title(self):
+        from noveldown.parser import parse_book_info
+        html = "<html><head></head><body><div class='title'>备用书名</div></body></html>"
+        info = parse_book_info(self._rule(), html, "https://x/s/1/", "1")
+        self.assertEqual(info["title"], "备用书名")

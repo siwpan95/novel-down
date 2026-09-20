@@ -1,11 +1,77 @@
 {
   "id": "qimao.com",
   "name": "七猫免费小说（正版·全免费）",
-  "enabled": false,
+  "enabled": true,
   "free_only": true,
+  "predecode": false,
   "requires_js": true,
-  "demo_url": "https://www.qimao.com/",
-  "disabled_reason": "技术原因，非政策拒绝：首页返回 200 但只有 23KB、仅 2 个 <script>、无书籍链接也无可断言的初始状态数据，内容由 JS 渲染（实测 2026-09-20）。",
-  "match": ["qimao.com"],
-  "notes": "七猫是「免费阅读 + 广告」模式，理论上**全站无 VIP 章节**，是本项目最理想的站点类型之一；只差拿到它的 API。"
+  "fetch_mode": "browser",
+  "demo_url": "https://www.qimao.com/shuku/1879266/",
+  "disabled_reason": "",
+  "notes": "★ 正版「免费阅读 + 广告」平台，全站无 VIP 章节。本条规则同时验证了两个能力：\n\n1) **JSON 接口目录**（catalog.mode=json_api）：目录不在 HTML 里，而是接口\n   https://www.qimao.com/qimaoapi/api/book/chapter-list?book_id={bid}\n   返回 {data:{chapters:[{id,title,is_vip,words,index,...}]}}。\n   接口带**逐章 is_vip 字段** —— 比 HTML class 标记更可靠，第 3 层据此判定。\n   注意 headers 必须带 Accept: application/json，否则被回 SPA 外壳（实测：连\n   Referer 都带上了也还是 23670 字节的首页壳，直到补上 Accept 才通）。\n\n2) **浏览器路由**（fetch_mode=browser）：站点用**阿里云 WAF**（acw_tc/acw_sc__v2）。\n   纯 HTTP 缺 acw_sc__v2 就拿不到数据；浏览器跑一次 WAF 的 JS 后就放行。\n   浏览器路由下取 JSON 必须用**页面内 fetch**（browser.fetch_text）——\n   用 page.goto 会被 Chrome 包成 <pre> 的 HTML，破坏 JSON 解析。\n\n实测（2026-09-20）：本书 708 章，is_vip 全为 \"0\"（全免费）；\n章节页正文在 div.chapter-detail-wrap-content，首段「容辞抵达a国机场时，已经晚上九点多了。」；\n页面 PUA 码位只见于图标字体（\\ue655 之类），正文本身无字体反爬。",
+  "match": [
+    "qimao.com"
+  ],
+  "book": {
+    "url_pattern": "/shuku/(\\d+)",
+    "info_url": "{origin}/shuku/{bid}/",
+    "title": [
+      "@title",
+      ".title"
+    ],
+    "author": [
+      ".author",
+      ".book-author",
+      "meta[property='og:novel:author']"
+    ],
+    "intro": [
+      ".intro",
+      "meta[name='description']"
+    ],
+    "cover": [
+      "meta[property='og:image']",
+      ".book-img img"
+    ],
+    "status": [],
+    "title_pattern": "^(.*?)(?:免费阅读|最新章节|全文阅读|免费小说)"
+  },
+  "browser": {
+    "wait_ms": 1200
+  },
+  "catalog": {
+    "mode": "json_api",
+    "json": {
+      "url": "{origin}/qimaoapi/api/book/chapter-list?book_id={bid}",
+      "items_path": "data.chapters",
+      "cid_field": "id",
+      "title_field": "title",
+      "vip_field": "is_vip",
+      "vip_truthy": [
+        "1",
+        "true",
+        "yes"
+      ]
+    },
+    "url_template": "{origin}/shuku/{bid}-{cid}/",
+    "sort": "document_order",
+    "dedupe": "keep_first",
+    "volume_selector": null
+  },
+  "chapter": {
+    "title_selector": "h2.chapter-title",
+    "content_selector": "div.chapter-detail-wrap-content",
+    "strip_selectors": [
+      "script",
+      "style",
+      "div.chapter-tips",
+      "dl.chapter-tips"
+    ],
+    "ad_patterns": [
+      "七猫免费小说",
+      "七猫中文网",
+      "qimao",
+      "请记住本站"
+    ],
+    "browser_wait_selector": "div.chapter-detail-wrap-content"
+  }
 }

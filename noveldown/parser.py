@@ -24,7 +24,7 @@ import soupsieve as sv
 from bs4 import BeautifulSoup
 
 from .freeguard import is_vip_item
-from .models import Chapter, STATUS_PENDING
+from .models import Chapter, STATUS_LOCKED, STATUS_PENDING
 from .predecode import predecode
 
 # ------------------------------------------------------------
@@ -55,13 +55,18 @@ def select_first(soup, selectors):
     if isinstance(selectors, str):
         selectors = [selectors]
     for sel in selectors or []:
-        try:
-            el = soup.select_one(sel)
-        except Exception:
-            continue
+        el = select_one_safe(soup, sel)
         if el is not None:
             return el
     return None
+
+
+def select_one_safe(soup, sel):
+    """容错 select_one：选择器非法/不支持时返回 None 而不抛。"""
+    try:
+        return soup.select_one(sel)
+    except Exception:
+        return None
 
 
 def el_value(el):
@@ -101,15 +106,44 @@ def clean_page_title(s: str) -> str:
 # ------------------------------------------------------------
 
 def parse_book_info(rule, html: str, url: str, bid: str) -> dict:
-    """解析书籍元信息（标题/作者/简介/封面/状态）。"""
+    """解析书籍元信息（标题/作者/简介/封面/状态）。
+
+    选择器特殊值：
+      `@title` —— 取文档 `<title>` 的文本。SPA 站点（七猫）的书籍页里书名
+      常只出现在 `<title>` 里，配合 `book.title_pattern` 正则清洗即可
+      （如 `^(.*?)免费阅读` 去掉站点后缀）。
+    """
     soup = make_soup(html)
     cfg = rule.book_cfg
+
+    def _pick(selectors):
+        if isinstance(selectors, str):
+            selectors = [selectors]
+        for sel in selectors or []:
+            if sel == "@title":
+                if soup.title and soup.title.string:
+                    return soup.title.string.strip()
+                continue
+            el = select_one_safe(soup, sel)
+            if el is not None:
+                v = el_value(el)
+                if v:
+                    return v
+        return ""
+
+    title = _pick(cfg.get("title"))
+    pat = cfg.get("title_pattern")
+    if pat and title:
+        m = re.search(pat, title, re.S)
+        if m:
+            title = (m.group(1) if m.groups() else m.group(0)).strip()
+
     return {
-        "title": el_value(select_first(soup, cfg.get("title"))),
-        "author": el_value(select_first(soup, cfg.get("author"))),
-        "intro": el_value(select_first(soup, cfg.get("intro"))),
-        "cover": el_value(select_first(soup, cfg.get("cover"))),
-        "status": el_value(select_first(soup, cfg.get("status"))),
+        "title": title,
+        "author": _pick(cfg.get("author")),
+        "intro": _pick(cfg.get("intro")),
+        "cover": _pick(cfg.get("cover")),
+        "status": _pick(cfg.get("status")),
     }
 
 
@@ -371,6 +405,84 @@ def normalize_catalog(items, sort_mode: str = "cid_numeric_asc",
             status=it.get("status", STATUS_PENDING),
             note=it.get("note", "")))
     return chapters
+
+
+# ------------------------------------------------------------
+#  目录：JSON 接口形态
+# ------------------------------------------------------------
+
+def _dig(obj, path: str):
+    """按 `a.b.c` 或 `a.0.b` 取嵌套值，缺失返回 None。"""
+    cur = obj
+    for part in (path or "").split("."):
+        if part == "":
+            continue
+        if isinstance(cur, list):
+            try:
+                cur = cur[int(part)]
+            except (ValueError, IndexError):
+                return None
+        elif isinstance(cur, dict):
+            if part not in cur:
+                return None
+            cur = cur[part]
+        else:
+            return None
+    return cur
+
+
+def collect_json_catalog(rule, text: str, bid: str, origin: str):
+    """从 JSON 接口响应里收集章节。
+
+    为什么要支持这种形态：不少站点的目录**只走 JSON 接口**
+    （起点 `ajax/book/category`、七猫 `qimaoapi/api/book/chapter-list`…），
+    静态 HTML 里根本没有章节链接。参考项目（backupqidian、_qtref 里的 Scrapy 爬虫）
+    走的都是这条路。
+
+    **额外好处**：这类接口常带**逐章 VIP 字段**（如七猫的 `is_vip`、起点的 `vip`），
+    比 HTML class 标记更可靠 —— 第 3 层据此就能判定，连请求都不发。
+
+    Returns: (items, locked)
+    """
+    import json as _json
+
+    cfg = rule.catalog_cfg.get("json") or {}
+    try:
+        data = _json.loads(text)
+    except (ValueError, TypeError) as e:
+        raise ValueError(f"目录接口返回的不是 JSON：{e}；前 80 字：{(text or '')[:80]!r}")
+
+    items = _dig(data, cfg.get("items_path", "data.chapters"))
+    if not isinstance(items, list):
+        raise ValueError(
+            f"目录接口的 items_path={cfg.get('items_path')!r} 取不到列表；"
+            f"顶层键：{list(data.keys()) if isinstance(data, dict) else type(data).__name__}")
+
+    cid_f = cfg.get("cid_field", "id")
+    title_f = cfg.get("title_field", "title")
+    vip_f = cfg.get("vip_field")
+    truthy = {str(x).lower() for x in (cfg.get("vip_truthy") or ["1", "true", "yes"])}
+    tpl = rule.catalog_cfg.get("url_template") or ""
+
+    out, locked = [], []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        cid = str(it.get(cid_f, "")).strip()
+        if not cid:
+            continue
+        title = _norm_space(str(it.get(title_f, "")))
+        url = (tpl.replace("{origin}", origin).replace("{bid}", bid).replace("{cid}", cid))
+        rec = {"cid": cid, "title": title, "url": url, "volume": ""}
+        if vip_f:
+            val = it.get(vip_f)
+            if val is not None and str(val).lower() in truthy:
+                locked.append({**rec, "status": STATUS_LOCKED,
+                               "note": f"目录接口字段 {vip_f}={val} 标记为受保护",
+                               "reason": f"目录接口字段 {vip_f}={val}"})
+                continue
+        out.append(rec)
+    return out, locked
 
 
 # ------------------------------------------------------------

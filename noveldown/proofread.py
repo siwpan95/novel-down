@@ -54,19 +54,23 @@ def proofread(book) -> dict:
     missing, out_of_order, dup_title, dup_body = [], [], [], []
     ad_residue, short_chapter, mojibake = [], [], []
 
-    # 乱序检查：cid 数值应单调递增
+    # 乱序检查：cid 数值应单调递增。
+    # 例外：catalog.sort=document_order 的站点（雪花 ID，如番茄/七猫）
+    # 章节 ID 与阅读顺序无关，检查单调性只会误报 —— 直接跳过。
+    cid_ordered = getattr(book, "catalog_sort", "cid_numeric_asc") != "document_order"
     nums = []
     for c in book.chapters:
         m = re.search(r"(\d+)", c.cid or "")
         nums.append(int(m.group(1)) if m else None)
     prev = None
-    for c, n in zip(book.chapters, nums):
-        if n is None:
-            continue
-        if prev is not None and n < prev:
-            out_of_order.append({"index": c.index, "cid": c.cid,
-                                 "title": c.title, "prev_cid": prev})
-        prev = n
+    if cid_ordered:
+        for c, n in zip(book.chapters, nums):
+            if n is None:
+                continue
+            if prev is not None and n < prev:
+                out_of_order.append({"index": c.index, "cid": c.cid,
+                                     "title": c.title, "prev_cid": prev})
+            prev = n
 
     # 缺失（抓取失败/正文异常）与「未抓取」必须分开：
     # --limit 限流抓取时，未抓章节是预期状态，不该判为「缺失」。
