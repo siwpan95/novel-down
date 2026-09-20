@@ -14,7 +14,7 @@
 
 ## 特性
 
-- **规则驱动**：一个站点一个 JSON，加站不改代码。内置 **9 个**实测可用站点规则（+1 条停用存根）。
+- **规则驱动**：一个站点一个 JSON，加站不改代码。内置 **10 个**实测可用站点规则（+1 条停用存根）。
 - **双路由取页**：纯 HTTP 为主；目录靠 JS 渲染、或站点有 WAF 的，可切**真实浏览器路由**
   （`fetch_mode: browser`，Playwright/Chromium）。**反检测模式**（`browser.anti_detect`）
   用本机**真 Chrome + headed + 关 AutomationControlled + 语言自洽**，可过腾讯云 Chaos VM。
