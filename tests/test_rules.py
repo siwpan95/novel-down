@@ -28,7 +28,9 @@ class TestLoadRules(unittest.TestCase):
              "qidian.com",                                   # 正版·含 VIP（反检测浏览器过腾讯 Chaos VM）
              "shuhai.com",                                   # 正版（杰奇 CMS，目录走 method=getcatalog）
              "tadu.com",                                     # 正版（正文来自 JSON 接口 body_api）
-             "ciweimao.com"})                                 # 停用存根（人机验证红线）
+             "ciweimao.com",                                 # 停用存根（人机验证红线）
+             "xrzww.com",                                    # 停用存根（正文需登录，红线）
+             "youdubook.com"})                                # 停用存根（同息壤，登录墙）
         enabled = {r.id for r in rules.values() if r.enabled}
         self.assertEqual(enabled, {"shuquge.com", "bqgbe.cc", "biqu520.net",
                                    "fanqienovel.com", "zongheng.com", "qimao.com",
@@ -55,7 +57,7 @@ class TestLoadRules(unittest.TestCase):
         """
         rules = load_rules()
         disabled = {r.id for r in rules.values() if not r.enabled}
-        self.assertEqual(disabled, {"ciweimao.com"})
+        self.assertEqual(disabled, {"ciweimao.com", "xrzww.com", "youdubook.com"})
         r = rules["ciweimao.com"]
         self.assertGreater(len(r.disabled_reason), 40)
         # 原因必须点出**红线性质**（人机验证）与实测证据（man_machine_verify）
@@ -69,6 +71,19 @@ class TestLoadRules(unittest.TestCase):
         msg = str(ctx.exception)
         self.assertIn("已停用", msg)
         self.assertIn("人机验证", msg)
+
+    def test_login_wall_stubs_document_evidence(self):
+        """登录墙类存根（息壤/有毒）必须写明可复核证据：401 用户验证失败。"""
+        rules = load_rules()
+        # 两站的停用原因都必须点出「用户验证失败」这一可复核证据
+        for rid in ("xrzww.com", "youdubook.com"):
+            r = rules[rid]
+            self.assertFalse(r.enabled)
+            self.assertIn("用户验证失败", r.disabled_reason)
+        # 息壤的 notes 要写明接口名与实测细节；有毒指向息壤的记录
+        self.assertIn("readNovelByWeb", rules["xrzww.com"].notes)
+        self.assertIn("directoryList", rules["xrzww.com"].notes)
+        self.assertIn("xrzww", rules["youdubook.com"].disabled_reason)
 
     def test_vip_site_rule_is_enabled_and_guards_vip(self):
         """回归：含 VIP 的正版站（纵横）必须是**启用**状态。

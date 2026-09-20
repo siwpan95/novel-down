@@ -1,0 +1,11 @@
+{
+  "id": "xrzww.com",
+  "name": "息壤中文网",
+  "enabled": false,
+  "free_only": true,
+  "requires_js": true,
+  "demo_url": "https://www.xrzww.com/bookdetail/113254",
+  "disabled_reason": "正文需登录（红线）：目录接口 /api/directoryList?nid= 完全开放、逐章带 chapter_ispay 付费标记（实测 305 章 = 46 免费 / 259 付费），但**正文接口 /api/readNovelByWeb 恒返回 {code:401, message:用户验证失败}** —— 纯 HTTP 与**真 Chrome + headed + 反检测浏览器会话内**（带 cookie、credentials:include）结果一致。属登录墙，本项目不做凭据流程，故不实现。",
+  "notes": "实探记录（2026-09-20）：\n  · SPA（Vue），首页/书籍页/阅读页外壳 48 KB，书籍页渲染后 **0 个 <a href>**（全靠 JS 点击）；\n  · 站点把**顶象验证码 SDK**（cdn.dingxiang-inc.com/ctu-group/captcha-ui/index.js）加载进外壳，\n    但书籍页渲染后 **captcha DOM 元素数 = 0** → 验证码未激活，不是拦截点；\n  · 目录接口 OPEN：`/api/directoryList?nid={nid}&orderBy=0`\n    → {data:{volume:[...], data:[{chapter_id, chapter_cid, chapter_vid, chapter_name,\n       chapter_isvip, chapter_ispay, chapter_islogin, chapter_order}, ...]}}；\n    实测 `chapter_isvip` 恒 0，真正的付费信号是 **chapter_ispay**（46 免费 / 259 付费）。\n    书页信息 `/api/webNovelDetail?novel_id=`（novel_name/novel_author/novel_info）同样 OPEN。\n  · 正文接口：`/api/readNovelByWeb?nid=&vid=&chapter_id=&chapter_order=&showpic=true`\n    → **HTTP 200 但 body 是 {\"code\":401,\"message\":\"用户验证失败\"}**；\n    阅读页 /bookread 渲染后可见文本仅 188 字（全是导航与书籍元信息，`字 NaN-NaN-NaN`），**无正文**。\n    浏览器会话内 in-page fetch 复测：同样 401。\n\n【判据（可复用）】「HTTP 200 + JSON code=401 用户验证失败」→ 属**登录墙**（不是验证码、也不是反爬令牌），\n本项目一律不做。注意区分：目录开放 ≠ 正文可取。\n\n【youdubook.com（有毒小说网）同判】同一套 SPA 外壳（同 oss.xrzww.com 资源与相同 keywords），\n实测返回同款 200/2870B 外壳 → 同一技术栈，同样受登录墙限制，一并停用。",
+  "match": ["xrzww.com"]
+}

@@ -14,7 +14,7 @@
 
 ## 特性
 
-- **规则驱动**：一个站点一个 JSON，加站不改代码。内置 **10 个**实测可用站点规则（+1 条停用存根）。
+- **规则驱动**：一个站点一个 JSON，加站不改代码。内置 **10 个**实测可用站点规则（+3 条停用存根）。
 - **双路由取页**：纯 HTTP 为主；目录靠 JS 渲染、或站点有 WAF 的，可切**真实浏览器路由**
   （`fetch_mode: browser`，Playwright/Chromium）。**反检测模式**（`browser.anti_detect`）
   用本机**真 Chrome + headed + 关 AutomationControlled + 语言自洽**，可过腾讯云 Chaos VM。
@@ -111,8 +111,9 @@ F:\Python314\python.exe -m noveldown selfcheck
 | 笔趣阁 bqgbe | 免费阅读站 | `bqgbe.cc` | 169 | 第 1 章 55 段 / 1352 字，base64×33 |
 | 笔趣阁 biqu520 | 免费阅读站 | `biqu520.net` | 2653 | 第 1 章 45 段 / 1345 字，base64×23 |
 
-**另有一条停用存根** `ciweimao.com`（刺猬猫）：章节页 307 →「验证码 - 刺猬猫」（极验），
-**本机真 Chrome + headed 也被挡** → 属「给人的图形验证码」，命中红线，不做。详见 [FREE_ONLY.md](./docs/FREE_ONLY.md)。
+**另有三条停用存根**（红线，均附可复核证据）：`ciweimao.com`（刺猬猫，人机验证：章节页 307 → 极验）、
+`xrzww.com`（息壤，登录墙：正文接口恒 `{code:401,用户验证失败}`，真 Chrome 也 401）、
+`youdubook.com`（有毒小说网，同息壤）。详见 [FREE_ONLY.md](./docs/FREE_ONLY.md)。
 
 > **纵横这条最能说明设计取向**：那是一本 705 章的正版小说，其中 **650 章是 VIP**。
 > 「站点含 VIP」不是拒绝理由——那 50 章免费内容在射程内；VIP 章由**目录层的 class 标记**
@@ -188,7 +189,7 @@ novel-down/
 ├── tools/verify_reader.py     真实浏览器验证 HTML 阅读器（Playwright）
 ├── tools/make_screenshot.py   生成 README 演示截图（用自撰文本，不含第三方正文）
 ├── tools/check_repo.py        仓库卫生门禁（本仓不含第三方源码 / 凭据 / 产物）
-├── tests/                     156 个用例（含端到端拦截集成测试）+ fixtures
+├── tests/                     157 个用例（含端到端拦截集成测试）+ fixtures
 ├── docs/
 │   ├── REFERENCE.md           借鉴记账（来源 + 许可证 + 范围 + 排除项）
 │   ├── RULES.md               规则格式与典型形态（含字体反爬 / 浏览器路由）
@@ -232,7 +233,7 @@ F:\Python314\python.exe -m pip install -r requirements.txt
 F:\Python314\python.exe -m unittest discover -s tests -t .
 ```
 
-**156 个用例，约 3 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
+**157 个用例，约 3 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
 目录归一化（含 `document_order`/`keep_last`）、目录页发现、正文提取、
 免费六层拦截、四格式导出（含 EPUB 结构与 XML 合法性校验）、
 断点续爬状态机、规则校验、校对报告、字体反爬解码（glyph 名 / 轮廓索引）、

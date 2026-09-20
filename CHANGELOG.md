@@ -5,6 +5,46 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.6.1] - 2026-09-20
+
+第二轮外探（P1-gate / P1 / P2）。**本轮不新增启用站点**，产出的是三份实测裁决 + 两条存根。
+
+### Added
+
+- **停用存根 2 条（登录墙红线）**：`xrzww.com`（息壤中文网）、`youdubook.com`（有毒小说网）。
+  实测：目录接口 `/api/directoryList?nid=` **完全开放**且逐章带付费标记
+  （`chapter_isvip` 恒 0，真信号是 **`chapter_ispay`**：305 章 = 46 免费 / 259 付费），
+  但正文接口 `/api/readNovelByWeb` **恒返回 `{"code":401,"message":"用户验证失败"}`** ——
+  纯 HTTP 与**真 Chrome + headed + 反检测（带 cookie、`fetch(credentials:'include')`）结果一致**。
+  → **目录开放 ≠ 正文可取**；属登录墙，不做。有毒小说网与息壤同款 SPA 外壳，同判。
+
+### Fixed
+
+- **更正上一轮的错误结论：P2 的四个站点并非「不可达」。**
+  上一轮用 `curl` 得到 `000` 就判死，实为 **curl/OpenSSL 侧的 TLS 协商问题**。
+  改用本项目 `http_client`（requests）复测：`linovel.net` **200 / 204 KB**、
+  `linovelib.com` **200 / 64 KB**、`hanwujinian.com` **200 / 360 KB** 全部可达；
+  只有 `shencou.com` 仍 `SSLError`。
+  → 记入方法论：**`curl 000` 不能判死站点**，必须换 HTTP 客户端复测，并区分 DNS / TLS / 超时。
+- README / FREE_ONLY 的规则计数与支持矩阵同步（13 条 = 10 启用 + 3 停用存根）。
+
+### Known issues / 待决策
+
+- **次元姬 `ciyuanji.com`（Next.js）**：目录在 DOM（673 个章节链接）且 `__NEXT_DATA__` 里
+  同时有 `bookChapter.chapterList`（逐章 `isFee`：26 免费 / 647 付费）与
+  `chapterContent.content` —— 但**正文是服务端加密的**（纯 HTTP 拿到的是 base64 密文、中文 0 字），
+  页面用前端 JS 解密，**真浏览器渲染后可正常阅读**（实测 2835 字可见文本）。
+  ⚠ 需先定「加密正文」的处置口径（见 `docs/NEW_SITES_PLAN.md` §5 红线第 4 条）。
+  若做，需要通用能力 `catalog.json_in_html`（从 `<script id="__NEXT_DATA__">` 取 JSON 当目录源），
+  Next.js/Nuxt 站普遍适用。
+- **寒武纪年 `hanwujinian.com`**：可直接做 —— 服务端渲染 + 现成 `/read/{bid}/{cid}` 形态，
+  章节正文由 JS 加载（需浏览器路由），**零新代码**；页内 `slider_captcha.js` 属登录弹窗，非阅读拦截。
+- **米国度 `myrics.com` / 飞卢 `b.faloo.com`**：形态待深查（正文疑 JS 渲染 / URL 规则不同）。
+
+### Tests
+
+- 156 → **157**。新增：登录墙类存根的 `disabled_reason` 必须写明「用户验证失败」与接口名（可复核）。
+
 ## [0.6.0] - 2026-09-20
 
 按 P0 计划接入两站（**塔读**、**书海**），并按红线把 **刺猬猫** 记成停用存根。

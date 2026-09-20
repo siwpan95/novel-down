@@ -139,3 +139,56 @@
 - 不写任何规则代码（本文件仅规划）；
 - 不动现有 8 条规则；
 - 不引入新的第三方依赖或源码。
+
+---
+
+## 8. v2 进展（2026-09-20 第二轮实探）
+
+> 本节是**实测记录**，不是计划。逐条都可复核。
+
+### 8.1 P1-gate：息壤 / youdubook → ⛔ 停用（登录墙红线）
+
+| 检查项 | 实测 |
+|---|---|
+| 首页/书籍页 | SPA（Vue）外壳 48 KB；`/bookdetail/{nid}` 渲染后 715 KB |
+| 顶象验证码 SDK | 外壳**加载了** `cdn.dingxiang-inc.com/ctu-group/captcha-ui/index.js`，但书籍页渲染后 **captcha DOM 元素数 = 0** → 未激活，**不是拦截点** |
+| 目录接口 | `/api/directoryList?nid={nid}&orderBy=0` **开放**（无 cookie），逐章带 `chapter_isvip` / **`chapter_ispay`**（`isvip` 恒 0；真正的付费信号是 **`ispay`**，实测 305 章 = 46 免费 / 259 付费）；书籍信息 `/api/webNovelDetail?novel_id=` 同样开放 |
+| **正文接口** | `/api/readNovelByWeb?nid=&vid=&chapter_id=&chapter_order=&showpic=true` → **HTTP 200 但 body 是 `{"code":401,"message":"用户验证失败"}`** |
+| 纯 HTTP | 401 |
+| **真 Chrome + headed + 反检测（带 cookie，页面内 `fetch(credentials:'include')`）** | **同样 401**；阅读页 `/bookread` 渲染后可见文本仅 188 字、`字 NaN-NaN-NaN`、**无正文** |
+
+→ 结论：**目录开放 ≠ 正文可取**；正文属**登录墙** → 红线 → 已加停用存根
+（`noveldown/rules/xrzww.com.json` / `youdubook.com.json`）。
+`youdubook.com` 与息壤返回**同款 SPA 外壳**（同 `oss.xrzww.com` 资源、相同 keywords）→ 同一技术栈，同判。
+
+### 8.2 P2 重大更正：**这四站其实都能连上**
+
+上一轮用 `curl` 得到 `000` 就判「不可达」——**是错的**：那是 curl/OpenSSL 侧的 TLS 协商问题。
+改用本项目 `http_client`（requests）**全部 200**：
+
+| 站点 | 上一轮判定 | 本轮实测 | 正文是否在 HTML |
+|---|---|---|---|
+| 轻之文库 `linovel.net` | 000 不可达 | **200 / 204 KB**，首页 118 个 `/book/` 链接 | 待查（书籍页 `/book/100007` 用 curl 取到 89B，需按其真实 UA/编码重试） |
+| 哔哩轻小说 `linovelib.com` | 000（Cloudflare） | **200 / 64 KB**，88 个 `/novel/` 链接 | 待查 |
+| 寒武纪年 `hanwujinian.com` | 000 | **200 / 360 KB**，147 个 `/book/` 链接；书籍页 200 / 178 KB | **否**：章节页 200 但全页中文仅 **697 字** → 正文由 JS 加载（需浏览器路由）。页内 `slider_captcha.js` /「获取验证码」属**登录/注册弹窗**，非阅读拦截 |
+| 神凑小说网 `shencou.com` | 000 | **仍不可达**：`SSLError`（证书/握手失败） | — |
+
+> **教训**：`curl 000` **不能**直接判死站点。必须换一个 HTTP 客户端复测（本机 curl 与 requests 的
+> TLS 栈不同），并区分 DNS 失败 / TLS 失败 / 连接超时。
+
+### 8.3 P1 三站
+
+| 站点 | 实测 | 结论 |
+|---|---|---|
+| **次元姬** `ciyuanji.com` | Next.js。**目录在 DOM 里**（章节页 673 个 `/chapter/{bid}_{cid}.html`）；`__NEXT_DATA__` 里同时有 `bookChapter.chapterList`（逐章 **`isFee`**：26 免费 / 647 付费）与 `chapterContent.content` | ⚠ **正文是服务端加密的**：纯 HTTP 拿到的 `content` 是 base64 密文（中文 0 字），页面自己用前端 JS 解密；**真浏览器渲染后可读**（实测 2835 字可见文本、正文「"嘶——就这么死了？"…」正常）。**待你决策**：用浏览器渲染属「按站点自身方式显示」，但站点意图明显是防抓取。另：**未找到书籍页 URL**（`/book/{id}` 404，DOM 里 0 个 book 链接），目录只能从章节页取 → 需新能力 |
+| **米国度** `myrics.com` | 首页 200 / 117 KB；有 `/novels/{id}` 链接；但最大中文元素仅 180 字 | 正文疑 JS 渲染，**待深查** |
+| **飞卢** `b.faloo.com` | 首页 200 / 404 KB，最大中文 24366 字（在 `<html>`） | 未匹配到 `/book/` 形态链接（URL 规则不同），**待深查** |
+
+### 8.4 下一轮的 P0 建议
+
+1. **次元姬**：先定「加密正文」的处置口径（见 §5 红线第 4 条）。若做，需要
+   `catalog.json_in_html`（从 `<script id="__NEXT_DATA__">` 取 JSON 当目录源）——这是个
+   **通用能力**（Next.js/Nuxt 站遍地都是），一次投入长期受益。
+2. **寒武纪年**：服务端渲染 + 现成 `/read/{bid}/{cid}` 形态，**只需浏览器路由**（零新代码）。
+3. **轻之文库 / 哔哩轻小说**：先按真实 UA/编码复测书籍页，再定。
+4. **米国度 / 飞卢**：各再花 10 分钟定位书籍页与章节页形态。
