@@ -8,6 +8,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from noveldown.engine import Downloader  # noqa: E402
 from noveldown.freeguard import FreeGuardError, is_vip_item  # noqa: E402
 from noveldown.rules import (Rule, RuleError, active_rules,  # noqa: E402
                              find_rule, load_rules)
@@ -36,14 +37,15 @@ class TestLoadRules(unittest.TestCase):
              "faloo.com",                                    # 正版·含 VIP（目录分段判 VIP）
              "linovelib.com",                                 # 轻小说译作聚合站（纯 HTTP）
              "linovel.net",                                   # 停用存根（站点已关闭·侵权）
-             "soushuwang.cc"})                                # 免费镜像族（搜书网/速读小说/bqg142）
+             "soushuwang.cc",                                 # 免费镜像族（搜书网/速读小说/bqg142）
+             "shudugu.org"})                                  # 免费镜像族（速读谷/速读小说同模板）
         enabled = {r.id for r in rules.values() if r.enabled}
         self.assertEqual(enabled, {"shuquge.com", "bqgbe.cc", "biqu520.net",
                                    "fanqienovel.com", "zongheng.com", "qimao.com",
                                    "17k.com", "qidian.com", "shuhai.com",
                                    "tadu.com", "ciyuanji.com",
                                    "faloo.com", "linovelib.com",
-                                   "soushuwang.cc"})
+                                   "soushuwang.cc", "shudugu.org"})
         for r in rules.values():
             self.assertTrue(r.free_only, f"{r.id} 必须声明 free_only")
         for r in rules.values():
@@ -374,6 +376,116 @@ class TestRuleValidation(unittest.TestCase):
         self._write(td, "a.json", self._base(enabled=False))
         rules = load_rules(td)
         self.assertEqual(active_rules(rules), {})
+
+
+class _Stub:
+    """只带 rule 属性的壳，用来单独调 Downloader 的纯逻辑方法。"""
+
+    def __init__(self, rule):
+        self.rule = rule
+
+
+class TestWaitSelectorRoles(unittest.TestCase):
+    """浏览器等待条件的**角色化**解析（v0.8.1）。
+
+    背景：`browser.wait_selector` 旧写法是**字符串**，会被所有角色继承 ——
+    速读谷把章节容器 `div.con` 写成顶层字符串后，**书籍页**也要等 `div.con`
+    （不存在）→ 白等满 30 秒超时（实测目录耗时 37s，其中 30s 是纯浪费）。
+    新写法支持 `{"book": .., "catalog": .., "chapter": ..}` 逐角色指定。
+    """
+
+    def _rule(self, browser=None):
+        raw = {
+            "id": "x.site", "name": "X", "match": ["x.site"],
+            "free_only": True, "enabled": True, "fetch_mode": "browser",
+            "book": {"url_pattern": "/b/(\\d+)", "info_url": "{origin}/b/{bid}/"},
+            "catalog": {"item_selector": "a",
+                        "id_from": {"mode": "href", "pattern": "(?P<cid>\\d+)"}},
+            "chapter": {"content_selector": "div#c"},
+        }
+        if browser is not None:
+            raw["browser"] = browser
+        return Rule(raw)
+
+    def test_string_selector_applies_to_every_role(self):
+        """字符串写法 = 历史行为（全角色广播），必须保持兼容。"""
+        r = self._rule({"wait_selector": "#bookName"})
+        for role in ("book", "catalog", "chapter"):
+            self.assertEqual(r.wait_selector_for(role), "#bookName")
+
+    def test_role_map_only_affects_declared_role(self):
+        r = self._rule({"wait_selector": {"chapter": "div.con"}})
+        self.assertEqual(r.wait_selector_for("chapter"), "div.con")
+        self.assertIsNone(r.wait_selector_for("book"))
+        self.assertIsNone(r.wait_selector_for("catalog"))
+
+    def test_role_map_falsy_means_no_wait(self):
+        r = self._rule({"wait_selector": {"book": "#b", "chapter": None,
+                                          "catalog": ""}})
+        self.assertEqual(r.wait_selector_for("book"), "#b")
+        self.assertIsNone(r.wait_selector_for("chapter"))
+        self.assertIsNone(r.wait_selector_for("catalog"))
+
+    def test_no_browser_block_means_no_wait(self):
+        self.assertIsNone(self._rule().wait_selector_for("chapter"))
+
+    def _load_one(self, browser):
+        td = temp_subdir("rules")
+        os.makedirs(td, exist_ok=True)
+        d = TestRuleValidation()._base(browser=browser)
+        TestRuleValidation()._write(td, "a.json", d)
+        return load_rules(td)
+
+    def test_unknown_role_rejected_at_load(self):
+        with self.assertRaises(RuleError) as ctx:
+            self._load_one({"wait_selector": {"body": "x"}})
+        self.assertIn("未知角色", str(ctx.exception))
+        self.assertIn("body", str(ctx.exception))
+
+    def test_bad_type_rejected_at_load(self):
+        with self.assertRaises(RuleError) as ctx:
+            self._load_one({"wait_selector": 5})
+        self.assertIn("字符串或对象", str(ctx.exception))
+
+    def test_section_override_beats_role_map(self):
+        r = self._rule({"wait_selector": {"catalog": "top"}})
+        stub = _Stub(r)
+        self.assertEqual(
+            Downloader._wait_for(stub, {"browser_wait_selector": "sec"}, "catalog"),
+            "sec")
+        self.assertEqual(Downloader._wait_for(stub, {}, "catalog"), "top")
+
+    def test_section_false_disables_inherited_wait(self):
+        r = self._rule({"wait_selector": {"catalog": "top"}})
+        self.assertIsNone(
+            Downloader._wait_for(_Stub(r), {"browser_wait_selector": False},
+                                 "catalog"))
+        self.assertIsNone(
+            Downloader._wait_for(_Stub(r), {"browser_wait_selector": ""}, "catalog"))
+
+    def test_shipped_mirrors_scope_wait_to_chapter_only(self):
+        """回归守卫：两个免费镜像的章节等待条件不得再漏到书籍页/目录页。"""
+        rules = load_rules()
+        for sid, sel in (("shudugu.org", "div.con"),
+                         ("soushuwang.cc", "#chaptercontent")):
+            r = rules[sid]
+            self.assertEqual(r.wait_selector_for("chapter"), sel, sid)
+            self.assertIsNone(r.wait_selector_for("book"),
+                              f"{sid} 书籍页不该继承章节等待条件（会白等 30s 超时）")
+            self.assertIsNone(r.wait_selector_for("catalog"),
+                              f"{sid} 目录页不该继承章节等待条件")
+
+    def test_qidian_book_wait_preserved(self):
+        """qidian 的顶层字符串是**书籍页**自检条件，改造后必须仍在。"""
+        r = load_rules()["qidian.com"]
+        self.assertEqual(r.wait_selector_for("book"), "#bookName")
+        # 章节页在段内声明了段落专用覆盖 → 生效值由 _wait_for 解析，优先级高于顶层
+        self.assertEqual(
+            Downloader._wait_for(_Stub(r), r.chapter_cfg, "chapter"),
+            "main.content span.content-text")
+        # 且该覆盖**不干扰**书籍页
+        self.assertEqual(
+            Downloader._wait_for(_Stub(r), r.book_cfg, "book"), "#bookName")
 
 
 if __name__ == "__main__":

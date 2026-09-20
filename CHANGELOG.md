@@ -5,6 +5,59 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.8.1] - 2026-09-20
+
+接入免费镜像族第 7 条（速读谷），并修掉两个**等待条件**上的结构性问题
+（一个是新加的能力，一个是潜伏已久的失效配置）。
+
+### Added
+
+- **站点：速读谷（`shudugu.org` / `sudugu.cc`，免费镜像）**。书籍页 `/{bid}/`、
+  目录 `div#list`（实测 794 个 `/{bid}/{cid}.html` 链接）、正文 `div.con`（实测 1815 汉字）。
+  目录是**新章在前**（相邻 cid 递减）→ 用 `cid_numeric_asc` 恢复阅读顺序。
+  走 `fetch_mode: browser`（requests 侧 SSLError，真浏览器可正常打开）。
+  实测：《捞尸人》790 章、抓 6 章 14957 字、导出 TXT/MD/EPUB/HTML 四格式、校对 **PASS**。
+  ⚠ 两个注意事项写进规则 `notes`：书页 `h1` 是「**653.5万字 捞尸人**」（带字数前缀，
+  直接用会污染书名，故书名/作者都走 `<title>` 分段正则）。
+- **`browser.wait_selector` 支持按页面角色声明**（对象写法）：
+  ```json
+  "browser": {"wait_selector": {"book": "#bookName", "chapter": "div.con"}}
+  ```
+  未出现的角色 = 不等待；值写 `null` / `false` / `""` 亦为不等待。
+  字符串写法仍保留（= 全角色广播，完全等价于旧行为）。
+  未知角色名、非字符串/对象类型在**规则加载时**即报错（不再等抓取时才炸）。
+- **导航瞬时失败的重试带退避**：`browser.nav_retries`（1~8，默认 **4**），
+  重试间隔 `1.2s × 第几次`。理由：这类站抽风是「一段时间内持续 reset」，
+  **紧挨着连发重试会撞进同一窗口一起失败** —— 实测速读谷 0 退避连发 3 次全
+  `ERR_CONNECTION_RESET`；加退避后**首个重试即成功**。
+- **`pytest.ini`**：限定 `testpaths = tests`。
+  仓库根下有仅供本地调研的第三方参照源码（`_ref/`、`.archived/`，均已 gitignore），
+  它们自带 `test/` 目录会被 pytest 顺着目录树捞进来，然后在 `import coloredlogs`
+  之类的第三方依赖上抛出收集错误、把本项目的测试结果淹掉。
+
+### Fixed
+
+- **等待条件会「漏」到不该等的页面上**（结构性缺陷）。
+  顶层 `browser.wait_selector` 原本是**全角色广播**，但三处页面的就绪标志天然不同：
+  速读谷把**章节容器** `div.con` 写成顶层字符串后，**书籍页**也要等 `div.con`
+  （不存在）→ 白等满 30 秒超时。实测目录耗时 **37.0s → 7.6s**（其余耗时是正常渲染）。
+  同病的 `soushuwang.cc`（`#chaptercontent`）一并改为只作用于 `chapter`。
+  ⚠ qidian 的顶层字符串是**书籍页**条件（`#bookName`），改造后必须仍在 —— 已加回归测试守住。
+- **`catalog.browser_wait_selector` 从未生效**（潜伏 bug）。
+  该字段写在 `catalog` 段下（文档也是这么写的），但代码读的是 `catalog.pages` 子字典
+  （`cfg = rule.catalog_cfg.get("pages")`）→ **恒为 None**，于是 17K 声明的目录等待条件
+  一直靠 `wait_ms: 2500` 掩盖着、从未真正启用。改为从 `catalog` 段读取。
+  实测 17K 目录 586 章、13.3s、正文 114 段/2311 字，无回归。
+- **`_fetch_browser` 不再自行回退顶层默认值**。改为用哨兵 `_UNSET` 区分
+  「未指定」（→ 按角色解析）与「明确不等待」（→ 直接不等待）——
+  `wait_selector or cfg.get("wait_selector")` 这种写法无法表达后者，正是上面漏等待的成因。
+
+### Notes
+
+- 新增测试 10 个（`TestWaitSelectorRoles`），全套 **188 个通过**。
+- 三段 E2E 实测：速读谷（790 章 / 6 章 14957 字 / 校对 PASS）、
+  搜书网（71 章 / 3 章 6000+ 字）、17K（586 章 / 13.3s）。
+
 ## [0.8.0] - 2026-09-20
 
 落地 pingcode 那篇的新点子（自动识别正文容器），并把规则按来源**分池**；

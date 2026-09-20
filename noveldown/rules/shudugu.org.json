@@ -1,0 +1,63 @@
+{
+  "id": "shudugu.org",
+  "name": "速读谷（免费镜像）",
+  "pool": "免费镜像",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "browser",
+  "demo_url": "https://www.shudugu.org/51/",
+  "notes": "★ 免费阅读镜像站，2026-09-20 实测。来源线索：全哥给的 novel-spider 程序书源（`sudugu.org`，正文 `.con`、目录 `#list li a`）+ 全哥补的两个域名。\n\n【形态】\n  · 书籍页 `/{bid}/`（实测 39 KB）：目录在 `div#list`（class `dir clear`）里，\n    实测 **794 个章节链接** `/{bid}/{cid}.html`。\n  · 章节页 `/{bid}/{cid}.html`：正文容器 **`div.con`**（实测 1815 汉字）。\n    （顺带：本项目 v0.8.0 的「自动识别正文容器」在探测时**独立选中了同一个 `div.con`**。）\n  · 书名/作者走 `<title>`（形如「捞尸人-完本小说全文阅读-全本完整版免费阅读-纯洁滴小龙-速读谷」）：\n    `title_pattern` 取第一段，`author_pattern` 取第四段。\n    ⚠ 该站书籍页的 `h1` 是「**653.5万字 捞尸人**」（带字数前缀），直接用会污染书名，故不用它。\n\n【排序】目录是**新章在前**（实测相邻 cid 递减：4419510 → 4419509 → 4419499），\n故用 `cid_numeric_asc` 恢复阅读顺序，不能用 `document_order`。\n\n【两域同模板】`shudugu.org` 与 `sudugu.cc` 是同一套模板（同样 `/{bid}/` + `/{bid}/{cid}.html`\n+ `#list` 目录），故并入同一规则。\n\n⚠【稳定性】这类站的链接**不稳定**：`shudugu.org` 走 requests 时会 SSLError，\n但**真浏览器可正常打开**（实测）——全哥指出「抽风是盗版站通病」，正确做法是重试 + 断点续爬，\n**不要凭一次失败判死**（本规则因此配 `fetch_mode: browser`，浏览器侧实测稳定）。\n\n⚠【法律】免费镜像站，内容来源未授权；规则仅供**个人离线阅读**，请勿再分发或商用。",
+  "match": [
+    "shudugu.org",
+    "sudugu.cc"
+  ],
+  "book": {
+    "url_pattern": "/(\\d+)/",
+    "info_url": "{origin}/{bid}/",
+    "title": [
+      "@title"
+    ],
+    "title_pattern": "^\\s*([^-]+)",
+    "author": [
+      "@title"
+    ],
+    "author_pattern": "^(?:[^-]+-){3}\\s*([^-]+)"
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single",
+      "url": "{origin}/{bid}/"
+    },
+    "item_selector": "#list a[href$='.html'], div.dir a[href$='.html']",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/(?P<cid>\\d+)\\.html"
+    },
+    "url_template": "{origin}/{bid}/{cid}.html",
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first"
+  },
+  "chapter": {
+    "title_selector": "h1",
+    "content_selector": "div.con",
+    "strip_selectors": [
+      "script",
+      "style"
+    ],
+    "ad_patterns": [
+      "速读谷",
+      "请记住本站",
+      "手机版阅读",
+      "最新网址"
+    ]
+  },
+  "browser": {
+    "anti_detect": true,
+    "wait_selector": {
+      "chapter": "div.con"
+    },
+    "wait_ms": 1500
+  }
+}

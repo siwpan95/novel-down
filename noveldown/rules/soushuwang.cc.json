@@ -68,7 +68,9 @@
   },
   "browser": {
     "anti_detect": true,
-    "wait_selector": "#chaptercontent",
+    "wait_selector": {
+      "chapter": "#chaptercontent"
+    },
     "wait_ms": 2500
   }
 }

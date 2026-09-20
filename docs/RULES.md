@@ -41,7 +41,8 @@ python -m noveldown fetch "https://新站点.com/book/123/" --limit 5
 | `disabled_reason` | | 停用原因。**必须是技术原因**（WAF / 目录靠 JS / 需浏览器会话），不要写「因为含 VIP」——含 VIP 不构成拒绝理由，见 [FREE_ONLY.md](./FREE_ONLY.md) 第 1 层 |
 | `predecode` | | 默认 `true`。是否启用 JS 内联 base64 预解码 |
 | `fetch_mode` | | `http`（默认，纯 HTTP）\| `browser`（真实浏览器渲染后再取 DOM）。目录靠 JS 异步加载的站点用 browser |
-| `browser` | | `fetch_mode=browser` 时的渲染参数：`wait_selector`（等某选择器出现）、`wait_ms`（额外固定等待）、`click_selectors`（先点这些元素，如「目录」标签）、`scroll`（滚到底触发懒加载）、**`anti_detect`**（反检测模式，见「浏览器路由」一节）、`channel`（默认 `chrome`）、`args`（追加启动参数）、`stealth_js`（可选自备 stealth 脚本路径） |
+| `browser` | | `fetch_mode=browser` 时的渲染参数：**`wait_selector`**（等待条件，见下）、`wait_ms`（额外固定等待）、**`nav_retries`**（导航瞬时失败的重试总次数，1~8，默认 4，带 `1.2s×n` 退避）、`click_selectors`（先点这些元素，如「目录」标签）、`scroll`（滚到底触发懒加载）、**`anti_detect`**（反检测模式，见「浏览器路由」一节）、`channel`（默认 `chrome`）、`args`（追加启动参数）、`stealth_js`（可选自备 stealth 脚本路径） |
+| `browser.wait_selector` | | 等待条件，两种写法：**字符串** = 所有页面角色共用（历史行为）；**对象** = `{"book": …, "catalog": …, "chapter": …}` 逐角色指定，未出现的角色 / 值为 `null`·`false`·`""` = **不等待**。⚠ 强烈建议用对象写法——字符串是全角色广播，把**章节容器**写成字符串会让**书籍页**也去等它，白等满超时才继续（实测速读谷目录耗时 37s，其中 30s 纯浪费） |
 | `font_decode` | | 字体反爬解码开关：`{"enable": true}`（默认 `true`）。解码途径由字体自身决定（glyph 名优先，否则随仓轮廓索引）。见下文「字体反爬」 |
 | `requires_js` | | 该站点内容需执行 JS 才能拿到（与 `fetch_mode=browser` 配套）。**纯展示标记**：`sites`/`rules` 命令会显示「[需JS]」，不参与判定 |
 | `demo_url` | | 演示地址，会被第 1 层政策名单校验 |
@@ -76,7 +77,7 @@ python -m noveldown fetch "https://新站点.com/book/123/" --limit 5
 | `id_from.mode` | `href`（从链接取）\| `onclick`（从 onclick 取） |
 | `id_from.pattern` | 必须含 **命名捕获组 `(?P<cid>...)`** |
 | `url_template` | 可选。支持 `{origin}` `{bid}` `{cid}`；不填则 `urljoin(页面URL, href)` |
-| `browser_wait_selector` | 可选。**目录页**专用的浏览器等待条件（与顶层 `browser.wait_selector` 解耦） |
+| `browser_wait_selector` | 可选。**目录页**专用的浏览器等待条件。优先级**高于**顶层 `browser.wait_selector` 的角色值；写 `false` / `""` 表示该页**明确不等待** |
 | `sort` | `cid_numeric_asc`（默认，ID 即顺序号）\| `document_order`（保持页面顺序，用于雪花 ID 站点）\| `cid_numeric_desc` |
 | `dedupe` | `keep_first`（默认）\| `keep_last`（回显在**列表头部**时用它，见下） |
 | `volume_selector` | 可选卷标题/分段选择器（按文档顺序跟踪当前卷名；**目录按分段标注免费/VIP 时也用它**） |
@@ -93,7 +94,7 @@ python -m noveldown fetch "https://新站点.com/book/123/" --limit 5
 | 字段 | 说明 |
 |---|---|
 | `title_selector` | 可选。正文页标题（会自动剥离「（第N页）」后缀） |
-| `browser_wait_selector` | 可选。**章节页**专用的浏览器等待条件（与顶层 `browser.wait_selector` 解耦——书籍页与章节页往往要等不同元素）。⚠ **只放"内容就绪"那一支**：`wait_for_selector` 是 OR 语义，塞入骨架期即命中的宽松选择器会导致提前放行 |
+| `browser_wait_selector` | 可选。**章节页**专用的浏览器等待条件。优先级**高于**顶层 `browser.wait_selector` 的角色值；写 `false` / `""` 表示明确不等待。⚠ **只放"内容就绪"那一支**：`wait_for_selector` 是 OR 语义，塞入骨架期即命中的宽松选择器会导致提前放行 |
 | `body_api` | 正文来自 **JSON 接口**时的配置（塔读：章节页是空壳）。`url` 支持 `{origin}/{bid}/{cid}/{seq}`（seq = 章节序号，从 1 起）；`content_field` 取字段；`drop` 按 `equals_base64_of: cid` 剔除站点水印段。取到的 HTML 会被包成 `div.nd-api-body`，后续选择器照常用 |
 | `content_selector` | ✓ 正文容器 CSS（用 `body_api` 时填 `div.nd-api-body`） |
 | `content_selectors` | 可选**候选列表**（同一站不同请求可能给不同容器；按序取第一个命中） |
@@ -134,7 +135,7 @@ python -m noveldown fetch "https://新站点.com/book/123/" --limit 5
 
 ---
 
-## 实例：十二种典型形态
+## 实例：十三种典型形态
 
 A–H 覆盖从「标准免费站」到「反检测浏览器 + JSON 接口目录」的全部难度梯度。
 新增站点时，先在本节找最接近的一条照抄，再改选择器。
@@ -698,6 +699,57 @@ Next.js 把数据序列化进 `<script id="__NEXT_DATA__">`，里面有
 > 3058 章，**且不报错**。本仓已加 `_parse_looks_complete()` 完整性校验（比对原文与树里
 > `<a>/<div>/<p>` 数量，明显不符就退回 `html.parser`）。自己写解析器时务必做同样的校验。
 
+### M. 免费镜像族 + 等待条件**按角色**声明（shudugu.org）
+
+速读谷这类镜像站的形态很标准，价值主要在**两个坑**上（都是 v0.8.1 实测踩到的）：
+
+```json
+{
+  "fetch_mode": "browser",
+  "match": ["shudugu.org", "sudugu.cc"],
+  "book": {
+    "url_pattern": "/(\\d+)/",
+    "info_url": "{origin}/{bid}/",
+    "title": ["@title"],
+    "title_pattern": "^\\s*([^-]+)",
+    "author": ["@title"],
+    "author_pattern": "^(?:[^-]+-){3}\\s*([^-]+)"
+  },
+  "catalog": {
+    "pages": {"mode": "single", "url": "{origin}/{bid}/"},
+    "item_selector": "#list a[href$='.html'], div.dir a[href$='.html']",
+    "id_from": {"mode": "href", "pattern": "/(?P<cid>\\d+)\\.html"},
+    "url_template": "{origin}/{bid}/{cid}.html",
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first"
+  },
+  "chapter": {"title_selector": "h1", "content_selector": "div.con"},
+  "browser": {
+    "anti_detect": true,
+    "wait_selector": {"chapter": "div.con"},
+    "wait_ms": 1500
+  }
+}
+```
+
+**坑 1：书名不能用 `h1`。** 该站书页 `h1` 是「**653.5万字 捞尸人**」——字数前缀被当成书名一部分。
+书名/作者统一走 `<title>` 分段正则（`捞尸人-完本小说全文阅读-…-纯洁滴小龙-速读谷`：
+第 1 段书名、第 4 段作者）。
+
+**坑 2：等待条件必须按角色声明。** 目录是**新章在前**（相邻 cid 递减：4419510 → 4419509 → 4419499），
+所以 `sort` 要用 `cid_numeric_asc` 而非 `document_order`。但更隐蔽的是等待条件：
+把章节容器 `div.con` 写成**顶层字符串**后，顶层是**全角色广播** →
+**书籍页**也去等 `div.con`（那里根本没有）→ 白等满 30 秒超时才继续。
+目录耗时 **37.0s → 7.6s**（改对象写法后）。所以：
+
+```json
+"wait_selector": {"chapter": "div.con"}     // ✅ 只作用于章节页
+"wait_selector": "div.con"                  // ❌ 书籍页/目录页一起遭殃
+```
+
+> 实测《捞尸人》：目录 **790 章**（原始 794 链接，去重后 790）、正文 `div.con` 1815 汉字；
+> 抓 6 章 14957 字，导出 TXT/MD/EPUB/HTML 四格式，校对 **PASS**。
+
 ---
 
 ## 浏览器路由（`fetch_mode: browser`）
@@ -734,6 +786,16 @@ Next.js 把数据序列化进 `<script id="__NEXT_DATA__">`，里面有
   browser 模式必须主线程顺序抓。
 - **`net::ERR_ABORTED` 要容错**：SPA 场景下先捕获再等目标元素，
   配合 `browser_wait_selector` 比死等固定毫秒更稳。
+- **瞬时网络错误要重试，且必须带退避**（v0.8.1）。免费镜像站「抽风」不是单次抖动，
+  而是**一段时间内持续 reset/timeout**（同一 URL 时而 200 时而 `ERR_CONNECTION_RESET`）。
+  实测速读谷：0 退避连发 3 次重试 → **三次全 reset**；加 `1.2s × n` 退避后
+  **首个重试即成功**。故重试次数由 `browser.nav_retries`（1~8，默认 4）控制，
+  间隔按 `1.2s × 第几次` 递增。⚠ 只对**瞬时**错误重试（`ERR_CONNECTION_RESET` /
+  `ERR_TIMED_OUT` / `ERR_EMPTY_RESPONSE` 等）；`ERR_ABORTED` 是 SPA 客户端路由中断，
+  **不是错误**，不重试。
+- **等待条件按角色声明**（v0.8.1）：`browser.wait_selector` 支持对象写法
+  `{"book": …, "catalog": …, "chapter": …}`；字符串写法是全角色广播，
+  把章节容器写成字符串会让书籍页白等超时（见案例 M）。
 - **先试 HTTP 再上浏览器**：实测有反直觉的情况——纵横的 `showchapter` 页用无头浏览器
   打开只看到 2 个章节链接（JS 版是懒加载的），而**纯 HTTP 取到的静态 HTML 里有完整
   700 章**。所以不要默认"JS 站就得用浏览器"，先用 `probe_site.py` 与

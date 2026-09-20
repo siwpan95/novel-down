@@ -95,6 +95,24 @@ class Rule:
         if self.fetch_mode not in ("http", "browser"):
             raise RuleError(f"{self.id}: fetch_mode 只能是 http 或 browser，"
                             f"当前为 {self.fetch_mode!r}")
+        # 等待条件：字符串（全角色）或对象（逐角色）——错误类型要**加载即报**，
+        # 不能等到真正抓取那一刻才炸。
+        ws = self.browser_cfg.get("wait_selector")
+        if isinstance(ws, dict):
+            unknown = [k for k in ws if k not in self.WAIT_ROLES]
+            if unknown:
+                raise RuleError(
+                    f"{self.id}: browser.wait_selector 出现未知角色 {unknown}，"
+                    f"只允许 {list(self.WAIT_ROLES)}")
+        elif ws is not None and not isinstance(ws, str):
+            raise RuleError(f"{self.id}: browser.wait_selector 只能是字符串或对象，"
+                            f"当前为 {type(ws).__name__}")
+        # 导航重试次数（瞬时网络错误）：抽查站点普遍抽风，允许逐站调大，
+        # 但设个上限防止配置事故把单次抓取拖成分钟级。
+        nr = self.browser_cfg.get("nav_retries")
+        if nr is not None and not (isinstance(nr, int) and 1 <= nr <= 8):
+            raise RuleError(f"{self.id}: browser.nav_retries 必须是 1~8 的整数，"
+                            f"当前为 {nr!r}")
         return self
 
     # ---------------- 匹配 ----------------
@@ -104,6 +122,37 @@ class Rule:
         return any(host == d or host.endswith("." + d) for d in self.match)
 
     # ---------------- 便捷访问 ----------------
+    WAIT_ROLES = ("book", "catalog", "chapter")
+
+    def wait_selector_for(self, role: str):
+        """按**页面角色**解析浏览器等待选择器，返回 None 表示不等待。
+
+        `browser.wait_selector` 支持两种写法：
+
+        · **字符串**（旧写法，完全等价于历史行为）：所有角色共用。
+          历史上它就是这么被用的 —— qidian 填的是**书籍页**的 `#bookName`，
+          速读谷/搜书网填的是**章节页**的 `div.con` / `#chaptercontent`。
+        · **对象**：`{"book": sel, "catalog": sel, "chapter": sel}`，逐角色指定。
+          未出现的角色 = 不等待；值写 `null`/`false`/`""` 亦为不等待。
+
+        为什么需要对象写法（v0.8.1，实测踩到）：字符串写法是**全角色广播**，
+        而三处页面的就绪标志天然不同。速读谷把章节容器 `div.con` 写成顶层字符串后，
+        **书籍页**也要等 `div.con` → 不存在 → 白等满 30 秒超时才继续（实测目录耗时 37s，
+        其中 30s 是纯浪费）。目录页同理。改成对象即可精确到角色。
+
+        优先级：`catalog`/`chapter` 段内的 `browser_wait_selector` > 本方法的角色值。
+        """
+        raw = self.browser_cfg.get("wait_selector")
+        if raw is None:
+            return None
+        if isinstance(raw, str):
+            return raw.strip() or None
+        if isinstance(raw, dict):
+            val = raw.get(role)
+            return val.strip() if isinstance(val, str) and val.strip() else None
+        raise RuleError(f"{self.id}: browser.wait_selector 只能是字符串或对象，"
+                        f"当前为 {type(raw).__name__}")
+
     @property
     def book_cfg(self) -> dict:
         return self.raw.get("book", {})

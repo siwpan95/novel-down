@@ -23,6 +23,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import parser
+from .browser import DEFAULT_NAV_RETRIES
 from .constants import DEFAULT_CONFIG
 from .freeguard import (assert_site_allowed, check_content,
                         check_page_markers, FreeGuardError)
@@ -40,6 +41,11 @@ from .state import StateStore
 
 MAX_PAGES_PER_CHAPTER = 30       # 单章最大分页数（防死循环）
 STATE_SAVE_INTERVAL = 20         # 每抓 N 章落一次状态
+
+# 「未指定」哨兵：区别于显式的 None（= 明确不等待）。
+# 因为 `wait_selector or 顶层默认` 这种写法无法表达「本角色就是不要等待」，
+# 于是章节/目录的等待条件会漏到书籍页上白等超时（见 Rule.wait_selector_for）。
+_UNSET = object()
 
 
 class Downloader:
@@ -83,9 +89,12 @@ class Downloader:
     # ========================================================
     #  HTTP
     # ========================================================
-    def _fetch(self, url: str, referer=None, wait_selector=None) -> str:
+    def _fetch(self, url: str, referer=None, wait_selector=_UNSET,
+               role: str = "chapter") -> str:
         # 浏览器路由：目录/正文靠 JS 渲染的站点（见 browser.py）
         if self.rule.fetch_mode == "browser":
+            if wait_selector is _UNSET:
+                wait_selector = self.rule.wait_selector_for(role)
             return self._fetch_browser(url, wait_selector)
 
         with self._lock:
@@ -159,16 +168,29 @@ class Downloader:
         return self._browser_fetcher
 
     def _fetch_browser(self, url: str, wait_selector: str = None) -> str:
+        """⚠ `wait_selector=None` 表示**明确不等待**，不要再回退到顶层默认 ——
+        角色解析统一在 `_fetch(role=...)` 里完成（见 Rule.wait_selector_for）。"""
         cfg = self.rule.browser_cfg
         self.limiter.wait()
         html = self._browser().fetch(
             url,
-            wait_selector=wait_selector or cfg.get("wait_selector"),
+            wait_selector=wait_selector,
             wait_ms=int(cfg.get("wait_ms", 0)),
             click_selectors=cfg.get("click_selectors"),
             scroll=bool(cfg.get("scroll", False)),
+            retries=int(cfg.get("nav_retries", DEFAULT_NAV_RETRIES)),
         )
         return html
+
+    def _wait_for(self, section_cfg: dict, role: str):
+        """解析某段（catalog/chapter）的等待条件：段内显式声明 > 顶层角色值。
+
+        段内写 `"browser_wait_selector": false` / `""` 即**明确不等待**。
+        """
+        if section_cfg and "browser_wait_selector" in section_cfg:
+            val = section_cfg["browser_wait_selector"]
+            return val if isinstance(val, str) and val.strip() else None
+        return self.rule.wait_selector_for(role)
 
     def close(self):
         """释放浏览器资源（run() 结束时会自动调用）。"""
@@ -210,7 +232,7 @@ class Downloader:
 
         self.log(f"[发现] 站点={rule.name} 书籍ID={bid}")
         self.log(f"[发现] 书籍页 {book_url}")
-        book_html = self._fetch(book_url)
+        book_html = self._fetch(book_url, role="book")
 
         info = parse_book_info(rule, book_html, book_url, bid)
         book = Book(site=rule.id, book_id=bid, url=book_url, **info)
@@ -277,7 +299,8 @@ class Downloader:
                 return [(book_url, book_html)]
             try:
                 html = self._fetch(url, referer=book_url,
-                                   wait_selector=cfg.get("browser_wait_selector"))
+                                   wait_selector=self._wait_for(rule.catalog_cfg,
+                                                                "catalog"))
             except Exception as e:
                 self.log(f"[目录] 抓取失败 {url} — {e}", "error")
                 html = None
@@ -288,7 +311,8 @@ class Downloader:
             out = []
             for u in urls:
                 try:
-                    out.append((u, self._fetch(u, referer=book_url)))
+                    out.append((u, self._fetch(u, referer=book_url,
+                                               role="catalog")))
                 except Exception as e:
                     self.log(f"[目录] 抓取失败 {u} — {e}", "error")
                     out.append((u, None))
@@ -311,7 +335,7 @@ class Downloader:
             if not candidates:
                 break
             queue = []
-            cat_wait = rule.catalog_cfg.get("browser_wait_selector")
+            cat_wait = self._wait_for(rule.catalog_cfg, "catalog")
             for u in candidates[:max_pages - len(known)]:
                 try:
                     known[u] = self._fetch(u, referer=book_url,
@@ -462,8 +486,8 @@ class Downloader:
             seen.add(url)
             try:
                 html = self._fetch(url, referer=self.book.url,
-                                   wait_selector=self.rule.chapter_cfg.get(
-                                       "browser_wait_selector"))
+                                   wait_selector=self._wait_for(
+                                       self.rule.chapter_cfg, "chapter"))
             except Exception as e:
                 if pages:
                     break                     # 已有内容，续页失败就收尾

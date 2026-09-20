@@ -61,6 +61,13 @@ DEFAULT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 #   `browser.stealth_js` 指定其路径，即会在页面脚本前自动注入。
 STEALTH_ENV_VAR = "NOVELDOWN_STEALTH_JS"
 
+# 导航瞬时失败的重试：总尝试次数上限，以及每次重试的**退避步长**（秒）。
+# 退避是必须的 —— 免费镜像站抽风是「一段时间内持续 reset」，
+# 紧挨着连发重试会撞进同一窗口一起失败（实测速读谷：0 退避连发 3 次全 reset）。
+DEFAULT_NAV_RETRIES = 4
+BACKOFF_STEP = 1.2
+MAX_NAV_RETRIES = 8
+
 # 语言一致性脚本。context 里声明了 locale="zh-CN"，但 `navigator.languages`
 # 默认仍取浏览器 UI 语言（实测 "en-US,en"）—— 真人中文 Chrome 不会这么自相矛盾，
 # 而反爬常查 navigator.language / languages / Accept-Language 三者是否自洽。
@@ -271,7 +278,8 @@ class BrowserFetcher:
     # ------------------------------------------------------------
     def fetch(self, url: str, wait_selector: str = None, wait_ms: int = 0,
               click_selectors=None, scroll: bool = False,
-              wait_until: str = "domcontentloaded") -> str:
+              wait_until: str = "domcontentloaded",
+              retries: int = DEFAULT_NAV_RETRIES) -> str:
         """渲染并返回页面 HTML。
 
         Args:
@@ -281,6 +289,8 @@ class BrowserFetcher:
             click_selectors: 需要先点的元素（如「目录」标签页），按顺序点，点不到则跳过
             scroll: 是否滚到底（触发懒加载）
             wait_until: goto 的等待条件
+            retries: 导航**总尝试次数**（含首次）。仅对瞬时网络错误
+                （ERR_CONNECTION_RESET / ERR_TIMED_OUT 等）生效，带线性退避。
         """
         if self._page is None:
             self.start()
@@ -292,15 +302,49 @@ class BrowserFetcher:
         # context 复用 → WAF 下发的匿名 cookie 仍然带着，不重复过墙。
         page = ctx.new_page()
         try:
-            try:
-                page.goto(url, wait_until=wait_until, timeout=self.timeout)
-            except Exception as e:
-                msg = str(e)
-                if ("ERR_ABORTED" in msg or "interrupted" in msg
-                        or "frame was detached" in msg):
-                    self.log("  浏览器路由：导航被 SPA 客户端路由中断，继续等目标元素", "warn")
-                else:
-                    raise
+            # 导航：对**瞬时网络错误**重试。
+            # 免费镜像站普遍抽风（同一 URL 时而 200 时而 reset/timeout），
+            # 一次 ERR_CONNECTION_RESET / ERR_TIMED_OUT 就判整章失败太脆弱。
+            # ⚠ ERR_ABORTED 单独处理（SPA 客户端路由中断，不是错误），不在这里重试。
+            #
+            # 重试必须**带退避**：紧挨着连发重试往往撞在同一段抽风窗口上，
+            # 三次连发会一起失败（实测速读谷：0 延迟连发 3 次 → 全部 ERR_CONNECTION_RESET，
+            # 加 1.2s/2.4s/3.6s 退避后首个重试即成功）。
+            last_err = None
+            attempts = max(1, min(MAX_NAV_RETRIES, int(retries)))
+            for attempt in range(attempts):
+                try:
+                    page.goto(url, wait_until=wait_until, timeout=self.timeout)
+                    last_err = None
+                    break
+                except Exception as e:
+                    msg = str(e)
+                    if ("ERR_ABORTED" in msg or "interrupted" in msg
+                            or "frame was detached" in msg):
+                        # SPA 场景：先捕获再等目标元素，比死等固定毫秒更稳
+                        self.log("  浏览器路由：导航被 SPA 客户端路由中断，继续等目标元素", "warn")
+                        last_err = None
+                        break
+                    transient = any(k in msg for k in (
+                        "ERR_CONNECTION_RESET", "ERR_TIMED_OUT", "ERR_CONNECTION_CLOSED",
+                        "ERR_CONNECTION_ABORTED", "ERR_NETWORK_CHANGED",
+                        "ERR_EMPTY_RESPONSE", "ERR_NAME_NOT_RESOLVED",
+                        "Timeout", "NS_ERROR"))
+                    if not transient or attempt == attempts - 1:
+                        last_err = e
+                        break
+                    backoff = BACKOFF_STEP * (attempt + 1)
+                    self.log(f"  浏览器路由：导航瞬时失败"
+                             f"（{msg.splitlines()[0][:60]}），"
+                             f"{backoff:.1f}s 后重试 {attempt + 1}/{attempts - 1}", "warn")
+                    try:
+                        page.close()
+                    except Exception:
+                        pass
+                    time.sleep(backoff)
+                    page = ctx.new_page()
+            if last_err is not None:
+                raise last_err
 
             for sel in (click_selectors or []):
                 try:
