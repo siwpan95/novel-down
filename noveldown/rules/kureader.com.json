@@ -1,0 +1,15 @@
+{
+  "id": "kureader.com",
+  "name": "熊猫脑洞小说（原熊猫免费小说·APP 独占）",
+  "pool": "正版",
+  "enabled": false,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://xm.kureader.com/",
+  "disabled_reason": "【APP 独占，无网页阅读入口】（全哥 2026-09-21 实测指出）。证据：官网 `xm.kureader.com/home.html` 只引导下载 APP。⚠ 域名纠错：`xmzw.net` 是**盗版站**，不是熊猫官方 —— 别把它当成熊猫收录。（原 `xiongmaoxy.com` 已 DNS 不解析，域名已弃用。）",
+  "match": [
+    "kureader.com"
+  ]
+}

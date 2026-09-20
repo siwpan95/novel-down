@@ -752,6 +752,50 @@ class TestDropLeadingTitleParagraph(unittest.TestCase):
         self.assertEqual(res["paragraphs"][0], "第1章 起")
 
 
+class TestDropLeadingSymbolParagraphs(unittest.TestCase):
+    """`chapter.drop_leading_symbol_paragraphs`：丢掉正文头部的**纯符号噪声行**（v0.8.5）。
+
+    实测晋江：正文容器 `div.noveltext` 顶部有一坨无 id/class 的工具栏，
+    剔完能命名的元素后仍残留独立的 `[` 与 `]` 两行 —— **没有可用的选择器**，
+    但它们只由标点组成，故按「字符全在标点集合内」识别。
+    只在**头部**丢：正文中间出现的单独「……」是合理的文学用法。
+    """
+
+    def _parse(self, html, **ch_over):
+        from noveldown.parser import parse_chapter_page
+        from noveldown.rules import Rule
+        ch = {"content_selector": "div#c"}
+        ch.update(ch_over)
+        rule = Rule({
+            "id": "t.sym", "name": "T", "match": ["x.com"], "free_only": True,
+            "book": {"url_pattern": "/(\\d+)"},
+            "catalog": {"item_selector": "a",
+                        "id_from": {"mode": "href", "pattern": "(?P<cid>\\d+)"}},
+            "chapter": ch,
+        }).validate()
+        return parse_chapter_page(rule, html, "https://x.com/1/1.html", "1")
+
+    HTML = ('<div id="c">'
+            '<div>[</div><div>]</div>'
+            '<p>北城的盛夏向来燥热。</p>'
+            '<p>……</p>'
+            '<p>他说：“后来呢。”</p>'
+            '</div>')
+
+    def test_off_by_default(self):
+        res = self._parse(self.HTML)
+        ps = res["paragraphs"] if isinstance(res, dict) else res
+        self.assertEqual(ps[0], "[")
+
+    def test_drops_leading_symbol_lines_only(self):
+        res = self._parse(self.HTML, drop_leading_symbol_paragraphs=True)
+        ps = res["paragraphs"] if isinstance(res, dict) else res
+        self.assertEqual(ps[0], "北城的盛夏向来燥热。")
+        # ⚠ 正文**中间**的纯符号行必须保留
+        self.assertIn("……", ps)
+        self.assertEqual(len(ps), 3)
+
+
 class TestGuessContentContainer(unittest.TestCase):
     """自动识别正文容器：选择器全失配时的兜底（站点轻微改版可自愈）。
 

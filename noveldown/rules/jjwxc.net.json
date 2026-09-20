@@ -1,0 +1,88 @@
+{
+  "id": "jjwxc.net",
+  "name": "晋江文学城（正版·含 VIP）",
+  "pool": "正版",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://www.jjwxc.net/onebook.php?novelid=6836927",
+  "notes": "★ 晋江文学城，2026-09-21 实测（全哥指出该书源生态里出现最多，值得优先）。**含 VIP，只抓免费章**。\n\n【入口用**桌面版** `onebook.php?novelid={bid}`】\n  实测移动版 `m.jjwxc.net/book2/{bid}` 只给 40 条、且全是 `/vip/` 链接（拿不到免费章）；\n  桌面版 `www.jjwxc.net/onebook.php?novelid={bid}`（199 KB）里**目录完整**：\n  `table a[href*=chapterid]` → 13 条免费章（`chapterid=1..13`）。\n  → 故 `info_url` **写死 www 主机**，把 m. 的输入也归一到桌面页。\n\n【VIP 是「天然隔离」——本规则最省事的一点】\n  晋江的 VIP 章**不是 `chapterid` 链接**，而是：\n  `<a rel=\"...buynovel.php?...\" id=\"button1_14\"><font color=\"red\">[VIP]</font></a>`\n  它既没有 `chapterid=`、href 也不是章节页 → **根本进不了目录** → 一请求都不会发。\n  这比「先标 locked 再跳过」更彻底（无需 vip_child_selector）。\n  ⚠ 代价：报告里看不到「受保护 N 章」的计数（那部分从未进入目录）。\n\n【正文】章节页 `?novelid={bid}&chapterid={cid}`，正文容器 **`div.noveltext`**\n  （实测 4110 汉字；外层 `#oneboolt.chapter_columns` 4237）。\n\n【元信息】书名/作者从 `<title>` 分段取（《昭暮》臣年_晋江文学城_…）：\n  书名 `《(.+?)》`、作者取书名后到 `_` 之前那一段。\n\n【排序】chapterid 就是章节序号 → `cid_numeric_asc`。\n\n⚠ 法律：正版平台的**免费章节**。VIP 章不请求、不导出。",
+  "match": [
+    "jjwxc.net"
+  ],
+  "book": {
+    "url_pattern": "novelid=(\\d+)",
+    "info_url": "https://www.jjwxc.net/onebook.php?novelid={bid}",
+    "title": [
+      "@title"
+    ],
+    "title_pattern": "^《(.+?)》",
+    "author": [
+      "@title"
+    ],
+    "author_pattern": "^《[^》]+》\\s*([^_\\s]+)",
+    "intro": [
+      "meta[name='description']",
+      "#novelintro"
+    ]
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single"
+    },
+    "item_selector": "table a[href*='chapterid=']",
+    "id_from": {
+      "mode": "href",
+      "pattern": "chapterid=(?P<cid>\\d+)"
+    },
+    "url_template": "{origin}/onebook.php?novelid={bid}&chapterid={cid}",
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first",
+    "item_deny_text": [
+      "展开全部",
+      "收起"
+    ]
+  },
+  "chapter": {
+    "title_selector": "h2, .noveltitle, h1",
+    "content_selector": "div.noveltext",
+    "content_selectors": [
+      "div.noveltext",
+      "#oneboolt"
+    ],
+    "strip_selectors": [
+      "script",
+      "style",
+      "#message",
+      "#copyrightlist",
+      "#favorite_2",
+      "#invite",
+      "#yrt3",
+      "#report_action",
+      "#favoriteshow_2",
+      "#report_box",
+      "#chapterJurisdiction",
+      "#mongolia_layer",
+      "#float_favorite",
+      ".float_favorite",
+      ".float_title",
+      ".read_menu",
+      ".comment",
+      "#comment",
+      "h2"
+    ],
+    "ad_patterns": [
+      "[添加书签]",
+      "[推荐本章]",
+      "[举报]",
+      "[投诉]",
+      "晋江文学城",
+      "请记住本站",
+      "手机版阅读",
+      "加入书架"
+    ],
+    "drop_leading_symbol_paragraphs": true
+  }
+}

@@ -809,6 +809,19 @@ def parse_chapter_page(rule, html: str, url: str, current_cid: str,
                 extract_note = f"{why}，已自动识别正文容器"
 
     if paragraphs:
+        # `chapter.drop_leading_symbol_paragraphs`：丢掉正文**头部**的「纯符号噪声行」。
+        # 实测晋江：正文容器 `div.noveltext` 顶部有一坨无 id/class 的工具栏，
+        # 剔完能命名的元素后仍残留独立的 `[` 与 `]` 两行 —— 它们没有可用的选择器，
+        # 但**只由标点组成**，所以可以按「字符全在标点集合内」安全识别。
+        # 只从**头部**丢（正文中间出现单独的「……」是合理的文学用法）。
+        if cfg.get("drop_leading_symbol_paragraphs"):
+            _SYM = set("[](){}<>《》「」『』【】()（）—-–~～*·．。,.!！?？:：;；\"'“”‘’`^_\\|/+=@#$%&")
+            while paragraphs and paragraphs[0] and \
+                    all(ch in _SYM or ch.isspace() for ch in paragraphs[0]) and \
+                    len(paragraphs[0]) <= 4:
+                paragraphs.pop(0)
+
+    if paragraphs:
         # 首段即标题（无 class 可剔的站点，如飞卢）：仅当与目录标题**完全相同**时删除
         if (cfg.get("drop_leading_title_paragraph") and expect_title
                 and _norm_space(paragraphs[0]) == _norm_space(expect_title)):

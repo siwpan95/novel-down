@@ -1,0 +1,15 @@
+{
+  "id": "midureader.com",
+  "name": "米读小说（APP 独占）",
+  "pool": "正版",
+  "enabled": false,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://midureader.com/",
+  "disabled_reason": "【APP 独占，无网页阅读入口】（全哥 2026-09-21 实测指出）。证据：`midureader.com` 打开即要求下载 APP；`midukanshu.com` 直接 403 Forbidden。⚠ 域名纠错：`nsdkh.com` 与 `spyxb.com` 是**盗版站**，不是米读 —— 别把它们当成米读收录。下一步：除非能找到 web 端阅读页（如 `/book/{id}` 形态），否则维持停用。",
+  "match": [
+    "midureader.com"
+  ]
+}
