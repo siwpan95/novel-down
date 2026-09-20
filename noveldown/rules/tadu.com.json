@@ -1,0 +1,51 @@
+{
+  "id": "tadu.com",
+  "name": "塔读小说网",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "demo_url": "https://www.tadu.com/book/1001396",
+  "notes": "★ 正版站，2026-09-20 实测。塔读是「免费阅读 + 打赏/订阅（塔豆）」模式：\n抽查 4 本书（1001396/1001837/1003023 等）目录**只有一个「免费章节」分段**，\n逐章无 VIP 标记——但目录按**分段**组织（`<h2><span>免费章节<i>/N章</i></span></h2>`），\n故仍配 `vip_volume_markers: [\"VIP\"]`：一旦某本书出现「VIP章节」段，该段章节会被整段标记\nlocked 且零请求（分段名判定未在真实 VIP 书上验证过，由正文付费墙与产物终检兜底）。\n\n【第一条坑：正文不在章节页 HTML 里】\n章节页 `/book/{bid}/{cid}/` 的 `#artContent` 是**空的**（`<div id=\"artContent\"></div>`），\n正文由 `read300-*.js` 的 `chapterContent()` 调接口后写入 `.read_details`；\n移动版 m.tadu.com 同样没有正文。接口是：\n  `/getPartContentByCodeTable/{bid}/{seq}` → `{\"status\":200,\"data\":{\"content\":\"<p …>…</p>\"}}`\n注意末段是**章节序号**（从 1 起），不是 cid。故用本项目新增的 `chapter.body_api`。\n\n【第二条坑：正文每个 <p> 都带 data-limit，其中 7 段是站点水印，必须剔除】\n接口返回的每个段落都是 `<p data-limit=\"base64(…)\">…</p>`；其中**恰有若干段**的\n`data-limit` 等于 `base64(当前章节 cid)`——那些不是正文，而是站点注入的**推广水印**，\n且站点自己在浏览器里用 CSS（`.read_details p[data-limit=\"{encipher(cid)}\"]{display:none}`）\n把它们藏起来（`hideLabel()`）。实测第 1 章：77 段中 7 段是水印\n（如「塔读小~。>说—*.—免费*无广>告无*>弹窗，还>-.*能跟书~友们一起互>@动。」），\n可见正文 1532 字 / 全文 1690 字。\n→ 规则用 `body_api.drop.equals_base64_of: \"cid\"` 精确剔除这 7 段。\n**这不是绕过访问控制**：被隐藏的是站点自己的推广水印，不是正文；\n访客实际能读到的正文（70 段 / 1532 字）才是我们采集的范围。\n\n【第三条坑：`/book/{bid}/1/` 是坏链接】\n目录页里混有 `/book/{bid}/1/`（实测访问返回「500 该章节不存在」），\n靠 `document_order` + 同 cid 去重无法消除（cid 不同），故 item_selector 限定在\n`div.chapter` 内、pattern 要求 cid 至少 6 位。\n\n【排序】必须用 `document_order`：接口的 `{seq}` 就是目录顺序，\n本项目的 `chapter.index` 即由此产生，cid 数值排序会错位。",
+  "match": ["tadu.com"],
+  "book": {
+    "url_pattern": "/book/(\\d+)",
+    "info_url": "{origin}/book/{bid}",
+    "title": ["meta[property='og:novel:book_name']"],
+    "author": ["meta[property='og:novel:author']"],
+    "intro": ["meta[property='og:description']"],
+    "status": ["meta[property='og:novel:status']"],
+    "cover": ["meta[property='og:image']"]
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single",
+      "url": "{origin}/book/catalogue/{bid}"
+    },
+    "item_selector": "div.chapter a[href*='/book/']",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/book/(?P<b>\\d+)/(?P<cid>\\d{6,})/?"
+    },
+    "url_template": "{origin}/book/{bid}/{cid}/",
+    "sort": "document_order",
+    "dedupe": "keep_first",
+    "volume_selector": "h2",
+    "vip_volume_markers": ["VIP", "付费"]
+  },
+  "chapter": {
+    "title_selector": ".chapter h4, h1, .chapter-name",
+    "content_selector": "div.nd-api-body",
+    "paragraph_selector": "p",
+    "body_api": {
+      "url": "{origin}/getPartContentByCodeTable/{bid}/{seq}",
+      "content_field": "data.content",
+      "drop": {
+        "selector": "p[data-limit]",
+        "attr": "data-limit",
+        "equals_base64_of": "cid"
+      }
+    },
+    "strip_selectors": ["script", "style"]
+  }
+}

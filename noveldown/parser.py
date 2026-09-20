@@ -138,9 +138,18 @@ def parse_book_info(rule, html: str, url: str, bid: str) -> dict:
         if m:
             title = (m.group(1) if m.groups() else m.group(0)).strip()
 
+    author = _pick(cfg.get("author"))
+    # `author_pattern`：作者常与书名挤在同一行（书海 `.book-info-bookname` =
+    # 「神农医婿 作者: 方长」），用正则取出作者，避免把书名一起带出来。
+    apat = cfg.get("author_pattern")
+    if apat and author:
+        m = re.search(apat, author, re.S)
+        if m:
+            author = (m.group(1) if m.groups() else m.group(0)).strip()
+
     return {
         "title": title,
-        "author": _pick(cfg.get("author")),
+        "author": author,
         "intro": _pick(cfg.get("intro")),
         "cover": _pick(cfg.get("cover")),
         "status": _pick(cfg.get("status")),
@@ -197,6 +206,21 @@ def catalog_page_urls(rule, source_html: str, bid: str, origin: str,
 #  目录：章节项
 # ------------------------------------------------------------
 
+def _resolve_link_el(el):
+    """章节项可能是**容器**（如书海 `div.chapter-item`），返回真正带链接的元素。
+
+    自身带 href/onclick 就返回自身；否则向下找第一个 `<a>`。
+    找不到时返回自身（交给调用方按缺链接处理）。
+    """
+    if el.get("href") or el.get("onclick"):
+        return el
+    if getattr(el, "select_one", None):
+        inner = el.select_one("a[href], a[onclick]") or el.select_one("a")
+        if inner is not None:
+            return inner
+    return el
+
+
 def _extract_cid(rule, el, href: str, bid: str, origin: str, page_url: str):
     """从章节项元素中提取 cid 与最终 URL。
 
@@ -206,14 +230,24 @@ def _extract_cid(rule, el, href: str, bid: str, origin: str, page_url: str):
 
     url_template 可用 {origin} / {bid} / {cid} 占位符；
     未配置时用 urljoin(page_url, href) 解析相对链接。
+
+    **容器项**：`item_selector` 也可以选中**容器**（如书海
+    `<div class="chapter-item"><a href="/read/1/41.html">…</a><span class="vip"></span></div>`）。
+    此时 href / onclick 在内嵌 `<a>` 上，且**标题在容器文本里**——
+    实测该书 33% 的 `<a>` 文本为空（标记错位），只选 `<a>` 会丢掉三分之一标题。
     """
     id_cfg = rule.catalog_cfg.get("id_from") or {}
     mode = id_cfg.get("mode", "href")
     pattern = id_cfg.get("pattern", "")
     tpl = rule.catalog_cfg.get("url_template")
 
+    # 容器项：自身没有 href/onclick 时，向下找第一个 <a>
+    link_el = _resolve_link_el(el)
+    if link_el is not el:
+        href = link_el.get("href") or href
+
     if mode == "onclick":
-        raw = el.get("onclick") or ""
+        raw = link_el.get("onclick") or ""
         m = re.search(pattern, raw) if pattern else None
         if not m:
             return None, ""
@@ -261,7 +295,38 @@ def collect_catalog_items(rule, html: str, page_url: str, bid: str):
         if el.parent is not None and getattr(el.parent, "get", None):
             parent_cls = " ".join(el.parent.get("class") or [])
         protected, reason = is_vip_item(f"{cls} {parent_cls}", title)
+        # VIP 标记在目录项的**子元素**上时的显式选择器（书海：
+        # <div class="chapter-item"><a …>…</a><span class="vip"></span></div>）。
+        # 该 span 既不在项自身 class、也不在父级 class 上，故需单独指定。
+        # 检查范围 = 项自身 + **链接元素的父级**（VIP 标记与链接同级）。
+        # ⚠ 不能取「项自身的父级」：那是整个目录容器，会匹配到别的条的 vip span，
+        #   导致整本书被误锁（实测踩过：645 章全被判 protected）。
+        if not protected:
+            vc = rule.catalog_cfg.get("vip_child_selector")
+            if vc:
+                link_el = _resolve_link_el(el)
+                for scope in (el, getattr(link_el, "parent", None)):
+                    if scope is None or not getattr(scope, "select_one", None):
+                        continue
+                    try:
+                        if sv.match(vc, scope) or scope.select_one(vc) is not None:
+                            protected = True
+                            reason = f"目录项子元素命中 '{vc}'"
+                            break
+                    except Exception:
+                        continue
         rec = {"cid": cid, "title": title, "url": url, "volume": state["vol"]}
+        # 分段名判 VIP：目录按「免费章节 / VIP章节」**分段**标注、逐章无标记的站点
+        # （实测塔读：<h2><span>免费章节<i>/2416章</i></span></h2> 下挂全部章节）。
+        # 需要配 `volume_selector`（如 "h2"）才能跟踪到当前分段名。
+        if not protected:
+            vvm = rule.catalog_cfg.get("vip_volume_markers")
+            if vvm and state["vol"]:
+                for m in vvm:
+                    if m and m.lower() in state["vol"].lower():
+                        protected = True
+                        reason = f"所属分段「{state['vol']}」命中 '{m}'"
+                        break
         if protected:
             locked.append({**rec, "reason": reason})
         else:
@@ -620,3 +685,69 @@ def parse_chapter_page(rule, html: str, url: str, current_cid: str):
         "extract_note": extract_note,
         "next_url": next_url,
     }
+
+
+# ------------------------------------------------------------
+#  正文接口（chapter.body_api）
+# ------------------------------------------------------------
+
+BODY_API_WRAP_CLASS = "nd-api-body"
+
+
+def _drop_value(drop_cfg, bid, seq, cid):
+    """算出「要剔除的元素」其属性应等于的值。
+
+    `equals_base64_of` 支持 `bid` / `seq` / `cid` —— 站点常用 base64(章节id)
+    作为水印段的标记（实测塔读：`data-limit="MTAwODEyNTg3"` = base64("100812587")）。
+    """
+    src = drop_cfg.get("equals_base64_of")
+    if not src:
+        return drop_cfg.get("equals")
+    val = {"bid": bid, "seq": seq, "cid": cid}.get(src)
+    if val is None:
+        return None
+    import base64
+    return base64.b64encode(str(val).encode("utf-8")).decode("ascii")
+
+
+def body_api_fragment(rule, text: str, bid: str, seq, cid: str) -> str:
+    """把「正文接口」的响应转成可供后续选择器使用的 HTML 片段。
+
+    有些站点的章节页是**空壳**，正文由 JS 调接口后填入
+    （实测塔读：`#artContent` 为空，正文在 `/getPartContentByCodeTable/{bid}/{seq}`
+    返回的 `data.content` 里）。
+
+    本函数：
+      1. 解析 JSON，按 `content_field` 取出正文 HTML；
+      2. 按 `drop` 规则**剔除水印段**（见 `_drop_value`）；
+      3. 包一层 `<div class="nd-api-body">`，使 `content_selector` 有容器可选。
+
+    返回 "" 表示取不到（调用方据此跳过，不影响主流程）。
+    """
+    import json as _json
+
+    cfg = rule.chapter_cfg.get("body_api") or {}
+    if not text:
+        return ""
+    try:
+        data = _json.loads(text)
+    except (ValueError, TypeError):
+        return ""
+    frag = _dig(data, cfg.get("content_field", "data.content"))
+    if not isinstance(frag, str) or not frag.strip():
+        return ""
+
+    soup = BeautifulSoup(f"<div class='{BODY_API_WRAP_CLASS}'>{frag}</div>",
+                         "html.parser")
+    drop = cfg.get("drop") or {}
+    if drop and drop.get("selector"):
+        want = _drop_value(drop, bid, seq, cid)
+        attr = drop.get("attr")
+        for el in soup.select(drop["selector"]):
+            # 已被前一次 decompose 连带删掉的元素，attr 会失效（实测踩过
+            # AttributeError: 'NoneType' object has no attribute 'get'）→ 跳过。
+            if getattr(el, "attrs", None) is None:
+                continue
+            if want is None or (attr and (el.get(attr) or "") == want):
+                el.decompose()
+    return str(soup)

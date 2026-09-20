@@ -14,7 +14,7 @@
 
 ## 特性
 
-- **规则驱动**：一个站点一个 JSON，加站不改代码。内置 8 个实测可用站点规则。
+- **规则驱动**：一个站点一个 JSON，加站不改代码。内置 **9 个**实测可用站点规则（+1 条停用存根）。
 - **双路由取页**：纯 HTTP 为主；目录靠 JS 渲染、或站点有 WAF 的，可切**真实浏览器路由**
   （`fetch_mode: browser`，Playwright/Chromium）。**反检测模式**（`browser.anti_detect`）
   用本机**真 Chrome + headed + 关 AutomationControlled + 语言自洽**，可过腾讯云 Chaos VM。
@@ -105,9 +105,14 @@ F:\Python314\python.exe -m noveldown selfcheck
 | **七猫免费小说** | 正版·免费阅读 | `qimao.com` | **708（20 可读 / 688 APP独占）** | 目录走 **JSON 接口**，逐章带 `is_vip`；688 章标记 locked、**零请求**；20 章 43 065 字 |
 | **纵横中文网** | 正版·含 VIP | `zongheng.com` | **700（50 免费 / 650 VIP）** | 650 章在**目录层**带 `class="vip col-4"` → 标记 locked、**零请求**；50 章免费正文 163 576 字 |
 | **番茄小说** | 正版·免费阅读 | `fanqienovel.com` | 966 | 目录 967 链接→966 章；正文 **362/362 个字体混淆码位全部还原** |
+| **塔读小说网** | 正版·免费 | `tadu.com` | **2416（全免费）** | 目录 `/book/catalogue/{bid}`；**正文来自 JSON 接口**（章节页是空壳）→ `chapter.body_api`；3 章 5501 字，校对 PASS |
+| **书海小说网** | 正版·含 VIP | `shuhai.com` | **645（40 免费 / 605 VIP）** | 正版详情页 `/book/{bid}.htm`；目录 `?method=getcatalog` **裸 HTML**（无需浏览器）；605 章带 `span.vip` → locked、**零请求**；5 章 11 585 字 |
 | 书趣阁 | 免费阅读站 | `shuquge.com` / `xshuquge.net` | 1582 | 第 1 章 106 段 / 2865 字，过滤 2 行广告 |
 | 笔趣阁 bqgbe | 免费阅读站 | `bqgbe.cc` | 169 | 第 1 章 55 段 / 1352 字，base64×33 |
 | 笔趣阁 biqu520 | 免费阅读站 | `biqu520.net` | 2653 | 第 1 章 45 段 / 1345 字，base64×23 |
+
+**另有一条停用存根** `ciweimao.com`（刺猬猫）：章节页 307 →「验证码 - 刺猬猫」（极验），
+**本机真 Chrome + headed 也被挡** → 属「给人的图形验证码」，命中红线，不做。详见 [FREE_ONLY.md](./docs/FREE_ONLY.md)。
 
 > **纵横这条最能说明设计取向**：那是一本 705 章的正版小说，其中 **650 章是 VIP**。
 > 「站点含 VIP」不是拒绝理由——那 50 章免费内容在射程内；VIP 章由**目录层的 class 标记**
@@ -183,7 +188,7 @@ novel-down/
 ├── tools/verify_reader.py     真实浏览器验证 HTML 阅读器（Playwright）
 ├── tools/make_screenshot.py   生成 README 演示截图（用自撰文本，不含第三方正文）
 ├── tools/check_repo.py        仓库卫生门禁（本仓不含第三方源码 / 凭据 / 产物）
-├── tests/                     147 个用例（含端到端拦截集成测试）+ fixtures
+├── tests/                     156 个用例（含端到端拦截集成测试）+ fixtures
 ├── docs/
 │   ├── REFERENCE.md           借鉴记账（来源 + 许可证 + 范围 + 排除项）
 │   ├── RULES.md               规则格式与典型形态（含字体反爬 / 浏览器路由）
@@ -227,12 +232,13 @@ F:\Python314\python.exe -m pip install -r requirements.txt
 F:\Python314\python.exe -m unittest discover -s tests -t .
 ```
 
-**147 个用例，约 3 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
+**156 个用例，约 3 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
 目录归一化（含 `document_order`/`keep_last`）、目录页发现、正文提取、
 免费六层拦截、四格式导出（含 EPUB 结构与 XML 合法性校验）、
 断点续爬状态机、规则校验、校对报告、字体反爬解码（glyph 名 / 轮廓索引）、
 JSON 接口目录（含 `flatten_field` 卷→章展开）、段落级正文选择器（含**未命中回退**）、
-反检测启动参数与语言自洽、书名清洗。
+反检测启动参数与语言自洽、容器式目录项（含空 `<a>` 文本）、子元素/分段 VIP 判定、
+正文接口 `body_api`（含水印剔除）、作者正则、书名清洗。
 
 另有四项**端到端**验证：
 

@@ -151,7 +151,10 @@ def probe(url):
         n_br = seg.count("<br")
         n_p = seg.count("<p")
         if n_br + n_p >= 3:
-            scored.append((n_br + n_p, div.get("id"), " ".join(div.get("class") or []),
+            # 注意：id / class 可能是 None，直接进元组会让 sort 在并列时
+            # 比较 str 与 None → TypeError（实测踩过）。
+            scored.append((n_br + n_p, div.get("id") or "",
+                           " ".join(div.get("class") or []),
                            n_br, n_p, len(seg)))
     scored.sort(reverse=True)
     if not scored:

@@ -30,10 +30,10 @@ from .http_client import build_headers, http_get, parse_proxy
 from .identity_manager import get_identity_manager
 from .models import (Book, STATUS_BLOCKED, STATUS_EMPTY, STATUS_FAILED,
                      STATUS_LOCKED, STATUS_OK, STATUS_PENDING)
-from .parser import (catalog_links_from_page, catalog_page_urls,
-                     collect_catalog_items, collect_json_catalog,
-                     normalize_catalog, origin_of, parse_book_info,
-                     parse_chapter_page)
+from .parser import (body_api_fragment, catalog_links_from_page,
+                     catalog_page_urls, collect_catalog_items,
+                     collect_json_catalog, normalize_catalog, origin_of,
+                     parse_book_info, parse_chapter_page)
 from .ratelimit import RateLimiter
 from .rules import find_rule, load_rules
 from .state import StateStore
@@ -407,6 +407,46 @@ class Downloader:
         if n % STATE_SAVE_INTERVAL == 0:
             store.save_state(book)
 
+    def _body_api_html(self, ch, page_url: str) -> str:
+        """按 `chapter.body_api` 取正文片段（未配置或取不到则返回 ""）。
+
+        URL 模板支持 `{origin}` / `{bid}` / `{cid}` / `{seq}`（seq = 章节序号，从 1 起）。
+        """
+        cfg = self.rule.chapter_cfg.get("body_api") or {}
+        tpl = cfg.get("url")
+        if not tpl:
+            return ""
+        target = (tpl.replace("{origin}", origin_of(page_url))
+                     .replace("{bid}", self.book.book_id)
+                     .replace("{cid}", ch.cid)
+                     .replace("{seq}", str(ch.index)))
+        try:
+            raw = self._fetch_raw(target, referer=page_url)
+        except Exception as e:
+            self.log(f"  正文接口请求失败（{e}）——该章按页面 HTML 抽取", "warn")
+            return ""
+        frag = body_api_fragment(self.rule, raw, self.book.book_id,
+                                 ch.index, ch.cid)
+        if not frag:
+            self.log("  正文接口返回空（字段名或接口可能已变）", "warn")
+            return ""
+        # 降级响应告警（实测塔读）：站点用 base64(cid) 标记「本次应隐藏」的段落；
+        # 正常首次响应只有少量水印段（如 7/77），但**同一章高频重复直连**时站点会把
+        # 越来越多段落标记为隐藏 → 抽取结果变短。占比过高时明确提示。
+        drop_cfg = cfg.get("drop") or {}
+        src = drop_cfg.get("equals_base64_of")
+        if src in ("cid", "seq", "bid"):
+            import base64 as _b64
+            key = {"cid": ch.cid, "seq": ch.index,
+                   "bid": self.book.book_id}[src]
+            want = _b64.b64encode(str(key).encode()).decode()
+            total = raw.count("<p")
+            hidden = raw.count(f'data-limit="{want}"')
+            if total and hidden / total > 0.4:
+                self.log(f"  正文接口隐藏段占比 {hidden}/{total}（偏高，疑站点降级响应）"
+                         f"—— 建议稍后重抓该章；勿用 --force 反复请求同一章", "warn")
+        return frag
+
     def _fetch_one_chapter(self, ch) -> None:
         """抓取单章（含分页拼装）+ 免费章节校验。"""
         paragraphs, pages = [], []
@@ -429,6 +469,16 @@ class Downloader:
                 ch.status = STATUS_FAILED
                 ch.note = f"请求失败：{e}"
                 return
+            # 正文接口：章节页是空壳、正文另由接口下发的站点（塔读），
+            # 把接口片段并进 html 再走同一套选择器抽取。
+            # ⚠ 必须插到 `</body>` **之前**：解析器优先用 lxml，
+            #   而 lxml 会**丢弃 `</html>` 之后的内容**（实测踩过：片段整块消失）。
+            api_html = self._body_api_html(ch, url)
+            if api_html:
+                if "</body>" in html:
+                    html = html.replace("</body>", api_html + "\n</body>", 1)
+                else:
+                    html = html + "\n" + api_html
             if first_html is None:
                 first_html = html
             info = parse_chapter_page(self.rule, html, url, ch.cid)

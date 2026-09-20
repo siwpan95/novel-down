@@ -5,6 +5,59 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.6.0] - 2026-09-20
+
+按 P0 计划接入两站（**塔读**、**书海**），并按红线把 **刺猬猫** 记成停用存根。
+新增四项通用能力，都不是「为一站写死」。
+
+### Added
+
+- **站点：塔读小说网**（`tadu.com`，正版，免费阅读 + 打赏模式）。
+  目录 `/book/catalogue/{bid}`（2416 章）；**正文不在章节页 HTML 里**——
+  `#artContent` 是空壳，正文由 `read300-*.js` 调 `/getPartContentByCodeTable/{bid}/{seq}`
+  取回（`{seq}` 是**章节序号**，不是 cid）。实测《仙妻如云》3 章 5501 字，校对 + 产物终检 PASS。
+- **站点：书海小说网**（`shuhai.com`，正版，杰奇 CMS）。书籍详情页是 `/book/{bid}.htm`
+  （**带 .htm**；不带的是另一张榜单页）；目录由 `?method=getcatalog` 下发，
+  **不带 `CALLBACK` 时直接返回裸 HTML**（无需 JSONP 解包，也无需浏览器路由），
+  645 章 = **40 免费 + 605 VIP**。
+- **`chapter.body_api`**：正文来自 JSON 接口的通用支持
+  （`url` 支持 `{origin}/{bid}/{cid}/{seq}`，`content_field` 取字段，
+  `drop` 规则按 `equals_base64_of` 剔除站点水印段）。
+- **`catalog.vip_volume_markers`**：目录按**分段**标注免费/VIP 的站点
+  （塔读 `<h2><span>免费章节<i>/N章</i></span></h2>`），配 `volume_selector` 即可整段锁定。
+- **`catalog.vip_child_selector`**：VIP 标记在目录项**子元素**上时（书海
+  `<div class="chapter-item"><a …>…</a><span class="vip"></span></div>`）的显式判定。
+- **目录项可以是容器**：`item_selector` 选中容器时，href/onclick 从内嵌 `<a>` 取、
+  **标题取容器文本**——实测书海 645 章里 **215 章（33%）的 `<a>` 文本为空**，
+  只选 `<a>` 会丢掉三分之一标题。
+- **`book.author_pattern`**：作者与书名挤在同一行时按正则取作者（书海 `神农医婿 作者: 方长`）。
+
+### Fixed
+
+- **`tools/probe_site.py` 崩溃**：容器打分元组里 `id`/`class` 可能为 `None`，
+  并列排序时比较 `str` 与 `None` → `TypeError`。实测书海书籍页直接崩在「正文容器候选」。
+- **`body_api` 片段被 lxml 丢弃**：解析器优先用 lxml，而 **lxml 会丢弃 `</html>` 之后的内容**——
+  片段追加在文档末尾会整块消失（症状：容器选不到、或选了却为空）。改为插到 `</body>` 之前。
+- **`drop` 规则遇到已 `decompose()` 的元素**会 `AttributeError`（`attrs` 变 None）→ 加跳过守卫。
+- `vip_child_selector` 的检查范围**不能用「项自身的父级」**（那是整个目录容器，
+  会匹配到别的条目的 `span.vip`）→ 改为「链接元素的父级」。实测踩过：645 章全被判 protected。
+
+### Known issues
+
+- **塔读正文接口会对高频重复直连降级**：站点用 `base64(章节id)` 标记「本次应隐藏」的段落，
+  正常的首次响应只有少量水印段（实测 7/77），但**同一章被反复直连**时被标记的段落越来越多
+  → 抽取结果变短。真人浏览器访问稳定（实测始终 7 隐藏 / 70 可见 / 1532 字）。
+  → 应对：**每章只取一次**（断点续爬缓存天然满足），**不要用 `--force` 反复重抓同一章**；
+  引擎在隐藏段占比 > 40% 时会打 warn 提示。
+
+### Tests
+
+- 147 → **156** 个用例。新增：容器目录项（含空 `<a>` 文本）、`vip_child_selector` 只影响本条目、
+  `vip_volume_markers` 分段锁定、`body_api` 抽取 + 按 base64(cid) 剔除水印（含坏 JSON/缺字段）、
+  `author_pattern`、停用存根的理由可复核与 `find_rule()` 报出原因。
+- 实测新增两站 E2E：塔读 3 章 5501 字、书海 5 章 11585 字，二者**校对 PASS + 产物终检 PASS**
+  （书海 605 个 VIP 章**零请求**零泄漏）。
+
 ## [0.5.1] - 2026-09-20
 
 修一处**浏览器等待条件的隐性缺陷**（由一次外部项目评估的实测副产物发现）。

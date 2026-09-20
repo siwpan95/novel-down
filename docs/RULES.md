@@ -55,6 +55,7 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | `info_url` | 书籍页 URL 模板，支持 `{origin}` `{bid}` `{url}` |
 | `title` / `author` / `intro` / `cover` / `status` | 候选 CSS 选择器**数组**，按序取第一个命中；`meta[...]` 取 `content` 属性，其余取文本。特殊值 **`@title`** = 文档 `<title>` 文本 |
 | `title_pattern` | 可选正则，对 `title` 结果做清洗（如 `^(.*?)(?:免费阅读|最新章节)` 去掉站点后缀） |
+| `author_pattern` | 可选正则，对 `author` 结果做清洗/抽取（书海书名与作者同格：`神农医婿 作者: 方长` → `作者[:：]\s*(.+?)\s*$`） |
 
 ### `catalog`
 
@@ -69,14 +70,16 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | `pages.max_rounds` | 迭代轮数上限，默认 4 |
 | `mode` | `html`（默认）\| `json_api`（目录来自 JSON 接口，见下） |
 | `json` | `json_api` 模式的配置：`url`（模板，支持 `{origin}/{bid}` 与 `{cookie:NAME}` 占位符）、`items_path`（如 `data.chapters`）、**`flatten_field`**（卷→章嵌套展开，如 `cs`）、`cid_field`、`title_field`、**`vip_field`**、`vip_truthy` |
-| `item_selector` | 章节项 `<a>` 的 CSS 选择器（`html` 模式必需） |
+| `item_selector` | 章节项选择器（`html` 模式必需）。**也可选中容器**：此时 href 从内嵌 `<a>` 取、**标题取容器文本**（书海 33% 的 `<a>` 文本为空，只选 `<a>` 会丢标题） |
 | `id_from.mode` | `href`（从链接取）\| `onclick`（从 onclick 取） |
 | `id_from.pattern` | 必须含 **命名捕获组 `(?P<cid>...)`** |
 | `url_template` | 可选。支持 `{origin}` `{bid}` `{cid}`；不填则 `urljoin(页面URL, href)` |
 | `browser_wait_selector` | 可选。**目录页**专用的浏览器等待条件（与顶层 `browser.wait_selector` 解耦） |
 | `sort` | `cid_numeric_asc`（默认，ID 即顺序号）\| `document_order`（保持页面顺序，用于雪花 ID 站点）\| `cid_numeric_desc` |
 | `dedupe` | `keep_first`（默认）\| `keep_last`（回显在**列表头部**时用它，见下） |
-| `volume_selector` | 可选卷标题选择器（会按文档顺序跟踪当前卷名） |
+| `volume_selector` | 可选卷标题/分段选择器（按文档顺序跟踪当前卷名；**目录按分段标注免费/VIP 时也用它**） |
+| `vip_volume_markers` | 可选。**所属分段**名命中这些词即判受保护（塔读 `<h2><span>免费章节<i>/N章</i></span></h2>`）。需配 `volume_selector` |
+| `vip_child_selector` | 可选。VIP 标记在目录项的**子元素**上时用它（书海 `<div class="chapter-item"><a …>…</a><span class="vip"></span></div>`）。判定范围 = 项自身 + **链接元素的父级** |
 
 > **`document_order` + `keep_last` 的用途**（番茄小说的形态）：目录第一项是
 > 「最近更新：第966章 终章（完）」回显，与列表末尾的正文条目**同 cid**。
@@ -89,7 +92,8 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 |---|---|
 | `title_selector` | 可选。正文页标题（会自动剥离「（第N页）」后缀） |
 | `browser_wait_selector` | 可选。**章节页**专用的浏览器等待条件（与顶层 `browser.wait_selector` 解耦——书籍页与章节页往往要等不同元素）。⚠ **只放"内容就绪"那一支**：`wait_for_selector` 是 OR 语义，塞入骨架期即命中的宽松选择器会导致提前放行 |
-| `content_selector` | ✓ 正文容器 CSS |
+| `body_api` | 正文来自 **JSON 接口**时的配置（塔读：章节页是空壳）。`url` 支持 `{origin}/{bid}/{cid}/{seq}`（seq = 章节序号，从 1 起）；`content_field` 取字段；`drop` 按 `equals_base64_of: cid` 剔除站点水印段。取到的 HTML 会被包成 `div.nd-api-body`，后续选择器照常用 |
+| `content_selector` | ✓ 正文容器 CSS（用 `body_api` 时填 `div.nd-api-body`） |
 | `content_selectors` | 可选**候选列表**（同一站不同请求可能给不同容器；按序取第一个命中） |
 | `paragraph_selector` | 可选。**按段落元素逐个取文本**，而非整块容器文本。用于 `<p>` 里混着段评数/点赞数等附加节点的站点（如起点 `span.content-text`）。**未命中时会自动回退为容器整体切分**，并把原因写进章节备注（`extract_note`），避免整章静默变空 |
 | `strip_selectors` | 需从容器内剔除的元素（导航 / 标题 / 脚本 / 水印） |
@@ -127,7 +131,7 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 
 ---
 
-## 实例：八种典型形态
+## 实例：十种典型形态
 
 A–H 覆盖从「标准免费站」到「反检测浏览器 + JSON 接口目录」的全部难度梯度。
 新增站点时，先在本节找最接近的一条照抄，再改选择器。
@@ -466,6 +470,117 @@ A–H 覆盖从「标准免费站」到「反检测浏览器 + JSON 接口目录
 
 > 《诡秘之主》实测：1418 章 = **153 免费 + 1265 VIP**，VIP 章在目录接口层被判为 locked、
 > **零请求**；抓 17 章 56 932 字，校对 PASS。
+
+### I. 容器式目录项 + 子元素 VIP 标记（shuhai.com，杰奇 CMS）
+
+**正版·含 VIP**，GBK 编码的**老式服务端渲染**站（杰奇 CMS：接口带 `ajax_gets=jieqi_contents`）。
+目录由 `?method=getcatalog` 下发——**不带 `CALLBACK` 时直接返回裸 HTML**，
+所以既不用 JSONP 解包、也不用浏览器路由。
+
+```json
+{
+  "id": "shuhai.com", "free_only": true, "predecode": false,
+  "match": ["shuhai.com"],
+  "book": {
+    "url_pattern": "/book/(\\d+)",
+    "info_url": "{origin}/book/{bid}.htm",
+    "title": ["@title"], "title_pattern": "^\\s*([^-]+?)\\s*-",
+    "author": [".book-info-bookname"], "author_pattern": "作者[:：]\\s*(.+?)\\s*$",
+    "intro": [".book-info-bookintro"]
+  },
+  "catalog": {
+    "pages": {"mode": "single",
+              "url": "{origin}/book/{bid}.htm?viptype=&method=getcatalog&ajax_request=1&ajax_gets=jieqi_contents"},
+    "item_selector": "div.chapter-item",
+    "vip_child_selector": "span.vip",
+    "id_from": {"mode": "href", "pattern": "/read/(?P<b>\\d+)/(?P<cid>\\d+)\\.html"},
+    "url_template": "{origin}/read/{bid}/{cid}.html",
+    "sort": "cid_numeric_asc"
+  },
+  "chapter": {
+    "title_selector": ".chapter-name",
+    "content_selector": "#reader-content .chapter-item",
+    "strip_selectors": [".chapter-name", ".chaper-info", "script", "style"]
+  }
+}
+```
+
+关键实测发现：
+
+1. **详情页必须带 `.htm`**：`/book/{bid}.htm` 才是书籍页；`/book/{bid}`（不带）是另一张
+   榜单页——实测 101449 不带 `.htm` 时页面上 48 个 `.book-name` 全是推荐位，
+   真正的主书名一个都没有。
+2. **章节项是容器，且 `<a>` 文本有 33% 是空的**：
+   `<div class="chapter-item"><a href="/read/101449/3.html"></a> 第3章 初试神农十三针 </a>`
+   ——标题落在 `</a>` **之后**（站点标记错位）。所以 `item_selector` 必须选**容器**、
+   标题取容器文本；只选 `a` 会丢掉 215/645 个标题。
+3. **VIP 标记是项内兄弟 span**：`<a …>第41章…</a><span class="vip"></span>`。
+   它既不在 `<a>` 的 class、也不在父级 class 上 → 需要 `vip_child_selector`。
+   ⚠ 判定范围**不能取「项自身的父级」**（那是整个目录容器，会匹配到别的条的 vip span，
+   实测导致 645 章**全被判 protected**）。
+4. **正文容器是 `#reader-content .chapter-item`**，不是 `.reader-content`
+   （后者是导航条，只有 12 字；同页 `.chapter-item` 出现两次，第 2 个是「下一章」导航）。
+5. **GBK**：站点 `Content-Type: charset=gbk`，本项目 http 层按响应头解码，无需特殊处理。
+
+> 《神农医婿》实测：645 章 = **40 免费 + 605 VIP**（与目录里 `span.vip` 出现次数一致），
+> VIP 章在目录层即判 locked、**零请求**；5 章 11 585 字，校对 + 产物终检 PASS。
+
+### J. 正文来自 JSON 接口（tadu.com）
+
+**正版·免费阅读 + 打赏（塔豆）**。目录 2416 章；**章节页是空壳**——
+`<div id="artContent"></div>` 是空的，正文由 `read300-*.js` 调接口后写入 `.read_details`。
+移动版 `m.tadu.com` 同样没有正文。
+
+```json
+{
+  "id": "tadu.com", "free_only": true, "predecode": false,
+  "match": ["tadu.com"],
+  "book": {"url_pattern": "/book/(\\d+)", "info_url": "{origin}/book/{bid}",
+           "title": ["meta[property='og:novel:book_name']"]},
+  "catalog": {
+    "pages": {"mode": "single", "url": "{origin}/book/catalogue/{bid}"},
+    "item_selector": "div.chapter a[href*='/book/']",
+    "id_from": {"mode": "href", "pattern": "/book/(?P<b>\\d+)/(?P<cid>\\d{6,})/?"},
+    "url_template": "{origin}/book/{bid}/{cid}/",
+    "sort": "document_order",
+    "volume_selector": "h2", "vip_volume_markers": ["VIP", "付费"]
+  },
+  "chapter": {
+    "content_selector": "div.nd-api-body",
+    "paragraph_selector": "p",
+    "body_api": {
+      "url": "{origin}/getPartContentByCodeTable/{bid}/{seq}",
+      "content_field": "data.content",
+      "drop": {"selector": "p[data-limit]", "attr": "data-limit",
+               "equals_base64_of": "cid"}
+    }
+  }
+}
+```
+
+关键实测发现：
+
+1. **`{seq}` 是章节序号，不是 cid**：接口是 `/getPartContentByCodeTable/{bid}/{seq}`，
+   第 1 章 seq=1、cid=100812587。**排序必须用 `document_order`**，
+   否则 `chapter.index` 与站点 seq 错位、全部取错正文。
+2. **每个 `<p>` 都带 `data-limit`，其中若干段是站点水印**：`data-limit` 的值是
+   `base64(…)`；**恰有若干段等于 `base64(当前章 cid)`**——那些不是正文，而是站点注入的
+   **推广水印**（如「塔读小~。>说—*.—免费无广>告无*>弹窗，…」，夹杂随机噪声字符），
+   且站点自己在浏览器里用 CSS（`.read_details p[data-limit="{encipher(cid)}"]{display:none}`）
+   把它们藏起来。实测第 1 章：77 段里 **7 段是水印**，可见正文 1532 字 / 全文 1690 字。
+   → `drop.equals_base64_of: "cid"` 精确剔除。
+   **这不是绕过访问控制**：被隐藏的是站点自己的推广水印，不是正文；
+   访客实际能读到的（70 段 / 1532 字）才是我们采集的范围。
+3. **别把 `body_api` 片段追加在文档末尾**：解析器优先用 lxml，而 **lxml 会丢弃
+   `</html>` 之后的内容**——片段会整块消失（症状：容器选不到，或选到了却为空）。
+   引擎已改为插到 `</body>` 之前，自建实现时注意这点。
+4. **目录里混有坏链接 `/book/{bid}/1/`**（访问返回「500 该章节不存在」）：
+   同 cid 去重消不掉（cid 不同），故 item_selector 限定在 `div.chapter` 内、
+   pattern 要求 cid 至少 6 位。
+5. ⚠ **同章高频重复直连会被降级**：站点会把越来越多段落标记成「本次隐藏」→ 抽取结果变短。
+   真人浏览器稳定（始终 7 隐藏 / 70 可见）。→ **每章只取一次**，别用 `--force` 反复重抓。
+
+> 《仙妻如云》实测：2416 章全免费；3 章 5501 字，校对 + 产物终检 PASS。
 
 ---
 

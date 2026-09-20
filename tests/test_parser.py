@@ -7,9 +7,10 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from noveldown.parser import (catalog_links_from_page, clean_page_title,  # noqa: E402
-                              collect_catalog_items, extract_paragraphs,
-                              make_soup, normalize_catalog, parse_book_info,
+from noveldown.parser import (body_api_fragment, catalog_links_from_page,  # noqa: E402
+                              clean_page_title, collect_catalog_items,
+                              extract_paragraphs, make_soup,
+                              normalize_catalog, parse_book_info,
                               parse_chapter_page)
 from noveldown.rules import load_rules  # noqa: E402
 from tests._base import read_fixture  # noqa: E402
@@ -403,6 +404,175 @@ class TestTitlePattern(unittest.TestCase):
         html = "<html><head></head><body><div class='title'>备用书名</div></body></html>"
         info = parse_book_info(self._rule(), html, "https://x/s/1/", "1")
         self.assertEqual(info["title"], "备用书名")
+
+
+class TestContainerItemAndVipChild(unittest.TestCase):
+    """目录项是**容器**时的抽取与 VIP 判定（书海形态）。
+
+    实测书海：`<div class="chapter-item"><a href="/read/1/41.html">第41章 …</a>
+    <span class="vip"></span></div>` —— VIP 标记是同级的 span，
+    且 **33% 的 `<a>` 文本为空**（站点标记错位，标题落在 `</a>` 之后）。
+    """
+
+    def _rule(self, **cat_over):
+        from noveldown.rules import Rule
+        cat = {
+            "item_selector": "div.chapter-item",
+            "vip_child_selector": "span.vip",
+            "id_from": {"mode": "href",
+                        "pattern": "/read/(?P<b>\\d+)/(?P<cid>\\d+)\\.html"},
+            "url_template": "{origin}/read/{bid}/{cid}.html",
+            "sort": "cid_numeric_asc",
+        }
+        cat.update(cat_over)
+        return Rule({
+            "id": "t.sh", "name": "T", "match": ["x.com"], "free_only": True,
+            "book": {"url_pattern": "/book/(\\d+)"},
+            "catalog": cat,
+            "chapter": {"content_selector": "div.c"},
+        }).validate()
+
+    HTML = ('<div class="chapter-item"><a href="/read/1/2.html">第2章 乙</a></div>'
+            '<div class="chapter-item"><a href="/read/1/1.html"></a>第1章 甲</div>'
+            '<div class="chapter-item"><a href="/read/1/3.html">第3章 丙</a>'
+            '<span class="vip"></span></div>')
+
+    def test_container_item_title_from_container(self):
+        """`<a>` 文本为空时，标题必须从**容器**取（否则丢三分之一标题）。
+
+        注意 `collect_catalog_items` 保持**文档顺序**，排序是归一化阶段的事。
+        """
+        items, locked = collect_catalog_items(
+            self._rule(), self.HTML, "https://x.com/book/1.htm", "1")
+        self.assertEqual([i["cid"] for i in items], ["2", "1"])
+        self.assertEqual([i["title"] for i in items], ["第2章 乙", "第1章 甲"])
+        self.assertEqual([i["url"] for i in items],
+                         ["https://x.com/read/1/2.html",
+                          "https://x.com/read/1/1.html"])
+        self.assertEqual([l["cid"] for l in locked], ["3"])
+        self.assertIn("span.vip", locked[0]["reason"])
+
+    def test_vip_child_only_affects_its_own_item(self):
+        """回归：不能把「父级的全部后代」当判定范围（否则整本被误锁）。"""
+        items, locked = collect_catalog_items(
+            self._rule(), self.HTML, "https://x.com/book/1.htm", "1")
+        self.assertEqual(len(locked), 1, "只有带 span.vip 的那一条应被锁")
+        self.assertEqual(len(items), 2)
+
+
+class TestVipVolumeMarkers(unittest.TestCase):
+    """目录按**分段**标注免费/VIP（塔读：`<h2><span>免费章节<i>/N章</i></span></h2>`）。"""
+
+    def _rule(self):
+        from noveldown.rules import Rule
+        return Rule({
+            "id": "t.td", "name": "T", "match": ["x.com"], "free_only": True,
+            "book": {"url_pattern": "/book/(\\d+)"},
+            "catalog": {
+                "item_selector": "div.chapter-item",
+                "id_from": {"mode": "href",
+                            "pattern": "/book/(?P<b>\\d+)/(?P<cid>\\d+)/"},
+                "url_template": "{origin}/book/{bid}/{cid}/",
+                "sort": "document_order",
+                "volume_selector": "h2",
+                "vip_volume_markers": ["VIP"],
+            },
+            "chapter": {"content_selector": "div.c"},
+        }).validate()
+
+    def test_items_under_vip_section_are_locked(self):
+        html = ('<h2>免费章节 /2章</h2>'
+                '<div class="chapter-item"><a href="/book/1/101/">第1章</a></div>'
+                '<div class="chapter-item"><a href="/book/1/102/">第2章</a></div>'
+                '<h2>VIP章节</h2>'
+                '<div class="chapter-item"><a href="/book/1/201/">第3章</a></div>')
+        items, locked = collect_catalog_items(html=html, rule=self._rule(),
+                                              page_url="https://x.com/book/1",
+                                              bid="1")
+        self.assertEqual([i["cid"] for i in items], ["101", "102"])
+        self.assertEqual([l["cid"] for l in locked], ["201"])
+        self.assertIn("VIP", locked[0]["reason"])
+        self.assertEqual(items[0]["volume"], "免费章节 /2章")
+
+
+class TestBodyApi(unittest.TestCase):
+    """正文来自 JSON 接口（塔读）+ 按 base64(章节id) 剔除站点水印段。"""
+
+    def _rule(self, **api_over):
+        from noveldown.rules import Rule
+        api = {
+            "url": "{origin}/getPartContentByCodeTable/{bid}/{seq}",
+            "content_field": "data.content",
+            "drop": {"selector": "p[data-limit]", "attr": "data-limit",
+                     "equals_base64_of": "cid"},
+        }
+        api.update(api_over)
+        return Rule({
+            "id": "t.tadu", "name": "T", "match": ["tadu.com"],
+            "free_only": True,
+            "book": {"url_pattern": "/book/(\\d+)"},
+            "catalog": {"item_selector": "a"},
+            "chapter": {"content_selector": "div.nd-api-body",
+                        "paragraph_selector": "p",
+                        "body_api": api},
+        }).validate()
+
+    def _payload(self, content):
+        import json
+        return json.dumps({"status": 200, "data": {"content": content}},
+                          ensure_ascii=False)
+
+    def test_extracts_and_drops_watermark_by_base64_cid(self):
+        import base64
+        key = base64.b64encode(b"100812587").decode()      # MTAwODEyNTg3
+        content = (f'<p data-limit="{key}">站点水印段</p>'
+                   '<p data-limit="MTAwODEyNTg1">正文本段</p>')
+        frag = body_api_fragment(self._rule(), self._payload(content),
+                                 "1001396", 1, "100812587")
+        self.assertIn("nd-api-body", frag)
+        self.assertNotIn("站点水印段", frag)
+        self.assertIn("正文本段", frag)
+
+    def test_keeps_other_data_limit_paragraphs(self):
+        """只有等于 base64(当前 cid) 的那些才是水印，别的一律保留。"""
+        frag = body_api_fragment(
+            self._rule(),
+            self._payload('<p data-limit="MTAwODEyNTg1">正文</p>'),
+            "1001396", 1, "100812587")
+        self.assertIn("正文", frag)
+
+    def test_bad_json_returns_empty(self):
+        self.assertEqual(body_api_fragment(self._rule(), "<html>nope</html>",
+                                           "1", 1, "2"), "")
+        self.assertEqual(body_api_fragment(self._rule(), "", "1", 1, "2"), "")
+
+    def test_missing_content_field_returns_empty(self):
+        import json
+        raw = json.dumps({"status": 200, "data": {}})
+        self.assertEqual(body_api_fragment(self._rule(), raw, "1", 1, "2"), "")
+
+
+class TestAuthorPattern(unittest.TestCase):
+    """作者与书名挤在同一行时按正则取作者（书海 `.book-info-bookname`）。"""
+
+    def test_author_pattern_extracts_name(self):
+        from noveldown.rules import Rule
+        rule = Rule({
+            "id": "t.ap", "name": "T", "match": ["x.com"], "free_only": True,
+            "book": {"url_pattern": "/book/(\\d+)",
+                     "title": ["@title"],
+                     "title_pattern": "^\\s*([^-]+?)\\s*-",
+                     "author": [".book-info-bookname"],
+                     "author_pattern": "作者[:：]\\s*(.+?)\\s*$"},
+            "catalog": {"item_selector": "a"},
+            "chapter": {"content_selector": "div.c"},
+        }).validate()
+        html = ("<html><head><title>神农医婿 - 方长 - 都市 - 书海小说网</title></head>"
+                "<body><div class='book-info-bookname'>神农医婿 作者: 方长</div>"
+                "</body></html>")
+        info = parse_book_info(rule, html, "https://x.com/book/1.htm", "1")
+        self.assertEqual(info["title"], "神农医婿")
+        self.assertEqual(info["author"], "方长")
 
 
 if __name__ == "__main__":

@@ -115,7 +115,8 @@ def cmd_sites(args):
     print("        拦截发生在**章节级**：目录标 VIP 的章不请求，正文命中付费墙的丢弃。")
     print("        [需JS] 表示该站需浏览器路由（fetch_mode=browser）渲染。")
     if disabled:
-        print("        上表「停用」均为**技术原因**（WAF / 需浏览器会话 / 目录靠 JS），非政策拒绝。")
+        print("        上表「停用」均为**具体可复核的原因**（技术障碍如 WAF/需浏览器会话/目录靠 JS，"
+              "或项目红线如人机验证），非「因为含 VIP」。")
     if POLICY_DENYLIST:
         print(f"  项目声明不支持的域名：{', '.join(POLICY_DENYLIST)}")
     else:

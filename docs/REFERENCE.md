@@ -136,6 +136,9 @@
 | 2026-09-20 | `www.biqu520.net` | 与 bqgbe 同模板；目录项为 `onclick="随机函数名(id)"`（无 href）；27 页 → 2653 章，与站点自报分页完全一致 |
 | 2026-09-20 | `www.qidian.com` | 腾讯 Chaos VM：捆绑 Chromium + headless → `sec-ch-ua` 含 `HeadlessChrome`、`navigator.webdriver=true`，202 挑战页 42s 不放行；本机真 Chrome + headed + 关 AutomationControlled → 数秒内渲染出 67~70 万字节书页，`#bookName`/`.chapter-name`(1418) 命中，指纹 `webdriver=false / plugins=5 / languages=zh-CN,zh / UA 不含 HeadlessChrome`。目录走 JSON 接口 `/ajax/book/category`（`data.vs[].cs[]`，逐章 `sS`：**1=免费、0=VIP**，与直觉相反） |
 | 2026-09-20 | `www.qidian.com` | **A/B 对照**：带与不带 `stealth.min.js`，上述指纹与渲染结果**完全一致** → 判定 stealth 对本站点非必需（故不随仓分发，见第六节） |
+| 2026-09-20 | `www.tadu.com` | 目录 `/book/catalogue/{bid}`；章节页 `#artContent` 为空、正文由 `/getPartContentByCodeTable/{bid}/{seq}` 以 JSON 下发（`{seq}` 是序号不是 cid）；每个 `<p>` 带 `data-limit`，其中等于 `base64(当前章 cid)` 的若干段是**站点自注入的推广水印**（站点自己用 CSS 隐藏），实测 7/77 → 规则按此精确剔除。**同章高频直连会被降级**（越来越多段落被标记隐藏），真人浏览器稳定 |
+| 2026-09-20 | `www.shuhai.com` | 杰奇 CMS（`ajax_gets=jieqi_contents`），GBK；详情页 `/book/{bid}.htm`（不带 .htm 是榜单页）；目录 `?method=getcatalog` **不带 CALLBACK 即裸 HTML**；目录项 `<div class=chapter-item>` 内 **215/645 的 `<a>` 文本为空**（标题在 `</a>` 之后）、VIP 是同级 `<span class="vip">` |
+| 2026-09-20 | `www.ciweimao.com` | 目录 817 章可读，但**任意章节页 307 → `/signup/man_machine_verify`**（标题「验证码 - 刺猬猫」，引 geetest）；**真 Chrome + headed 仍被挡** → 判为人机验证**红线**，不予支持 |
 | 2026-09-20 | 多站 | 不可达（curl 000）：bqg70.com、b520.cc、biqiuge.com、bqgui.cc、22biqu.com、xbiquge.la、69shuba.com、bqg128.com；WAF 403：beqege.cc |
 
 ---

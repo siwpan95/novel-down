@@ -25,11 +25,15 @@ class TestLoadRules(unittest.TestCase):
              "zongheng.com",                                 # 正版·含 VIP（只抓免费章）
              "qimao.com",                                    # 正版·全免费（JSON 接口目录）
              "17k.com",                                      # 正版（浏览器路由 + 站点级 VIP 特征）
-             "qidian.com"})                                   # 正版·含 VIP（反检测浏览器过腾讯 Chaos VM）
+             "qidian.com",                                   # 正版·含 VIP（反检测浏览器过腾讯 Chaos VM）
+             "shuhai.com",                                   # 正版（杰奇 CMS，目录走 method=getcatalog）
+             "tadu.com",                                     # 正版（正文来自 JSON 接口 body_api）
+             "ciweimao.com"})                                 # 停用存根（人机验证红线）
         enabled = {r.id for r in rules.values() if r.enabled}
         self.assertEqual(enabled, {"shuquge.com", "bqgbe.cc", "biqu520.net",
                                    "fanqienovel.com", "zongheng.com", "qimao.com",
-                                   "17k.com", "qidian.com"})
+                                   "17k.com", "qidian.com", "shuhai.com",
+                                   "tadu.com"})
         for r in rules.values():
             self.assertTrue(r.free_only, f"{r.id} 必须声明 free_only")
         for r in rules.values():
@@ -43,18 +47,28 @@ class TestLoadRules(unittest.TestCase):
                 f"{r.id} 缺少目录来源")
             self.assertTrue(r.chapter_cfg.get("content_selector"))
 
-    def test_all_shipped_rules_are_enabled(self):
-        """当前随仓规则**全部可用**（Qidian 也已被反检测浏览器打通 Chaos VM）。
+    def test_disabled_stub_documents_why(self):
+        """停用规则是**调研记录存根**：必须写明原因，且原因要具体（可复核）。
 
-        另留一条通则：若有朝一日新增了停用规则，它必须是写明技术原因的调研存根。
+        当前唯一的停用规则是刺猬猫（人机验证红线）——
+        存根的价值在于 `find_rule()` 能直接报出原因，避免重复调研。
         """
         rules = load_rules()
-        for r in rules.values():
-            if not r.enabled:
-                self.assertGreater(len(r.disabled_reason), 20,
-                                   f"{r.id} 若停用必须写明技术原因")
-        self.assertEqual({r.id for r in rules.values() if not r.enabled}, set(),
-                         "当前不应有停用规则")
+        disabled = {r.id for r in rules.values() if not r.enabled}
+        self.assertEqual(disabled, {"ciweimao.com"})
+        r = rules["ciweimao.com"]
+        self.assertGreater(len(r.disabled_reason), 40)
+        # 原因必须点出**红线性质**（人机验证）与实测证据（man_machine_verify）
+        self.assertIn("人机验证", r.disabled_reason)
+        self.assertIn("man_machine_verify", r.disabled_reason)
+
+    def test_disabled_rule_hit_reports_reason(self):
+        """命中停用规则时必须报出原因，而不是含糊的「没有规则」。"""
+        with self.assertRaises(RuleError) as ctx:
+            find_rule("https://www.ciweimao.com/chapter/104654011")
+        msg = str(ctx.exception)
+        self.assertIn("已停用", msg)
+        self.assertIn("人机验证", msg)
 
     def test_vip_site_rule_is_enabled_and_guards_vip(self):
         """回归：含 VIP 的正版站（纵横）必须是**启用**状态。
