@@ -10,6 +10,7 @@
 *.css   text eol=lf
 
 # 二进制：不要做任何换行转换
+*.bin   binary
 *.png   binary
 *.jpg   binary
 *.jpeg  binary

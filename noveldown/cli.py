@@ -74,6 +74,8 @@ def load_book(config: dict, url: str, rules: dict):
             f"请先执行 fetch：python -m noveldown fetch \"{url}\"")
     book = Book(site=rule.id, book_id=bid, url=st.get("url") or url,
                 title=st.get("title", ""), author=st.get("author", ""))
+    # 恢复目录排序策略：否则校对会对 document_order 的站点误报「乱序」
+    book.catalog_sort = st.get("catalog_sort", "cid_numeric_asc")
     from .models import Chapter, STATUS_PENDING, STATUS_LOCKED, STATUS_BLOCKED
     chapters = []
     for c in st.get("chapters", []):
@@ -111,7 +113,9 @@ def cmd_sites(args):
     print()
     print("  说明：**含 VIP 章节不构成拒绝理由** —— 一本小说通常前几十章免费。")
     print("        拦截发生在**章节级**：目录标 VIP 的章不请求，正文命中付费墙的丢弃。")
-    print("        上表「停用」均为**技术原因**（WAF / 需浏览器会话 / 目录靠 JS），非政策拒绝。")
+    print("        [需JS] 表示该站需浏览器路由（fetch_mode=browser）渲染。")
+    if disabled:
+        print("        上表「停用」均为**技术原因**（WAF / 需浏览器会话 / 目录靠 JS），非政策拒绝。")
     if POLICY_DENYLIST:
         print(f"  项目声明不支持的域名：{', '.join(POLICY_DENYLIST)}")
     else:

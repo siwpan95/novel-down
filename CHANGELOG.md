@@ -5,6 +5,58 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.5.0] - 2026-09-20
+
+按全哥指定的两个方向推进：**起点（Qidian）浏览器指纹伪装 → 反检测打通** +
+**彻底去掉 fontdecode 的参考字体依赖**。
+
+### Added
+
+- **起点中文网 `qidian.com` 规则启用**（此前是「停用存根」）——反检测浏览器路由过腾讯云 Chaos VM。
+  - `browser.anti_detect`：本机**真 Chrome**（`channel="chrome"`）+ **headed** +
+    `--disable-blink-features=AutomationControlled`。实测指纹 `navigator.webdriver=false`、
+    `plugins=5`、UA 不含 `HeadlessChrome`；数秒渲染出 **67~70 万字节**书页，`#bookName`/`.chapter-name` 命中。
+  - **语言自洽脚本 `CONSISTENCY_JS`**：修正 `locale="zh-CN"` 而 `navigator.languages` 仍是
+    `en-US,en` 的矛盾（真人中文 Chrome 不会这样，反爬常查这个自洽性）。
+  - 目录走 **JSON 接口** `/ajax/book/category`（页面内 `fetch`，带匿名 `_csrfToken`），
+    `flatten_field="cs"` 展开 `data.vs[].cs[]`。逐章 `sS` 字段：**1=免费、0=VIP**
+    （`vip_truthy=["0"]`，与直觉相反，已实测确认）。实测 1418 章 = 153 免费 + 1265 VIP，VIP 零请求。
+  - 正文 `main.content` + `paragraph_selector="span.content-text"`，避开同 `<p>` 里的段评数节点。
+  - `{cookie:NAME}` URL 占位符：从当前页**同源** `document.cookie` 取 CSRF token 填入查询参数。
+- **`catalog.json.flatten_field`**：卷→章嵌套目录展平（起点 `data.vs[].cs[]`）。
+- **`chapter.paragraph_selector`**：按**段落元素**逐个取文本，而非整块容器文本。
+- **`BrowserFetcher.launch_kwargs()`**：启动参数构造抽成**纯函数**，反检测三件套（channel/headless/args）可单测。
+- **随仓字体轮廓索引** `noveldown/fontmaps/sourcehan-sc-2.002.bin`（gzip JSON，44 260 条，459 KB）。
+- `tools/build_fontmap.py --shipped`：维护者一键重建随仓索引。
+
+### Changed
+
+- **`fontdecode` 运行时彻底去掉参考字体依赖**：`FontDecoder` 不再有任何下载分支
+  （移除 `build_if_missing` / `downloader` / `_build_index`；`REF_FONT_URL` / `REF_FONT_SHA256`
+  下沉到构建工具）。运行时只读**随仓索引**——**不联网、不下载 17 MB 参考字体**。
+  实测：番茄第 1 章 **362/362 码位还原、全程零下载**。
+- `font_decode` 规则键由 `{mode, auto_build}` 简化为 `{enable}` 开关
+  （解码途径由字体自身决定：glyph 名可用则用，否则走随仓轮廓索引）。
+- `tools/build_fontmap.py`：参考字体下载逻辑收进本工具（仅维护者重建时需要）；
+  `--verify` 默认校验**随仓**索引。
+
+### Fixed
+
+- **仓库卫生**：不再随仓分发第三方 `stealth.min.js` —— A/B 对照（带 / 不带）证明它对起点**非必需**，
+  而本仓铁律是「第三方源码不入仓」。改为**可选外挂**：`NOVELDOWN_STEALTH_JS` 或规则里
+  `browser.stealth_js` 指定自备脚本；`.gitignore` 兜住同名文件。
+- `freeguard.selfcheck` 误报 `{cookie:NAME}` 同源占位符为「凭据代码路径」——改用负向后顾
+  精确排除占位符，真实 `cookie=` 写入仍会被抓。
+- 浏览器拆除期 playwright 内部任务被取消产生的 asyncio 噪音
+  （进入浏览器路由时抬高 `asyncio` logger 级别；实测警告出现在 `close()` 之后，与结果无关）。
+- `browser.anti_detect_available()` 中双斜杠路径写法规范化，并去掉未使用的 `glob` 导入。
+
+### Tests
+
+- 130 → **143** 个用例（约 3 秒，离线）。新增：反检测启动参数 / 语言自洽 / 无第三方 stealth 随仓、
+  `paragraph_selector` 段落抽取、`flatten_field` 卷→章展开（含非分组条目容错）、
+  起点规则启用回归、随仓索引可读性与「运行时无参考字体依赖」守门。
+
 ## [0.4.0] - 2026-09-20
 
 按全哥指定的两个方向推进：**17K 站点** + **fontdecode 优先按 glyph 名解码**。

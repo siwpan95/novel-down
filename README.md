@@ -14,13 +14,17 @@
 
 ## 特性
 
-- **规则驱动**：一个站点一个 JSON，加站不改代码。内置 5 个实测可用站点规则。
+- **规则驱动**：一个站点一个 JSON，加站不改代码。内置 8 个实测可用站点规则。
 - **双路由取页**：纯 HTTP 为主；目录靠 JS 渲染、或站点有 WAF 的，可切**真实浏览器路由**
-  （`fetch_mode: browser`，Playwright/Chromium）。
+  （`fetch_mode: browser`，Playwright/Chromium）。**反检测模式**（`browser.anti_detect`）
+  用本机**真 Chrome + headed + 关 AutomationControlled + 语言自洽**，可过腾讯云 Chaos VM。
 - **两种目录来源**：HTML 选择器，或 **JSON 接口**（`catalog.mode=json_api`）——
-  后者常带**逐章 VIP 字段**（七猫 `is_vip`、起点 `vip`），比 HTML class 更可靠。
+  后者常带**逐章 VIP 字段**（七猫 `is_vip`、起点 `sS`），比 HTML class 更可靠；
+  支持**卷→章嵌套展开**（`flatten_field`，起点 `data.vs[].cs[]`）。
 - **反爬六件套处理**：JS 内联 base64 正文、**字体反爬（PUA 码位，两途径解码）**、
   目录倒序回显、CSS 隐藏列表项、多页目录、**APP 墙**。
+- **字体解码零参考字体依赖**：优先按 glyph 名解（秒级）；否则用**随仓**轮廓索引
+  （`noveldown/fontmaps/`，459 KB，**不联网、不下载 17 MB 参考字体**）。
 - **章节归一化**：全收集 → 去重 → 排序编号（`cid` 升序或 `document_order`），
   统一消解各站目录反爬。
 - **免费章节六层拦截**：政策名单 / 规则自证 / 目录 VIP 标记 / 正文付费墙 / 导出终检 / 代码自检。
@@ -96,6 +100,7 @@ F:\Python314\python.exe -m noveldown selfcheck
 
 | 站点 | 类型 | 匹配域名 | 章节数 | 实测结果 |
 |---|---|---|---|---|
+| **起点中文网** | 正版·含 VIP | `qidian.com` | **1418（153 免费 / 1265 VIP）** | **反检测浏览器路由**过腾讯 Chaos VM；目录走 **JSON 接口**（`data.vs[].cs[]`，逐章 `sS`：1=免费/0=VIP），1265 章标记 locked、**零请求**；抓 14 章 46 364 字，校对 PASS |
 | **17K小说网** | 正版 | `17k.com` | **586（全免费）** | 目录 `dl.Volume dd a`；正文 `div#readAreaBox`；20 章 46 058 字；**无字体反爬** |
 | **七猫免费小说** | 正版·免费阅读 | `qimao.com` | **708（20 可读 / 688 APP独占）** | 目录走 **JSON 接口**，逐章带 `is_vip`；688 章标记 locked、**零请求**；20 章 43 065 字 |
 | **纵横中文网** | 正版·含 VIP | `zongheng.com` | **700（50 免费 / 650 VIP）** | 650 章在**目录层**带 `class="vip col-4"` → 标记 locked、**零请求**；50 章免费正文 163 576 字 |
@@ -108,17 +113,17 @@ F:\Python314\python.exe -m noveldown selfcheck
 > 「站点含 VIP」不是拒绝理由——那 50 章免费内容在射程内；VIP 章由**目录层的 class 标记**
 > 拦下，`fetch` 全程只发出 50 次章节请求（已用 `tools/verify_artifacts.py` 机械验证）。
 
-另有 1 条**停用规则存根**，记录正版站的技术障碍（**不是**「因为含 VIP」）：
-
-| 站点 | 障碍 |
-|---|---|
-| 起点 `qidian.com` | **腾讯云 Chaos VM**（`__TENCENT_CHAOS_VM`，95KB 虚拟机式 JS 挑战）：首页与子域均返回 202 + `x-waf-captcha-referer`，不下发会话令牌；无头 Chromium 等 42s 也不放行且 `navigator.webdriver=true` 被识别 |
+> **起点是天花板级对手**：腾讯云 Chaos VM（`__TENCENT_CHAOS_VM`，95 KB 虚拟机式 JS 挑战）
+> 曾判死——捆绑 Chromium + headless 的 `sec-ch-ua` 里明写 `HeadlessChrome`、`navigator.webdriver=true`，
+> 202 挑战页 42s 不放行。换成**本机真 Chrome + headed + 关 AutomationControlled** 后，
+> 数秒内渲染出 67~70 万字节书页，指纹 `webdriver=false / plugins=5 / languages=zh-CN,zh`。
+> 免费/VIP 由目录接口逐章 `sS` 字段切分（**1=免费、0=VIP**，与直觉相反）。
 
 > **七猫的 688 章不是付费墙，是 APP 墙**：web 端只放前 20 章，其余章正文被替换成
 > 「下载【七猫免费小说APP】，继续在APP内免费畅读全本内容」。那段占位文字有 78 字，
 > **高于最小字数阈值**——不拦就会被当成正常正文存下来。已把「APP 墙」补进第 4 层特征词。
 
-`python -m noveldown sites` 会列出全部规则与停用原因。
+`python -m noveldown sites` 会列出全部规则。
 
 > 新增站点见 [docs/RULES.md](./docs/RULES.md)（含探针工具、五种典型形态的完整 JSON、
 > 「**字体反爬**」与「**浏览器路由**」的完整解法）。
@@ -170,17 +175,18 @@ novel-down/
 │   ├── identity_manager.py    身份池（复用 webcopier）
 │   ├── ratelimit.py           限速器（复用 webcopier + 自适应降速）
 │   ├── identities.json        1373 条浏览器身份
+│   ├── fontmaps/              随仓字体轮廓索引（459 KB，零下载解密用）
 │   └── constants.py           常量 + 免费约束词表
 ├── tools/probe_site.py        站点结构探针（编写新规则用）
-├── tools/build_fontmap.py     构建字体反爬解码索引（一次性，约 17MB 参考字体）
+├── tools/build_fontmap.py     重建字体轮廓索引（仅维护者；--shipped 写回随仓索引）
 ├── tools/verify_artifacts.py  产物终检（零请求 / 零泄漏 / 无乱码残留）
 ├── tools/verify_reader.py     真实浏览器验证 HTML 阅读器（Playwright）
 ├── tools/make_screenshot.py   生成 README 演示截图（用自撰文本，不含第三方正文）
 ├── tools/check_repo.py        仓库卫生门禁（本仓不含第三方源码 / 凭据 / 产物）
-├── tests/                     130 个用例（含端到端拦截集成测试）+ fixtures
+├── tests/                     143 个用例（含端到端拦截集成测试）+ fixtures
 ├── docs/
 │   ├── REFERENCE.md           借鉴记账（来源 + 许可证 + 范围 + 排除项）
-│   ├── RULES.md               规则格式与三种典型形态
+│   ├── RULES.md               规则格式与典型形态（含字体反爬 / 浏览器路由）
 │   └── FREE_ONLY.md           免费章节六层约束
 └── output/                    产物（不入版本库）
 ```
@@ -201,11 +207,17 @@ F:\Python314\python.exe -m pip install -r requirements.txt
 | `beautifulsoup4` | HTML 解析 | ✓ |
 | `lxml` | bs4 的快速解析器（缺失自动回退 `html.parser`） | 建议 |
 | `soupsieve` | CSS 选择器（随 bs4 安装） | ✓ |
-| `fontTools` + `brotli` | **字体反爬解码**（番茄小说）——不装只影响该类站点；仅「按 glyph 名」途径不需要参考字体 | 可选 |
-| `playwright` | **浏览器路由**（目录靠 JS 渲染的站点）——不装只影响该类站点 | 可选 |
+| `fontTools` + `brotli` | **字体反爬解码**（番茄小说）——不装只影响该类站点；解码所需的轮廓索引已随仓，**运行时不需要参考字体、不联网** | 可选 |
+| `playwright` | **浏览器路由 / 反检测模式**（目录靠 JS 渲染、或有 WAF 的站点）——不装只影响该类站点；反检测还需本机装有 Google Chrome | 可选 |
 | `curl_cffi` | TLS 指纹伪装（`--curl-cffi`） | 可选 |
 
 实测本机 `F:\Python314`（Python 3.14.7）上述依赖**全部可用**。
+
+### 环境变量
+
+| 变量 | 作用 |
+|---|---|
+| `NOVELDOWN_STEALTH_JS` | 可选：自备 stealth 脚本（如 puppeteer-extra 的 `stealth.min.js`）路径。反检测模式会在页面脚本前注入它。**本项目不随仓分发该脚本**（实测内置伪装已足够，理由见 [docs/REFERENCE.md](./docs/REFERENCE.md) 第六节） |
 
 ---
 
@@ -215,10 +227,12 @@ F:\Python314\python.exe -m pip install -r requirements.txt
 F:\Python314\python.exe -m unittest discover -s tests -t .
 ```
 
-**130 个用例，约 2 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
+**143 个用例，约 3 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
 目录归一化（含 `document_order`/`keep_last`）、目录页发现、正文提取、
 免费六层拦截、四格式导出（含 EPUB 结构与 XML 合法性校验）、
-断点续爬状态机、规则校验、校对报告、字体反爬解码、JSON 接口目录、书名清洗。
+断点续爬状态机、规则校验、校对报告、字体反爬解码（glyph 名 / 轮廓索引）、
+JSON 接口目录（含 `flatten_field` 卷→章展开）、段落级正文选择器、
+反检测启动参数与语言自洽、书名清洗。
 
 另有四项**端到端**验证：
 
@@ -256,5 +270,7 @@ MIT，见 [LICENSE](./LICENSE)。
 **第三方来源**：本项目在调研阶段参照过三个第三方项目（FictionDown / 404-novel-downloader /
 backupqidian），**只借鉴设计思路，未复制任何代码**，其源码**不入本仓**
 （其中两份是 GPL-3.0 与 AGPL-3.0-or-later，与本仓 MIT 不兼容）。
+浏览器反检测所用的 `puppeteer-extra-plugin-stealth`（MIT）经评估后**未随仓分发**
+（实测内置伪装已足够，仅保留可选外挂入口）。
 来源链接、许可证依据、取用范围与排除项逐条记在 [docs/REFERENCE.md](./docs/REFERENCE.md)，
 并由 `tools/check_repo.py` 机械校验「本仓不含第三方源码」＋「借鉴记账完整」。

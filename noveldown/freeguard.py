@@ -196,7 +196,10 @@ def filter_exportable(chapters):
 # ============================================================
 # 用「代码形态」正则而非裸词匹配——否则文档里描述约束的文字会被误判为违规。
 FORBIDDEN_PATTERNS = (
-    (r"\bcookies?\s*[:=]", "cookie 变量 / 参数赋值"),
+    # 凭据**存储/写入**。排除 `{cookie:NAME}` 占位符 —— 那是浏览器路由里
+    # 「从当前页同源 document.cookie 取已存在的 CSRF token 填进 URL」的读取，
+    # 不涉及任何用户凭据的保存或外发（见 noveldown/browser.py 的说明）。
+    (r"(?<!\{)\bcookies?\s*[:=]", "cookie 变量 / 参数赋值"),
     (r"[\"']Cookie[\"']", "Cookie 请求头字段"),
     (r"\bset_cookie\b|\bcookiejar\b", "Cookie 写入调用"),
     (r"--vip\b", "--vip 开关"),

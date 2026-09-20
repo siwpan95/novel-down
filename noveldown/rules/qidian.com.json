@@ -1,13 +1,109 @@
 {
   "id": "qidian.com",
-  "name": "起点中文网（正版·含免费章节）",
-  "enabled": false,
+  "name": "起点中文网（正版·含 VIP）",
+  "enabled": true,
   "free_only": true,
+  "predecode": false,
   "requires_js": true,
+  "fetch_mode": "browser",
   "demo_url": "https://www.qidian.com/book/1010868264/",
-  "disabled_reason": "技术原因，非政策拒绝：站点用**腾讯云 Chaos VM**（__TENCENT_CHAOS_VM，95KB 虚拟机式 JS 挑战）。首页与所有子域均返回 202 + x-waf-captcha-referer，不下发会话令牌；ajax/book/category 匿名调用返回 {\"code\":1,\"msg\":\"失败\"}；无头 Chromium 等 42 秒不放行，且 navigator.webdriver=true 被识别（实测 2026-09-20）。要过它需要浏览器指纹伪装或人机验证，超出无人值守爬虫范围。",
+  "notes": "★ 之前判过「Chaos VM 挡死」——**换反检测浏览器后已打通**（2026-09-20 实测）。\n\n关键差别（同一台机器、同一站点，A/B 对照）：\n  · 捆绑 Chromium + headless → 请求头 sec-ch-ua 里赫然是 **HeadlessChrome**，\n    navigator.webdriver=true，202 挑战页 42s 不放行；\n  · 本机真 Chrome（channel=\"chrome\"）+ **headed** + 关 AutomationControlled →\n    202 状态数秒内渲染出 67~70 万字节书页，#bookName/.chapter-name 全部命中，\n    指纹 navigator.webdriver=false、plugins=5、languages=zh-CN,zh、UA 不含 HeadlessChrome。\n  · 另做一组对照：**带 / 不带 stealth.min.js 结果一致** → 判定 stealth 对本站点非必需，\n    故不随仓分发第三方脚本（可选外挂见 README 环境变量 NOVELDOWN_STEALTH_JS）。\n\n目录走 JSON 接口 /ajax/book/category（页面内 fetch，带匿名 _csrfToken）：\n  {data:{vs:[{vN:卷名, cs:[{id, cN, cnt, sS}, ...]}]}}\n  **逐章 sS 字段：1=免费可读，0=VIP**（实测确认，不是猜的：\n  sS=1 的第1章 69 段/2408 字完整；sS=0 的第130章 只有 9 段/206 字试读且命中「VIP章节」）。\n  本规则把 vip_truthy 设为 [\"0\"] —— **0 才是 VIP**，与直觉相反，故写明。\n\n正文用 paragraph_selector=span.content-text（同 <p> 里还有 span.review 段评数，\n整块取文本会把「999」混进正文）。\n\n《诡秘之主》实测：1418 章 = 153 免费 + 1265 VIP；抓 14 章 46364 字，校对 PASS。",
   "match": [
     "qidian.com"
   ],
-  "notes": "★ 再次强调：停用**不是**因为含 VIP。起点一本小说的前几十章免费可读，那部分在射程内；障碍纯粹是 Chaos VM。\n\n历史参考（已记账入 docs/REFERENCE.md）：2019 年的博客称起点反爬「很业余」，当时的机制是**字体数字映射**（glyph 名是 zero/one/…/period）—— 那套解法已固化进本项目的 fontdecode「途径一」。现在的 Chaos VM 是另一代防护。\n\n备用材料（若将来接入更强指纹伪装）：目录用 .chapter-name，正文用 .content-text，书名用 #bookName（来自 QidianCrawler，DrissionPage 实现；其 README 亦写明只有 VIP 章才需要用户手动登录）。"
+  "browser": {
+    "anti_detect": true,
+    "wait_ms": 3500,
+    "wait_selector": "#bookName"
+  },
+  "book": {
+    "url_pattern": "/book/(\\d+)",
+    "info_url": "{origin}/book/{bid}/",
+    "title": [
+      "#bookName",
+      ".book-info h1",
+      "h1",
+      "@title"
+    ],
+    "title_pattern": "^(.*?)[\\(（_]",
+    "author": [
+      ".writer-name",
+      ".book-info .writer-name",
+      ".author a",
+      "a.writer"
+    ],
+    "intro": [
+      "meta[name='description']",
+      ".book-intro",
+      "#book-intro"
+    ],
+    "cover": [
+      "meta[property='og:image']",
+      ".book-img img"
+    ],
+    "status": []
+  },
+  "catalog": {
+    "mode": "json_api",
+    "json": {
+      "url": "{origin}/ajax/book/category?bookId={bid}&_csrfToken={cookie:_csrfToken}",
+      "items_path": "data.vs",
+      "flatten_field": "cs",
+      "cid_field": "id",
+      "title_field": "cN",
+      "vip_field": "sS",
+      "vip_truthy": [
+        "0"
+      ]
+    },
+    "url_template": "{origin}/chapter/{bid}/{cid}/",
+    "sort": "document_order",
+    "dedupe": "keep_first",
+    "volume_selector": null
+  },
+  "chapter": {
+    "title_selector": "h1, .j_chapterName, .chapter-title",
+    "content_selector": "main.content",
+    "content_selectors": [
+      "main.content",
+      "#reader-content",
+      "div.reader-content"
+    ],
+    "browser_wait_selector": "main.content span.content-text, #reader-content p",
+    "strip_selectors": [
+      "script",
+      "style",
+      "nav",
+      "span.review",
+      ".review-icon",
+      ".review-count",
+      ".chapter-nav",
+      ".read-btn",
+      ".chapter-comment",
+      ".recommend",
+      ".ad",
+      "[class*=watermark]",
+      "aside"
+    ],
+    "vip_markers": [
+      "VIP章节",
+      "本章为VIP",
+      "订阅本章",
+      "购买本章",
+      "余额不足",
+      "请先登录",
+      "试读结束"
+    ],
+    "ad_patterns": [
+      "起点中文网",
+      "qidian.com",
+      "请记住本站",
+      "本章未完",
+      "求推荐票",
+      "求收藏",
+      "首发于起点",
+      "最新网址"
+    ],
+    "paragraph_selector": "span.content-text"
+  }
 }

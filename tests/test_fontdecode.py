@@ -133,11 +133,33 @@ class TestFontDecoderCache(unittest.TestCase):
         m = dec.map_for_font(fake_font)
         self.assertEqual(m, {58886: "风"})
 
-    def test_ref_font_constants_are_sane(self):
-        self.assertIn("2.002R", fd.REF_FONT_URL)
-        self.assertIn("SourceHanSansSC-Normal", fd.REF_FONT_URL)
-        self.assertEqual(len(fd.REF_FONT_SHA256), 16)
-        self.assertTrue(fd.REF_INDEX_NAME.endswith(".json.gz"))
+    def test_shipped_index_present_and_loadable(self):
+        """运行时零参考字体依赖：随仓轮廓索引必须在，且可读。
+
+        这是「不需要联网、不需要 17MB 参考字体」的唯一凭据 —— 一旦缺失，
+        番茄这类站点会直接解码失败，所以用单测看住它。
+        """
+        self.assertTrue(os.path.exists(fd.SHIPPED_INDEX),
+                        f"随仓索引缺失：{fd.SHIPPED_INDEX}")
+        idx = fd.load_ref_index(fd.SHIPPED_INDEX)
+        # 4.4 万条量级；给个宽松下界，避免误判同时能发现「索引被截断」
+        self.assertGreater(len(idx), 40000)
+        self.assertTrue(all(len(h) == 12 for h in list(idx)[:50]))  # 6 字节哈希
+        self.assertEqual(fd.REF_INDEX_BIN, "sourcehan-sc-2.002.bin")
+
+    def test_no_runtime_reference_font_or_download(self):
+        """运行时模块不得残留参考字体 URL / 下载分支。"""
+        self.assertFalse(hasattr(fd, "REF_FONT_URL"))
+        self.assertFalse(hasattr(fd, "REF_FONT_SHA256"))
+        dec = fd.FontDecoder(temp_subdir("nodl"))
+        # ref_index 不接受下载参数
+        import inspect
+        params = inspect.signature(dec.ref_index).parameters
+        self.assertNotIn("build_if_missing", params)
+        self.assertNotIn("downloader", params)
+        params2 = inspect.signature(dec.map_for_font).parameters
+        self.assertNotIn("build_if_missing", params2)
+        self.assertNotIn("downloader", params2)
 
 
 class TestDepsCheck(unittest.TestCase):
@@ -148,10 +170,6 @@ class TestDepsCheck(unittest.TestCase):
         self.assertIsInstance(why, str)
         if not ok:
             self.assertIn("pip install", why)
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestGlyphNameDecoding(unittest.TestCase):
@@ -213,3 +231,7 @@ class TestGlyphNameDecoding(unittest.TestCase):
         bad = [(0xE000 + i, f"gid{i}") for i in range(6)]
         m2, cov2 = fd.map_from_glyph_names(bad)
         self.assertEqual(cov2, 0.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

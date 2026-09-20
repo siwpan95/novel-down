@@ -123,7 +123,7 @@ class Downloader:
         """
         if self.rule.fetch_mode == "browser":
             self.limiter.wait()
-            return self._browser().fetch_text(url)
+            return self._browser().fetch_text(url, referer=referer)
         return self._fetch(url, referer=referer)
 
     def _collect_json_catalog(self, rule, bid, origin, book_url):
@@ -145,11 +145,16 @@ class Downloader:
             ok, why = br.deps_available()
             if not ok:
                 raise br.BrowserUnavailable(why)
+            bcfg = self.rule.browser_cfg
             self._browser_fetcher = br.BrowserFetcher(
-                headless=self.config.get("browser_headless", True),
+                headless=bcfg.get("headless", self.config.get("browser_headless", True)),
                 timeout=max(self.config["timeout"] * 1000, 45000),
+                anti_detect=bool(bcfg.get("anti_detect", False)),
+                channel=bcfg.get("channel", ""),
+                args=bcfg.get("args"),
+                stealth_js=bcfg.get("stealth_js"),
                 log=self.log).start()
-            self.log("  浏览器路由已启动（Chromium）")
+            self.log("  浏览器路由已启动")
         return self._browser_fetcher
 
     def _fetch_browser(self, url: str, wait_selector: str = None) -> str:
@@ -331,6 +336,9 @@ class Downloader:
             return paragraphs, ""
 
         cfg = self.rule.font_decode or {}
+        if not cfg.get("enable", True):
+            return paragraphs, ""
+
         with self._lock:
             if self._font_decoder is None:
                 cache_dir = os.path.join(self.config["save_dir"], "fontcache")
@@ -338,7 +346,7 @@ class Downloader:
             decoder = self._font_decoder
 
         try:
-            mapping = self._lookup_font_map(decoder, cfg, page_html, pua)
+            mapping = self._lookup_font_map(decoder, page_html, pua)
         except Exception as e:
             self.log(f"  字体解码失败（正文将保留 PUA 占位字符）：{e}", "warn")
             return paragraphs, f"字体解码失败：{e}"
@@ -352,7 +360,7 @@ class Downloader:
         note = f"字体反爬还原 {len(mapping)} 码位（覆盖 {cov:.1%}）"
         return out, note
 
-    def _lookup_font_map(self, decoder, cfg, page_html, pua):
+    def _lookup_font_map(self, decoder, page_html, pua):
         """按页面上 @font-face 声明的字体逐个尝试，直到覆盖本轮全部 PUA。"""
         from . import fontdecode as fd
 
@@ -364,7 +372,6 @@ class Downloader:
         if not urls:
             raise fd.FontDecodeError("页面里没有 @font-face 字体 URL")
 
-        auto_build = bool(cfg.get("auto_build", True))
         best = {}
         for u in urls[:4]:
             try:
@@ -372,8 +379,7 @@ class Downloader:
             except Exception as e:
                 self.log(f"  字体下载失败 {u}：{e}", "warn")
                 continue
-            m = decoder.map_for_font(data, build_if_missing=auto_build,
-                                     downloader=lambda url: self._fetch_bytes(url))
+            m = decoder.map_for_font(data)
             if not m:
                 continue
             # 记录覆盖最全的那份

@@ -41,9 +41,9 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | `disabled_reason` | | 停用原因。**必须是技术原因**（WAF / 目录靠 JS / 需浏览器会话），不要写「因为含 VIP」——含 VIP 不构成拒绝理由，见 [FREE_ONLY.md](./FREE_ONLY.md) 第 1 层 |
 | `predecode` | | 默认 `true`。是否启用 JS 内联 base64 预解码 |
 | `fetch_mode` | | `http`（默认，纯 HTTP）\| `browser`（真实浏览器渲染后再取 DOM）。目录靠 JS 异步加载的站点用 browser |
-| `browser` | | `fetch_mode=browser` 时的渲染参数：`wait_selector`（等某选择器出现）、`wait_ms`（额外固定等待）、`click_selectors`（先点这些元素，如「目录」标签）、`scroll`（滚到底触发懒加载） |
-| `font_decode` | | 字体反爬解码配置（见下文「字体反爬」）。仅番茄这类站点需要 |
-| `requires_js` | | 站点是否必须执行 JS 才能拿到内容。**本项目暂无 JS 引擎支持**，标 `true` 表示已知不可用 |
+| `browser` | | `fetch_mode=browser` 时的渲染参数：`wait_selector`（等某选择器出现）、`wait_ms`（额外固定等待）、`click_selectors`（先点这些元素，如「目录」标签）、`scroll`（滚到底触发懒加载）、**`anti_detect`**（反检测模式，见「浏览器路由」一节）、`channel`（默认 `chrome`）、`args`（追加启动参数）、`stealth_js`（可选自备 stealth 脚本路径） |
+| `font_decode` | | 字体反爬解码开关：`{"enable": true}`（默认 `true`）。解码途径由字体自身决定（glyph 名优先，否则随仓轮廓索引）。见下文「字体反爬」 |
+| `requires_js` | | 该站点内容需执行 JS 才能拿到（与 `fetch_mode=browser` 配套）。**纯展示标记**：`sites`/`rules` 命令会显示「[需JS]」，不参与判定 |
 | `demo_url` | | 演示地址，会被第 1 层政策名单校验 |
 | `notes` | | 逆向记录（踩过的坑写这里，便于后人维护） |
 
@@ -68,11 +68,12 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | `pages.max_pages` | 目录页上限，默认 80 |
 | `pages.max_rounds` | 迭代轮数上限，默认 4 |
 | `mode` | `html`（默认）\| `json_api`（目录来自 JSON 接口，见下） |
-| `json` | `json_api` 模式的配置：`url`（模板，支持 `{origin}/{bid}`）、`items_path`（如 `data.chapters`）、`cid_field`、`title_field`、**`vip_field`**、`vip_truthy` |
+| `json` | `json_api` 模式的配置：`url`（模板，支持 `{origin}/{bid}` 与 `{cookie:NAME}` 占位符）、`items_path`（如 `data.chapters`）、**`flatten_field`**（卷→章嵌套展开，如 `cs`）、`cid_field`、`title_field`、**`vip_field`**、`vip_truthy` |
 | `item_selector` | 章节项 `<a>` 的 CSS 选择器（`html` 模式必需） |
 | `id_from.mode` | `href`（从链接取）\| `onclick`（从 onclick 取） |
 | `id_from.pattern` | 必须含 **命名捕获组 `(?P<cid>...)`** |
 | `url_template` | 可选。支持 `{origin}` `{bid}` `{cid}`；不填则 `urljoin(页面URL, href)` |
+| `browser_wait_selector` | 可选。**目录页**专用的浏览器等待条件（与顶层 `browser.wait_selector` 解耦） |
 | `sort` | `cid_numeric_asc`（默认，ID 即顺序号）\| `document_order`（保持页面顺序，用于雪花 ID 站点）\| `cid_numeric_desc` |
 | `dedupe` | `keep_first`（默认）\| `keep_last`（回显在**列表头部**时用它，见下） |
 | `volume_selector` | 可选卷标题选择器（会按文档顺序跟踪当前卷名） |
@@ -89,7 +90,10 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | `title_selector` | 可选。正文页标题（会自动剥离「（第N页）」后缀） |
 | `browser_wait_selector` | 可选。**章节页**专用的浏览器等待条件（与顶层 `browser.wait_selector` 解耦——书籍页与章节页往往要等不同元素） |
 | `content_selector` | ✓ 正文容器 CSS |
+| `content_selectors` | 可选**候选列表**（同一站不同请求可能给不同容器；按序取第一个命中） |
+| `paragraph_selector` | 可选。**按段落元素逐个取文本**，而非整块容器文本。用于 `<p>` 里混着段评数/点赞数等附加节点的站点（如起点 `span.content-text`） |
 | `strip_selectors` | 需从容器内剔除的元素（导航 / 标题 / 脚本 / 水印） |
+| `vip_markers` | 可选。**整页**付费特征词/类名（付费信号不在正文里、而在 CSS 文件名或页面元素上的站点，如 17K 的 `chapter_vip`） |
 | `next_page.selector` | 分页导航链接选择器 |
 | `next_page.text_contains` | 链接文案必须含该串（如 `下一章`） |
 | `next_page.continue_when` | `same_base_id`：仅当链接的 cid 与当前章节相同才续页 |
@@ -123,7 +127,10 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 
 ---
 
-## 实例：三种典型形态
+## 实例：八种典型形态
+
+A–H 覆盖从「标准免费站」到「反检测浏览器 + JSON 接口目录」的全部难度梯度。
+新增站点时，先在本节找最接近的一条照抄，再改选择器。
 
 ### A. 标准笔趣阁单页目录（shuquge.com）
 
@@ -243,7 +250,7 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
     "content_selector": "div.muye-reader-content",
     "strip_selectors": ["script", "style"]
   },
-  "font_decode": {"mode": "outline_match", "auto_build": true}
+  "font_decode": {"enable": true}
 }
 ```
 
@@ -405,6 +412,57 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
    注意：这条规则只在一本**全免费**的 17K 书上实测过，`chapter_vip` 是按 CSS 命名
    规律推断的 —— 已如实记在规则 notes 里，并由第 4 层正文付费墙兜底。
 
+### H. 反检测浏览器 + JSON 接口目录 + 卷→章展平（qidian.com）
+
+**最难的一条**：腾讯云 Chaos VM（`__TENCENT_CHAOS_VM`，95KB 虚拟机式 JS 挑战）——
+无头浏览器直接挡死。需**反检测浏览器**过挑战 + **JSON 接口**取目录 + **`flatten_field`** 展平卷→章。
+
+```json
+{
+  "id": "qidian.com", "free_only": true, "fetch_mode": "browser", "requires_js": true,
+  "match": ["qidian.com"],
+  "book": {"url_pattern": "/book/(\\d+)/?", "title": [".book-info h1 em", "@title"]},
+  "browser": {"anti_detect": true, "wait_selector": "#bookName", "wait_ms": 3500},
+  "catalog": {
+    "mode": "json_api",
+    "json": {
+      "url": "{origin}/ajax/book/category?bookId={bid}&_csrfToken={cookie:_csrfToken}",
+      "items_path": "data.vs", "flatten_field": "cs",
+      "cid_field": "id", "title_field": "cN",
+      "vip_field": "sS", "vip_truthy": ["0"]
+    },
+    "url_template": "{origin}/chapter/{bid}/{cid}/",
+    "sort": "document_order", "dedupe": "keep_first"
+  },
+  "chapter": {
+    "content_selector": "main.content",
+    "paragraph_selector": "span.content-text",
+    "browser_wait_selector": "main.content span.content-text, #reader-content p",
+    "strip_selectors": ["span.review", ".review-count", ".chapter-nav", "aside"]
+  }
+}
+```
+
+关键实测发现：
+
+1. **`sS` 字段反直觉：`1 = 免费`、`0 = VIP`**。实测 sS=1 的第 1 章 69 段 / 2408 字完整；
+   sS=0 的章只有试读片段且命中「VIP章节」。故 `vip_truthy = ["0"]`。**别按直觉写成 ["1"]**。
+2. **`{cookie:NAME}` 占位符**：起点 ajax 要求把 CSRF token 作为**查询参数**，
+   光有 cookie 会被回 `{"code":1,"msg":"失败"}`。占位符从**当前页同源** `document.cookie`
+   取值填入（先导航到书籍页，再在**页面内** `fetch()`——注意不能用 `page.goto` 直接开 JSON，
+   那会被包进 `<pre>`）。
+3. **`flatten_field`**：目录是 `data.vs[].cs[]`（卷 → 章）两层，`flatten_field="cs"`
+   把它展平成扁平章节列表。
+4. **`paragraph_selector`**：正文形如
+   `<p><span class="content-text">痛！</span><span class="review">999</span></p>`，
+   整块取文本会得到「痛！999」（段评数被混入）。按 `span.content-text` 逐段取即可。
+5. **反检测是必需的**（见「浏览器路由」一节的「反检测模式」）：捆绑 Chromium + headless
+   的 `sec-ch-ua` 含 `HeadlessChrome`、`navigator.webdriver=true` → 202 挑战页 42s 不放行；
+   本机真 Chrome + headed + 关 AutomationControlled → 数秒出 67~70 万字节书页。
+
+> 《诡秘之主》实测：1418 章 = **153 免费 + 1265 VIP**，VIP 章在目录接口层被判为 locked、
+> **零请求**；抓 14 章 46 364 字，校对 PASS。
+
 ---
 
 ## 浏览器路由（`fetch_mode: browser`）
@@ -446,6 +504,46 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
   700 章**。所以不要默认"JS 站就得用浏览器"，先用 `probe_site.py` 与
   `python -m noveldown probe` 各试一次，用实测证据决定。
 
+### 反检测模式（`browser.anti_detect`）—— 过 WAF/机器人挑战
+
+有些站点的 WAF 会**识别自动化浏览器**本身（不只识别请求特征）。此时打开：
+
+```json
+{
+  "fetch_mode": "browser",
+  "browser": {
+    "anti_detect": true,
+    "wait_selector": "#bookName",
+    "wait_ms": 3500
+  }
+}
+```
+
+反检测模式做的三件事（缺一不可，见 `noveldown/browser.py`）：
+
+| 项 | 为什么 |
+|---|---|
+| `channel="chrome"` | 用本机**真** Chrome，而非 playwright 捆绑 Chromium |
+| `headless=False`（**headed**） | 捆绑 Chromium + headless 会在请求头 `sec-ch-ua` 里明写 `HeadlessChrome` —— 一行就被识破 |
+| `--disable-blink-features=AutomationControlled` 等 | 关掉「受自动化控制」等自动化特征 |
+
+另外注入 `CONSISTENCY_JS`：把 `navigator.languages` 对齐到 `zh-CN,zh`
+（否则 `locale="zh-CN"` 与默认的 `en-US,en` 自相矛盾，反爬常查这个自洽性）。
+
+实测（起点，2026-09-20）：捆绑 Chromium + headless 在腾讯云 Chaos VM 的 202 挑战页
+**42s 不放行**；反检测模式**数秒**渲染出 **67~70 万字节**书页，
+指纹 `navigator.webdriver=false`、`plugins=5`、`languages=zh-CN,zh`、UA 不含 `HeadlessChrome`。
+
+要点：
+
+- **需要本机装有 Google Chrome**。没装会明确报错并提示关掉 `anti_detect`。
+- **必须有桌面会话**（headed）。纯服务器无显示器时不适合此模式。
+- **可选增强**：如需更强的指纹伪装，可自备 puppeteer-extra 的 `stealth.min.js`
+  并用 `NOVELDOWN_STEALTH_JS`（或规则 `browser.stealth_js`）指定路径。
+  **本项目不随仓分发该脚本**——实测对起点非必需（A/B 对照结果一致），
+  且本仓铁律「第三方源码不入仓」。详见 [REFERENCE.md](./REFERENCE.md) 第六节。
+- **仍然不做凭据环节**：不登录、不接管会话、不绕过人机验证。
+
 ---
 
 ## 字体反爬（`font_decode`）
@@ -486,10 +584,10 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 `fontdecode.char_from_glyph_name()` 实现这套解析；`map_from_glyph_names()` 给出覆盖率。
 **覆盖率 ≥ 60% 就走这条路**，否则自动退回途径二。
 
-### 途径二（兜底）：字形轮廓匹配
+### 途径二（兜底）：字形轮廓匹配 —— 用**随仓索引**，零下载
 
-子集字体的 CFF charstring 就是来源字体的**字形轮廓**。拿到**同版本**参考字体后，
-把两者每个字形的轮廓点集序列化取哈希即可精确对应（不是 OCR 近似）：
+子集字体的 CFF charstring 就是来源字体的**字形轮廓**。把每个字形的轮廓点集序列化取哈希，
+即可与同版本参考字体的字形**精确对应**（不是 OCR 近似）：
 
 ```python
 from fontTools.pens.recordingPen import RecordingPen
@@ -499,6 +597,8 @@ key = ";".join(op + "|" + ",".join(f"{x:g}/{y:g}" for x, y in pts)
 ```
 
 **只在途径一解不出时才需要它**（例如番茄用 `gid58646` 这类索引名）。
+索引**随仓库分发**（`noveldown/fontmaps/sourcehan-sc-2.002.bin`，44 260 条，459 KB），
+所以运行时**不联网、不下载 17 MB 参考字体**。
 **版本必须严格对上**（实测）：
 
 | 参考字体版本 | 命中率 |
@@ -513,18 +613,23 @@ key = ";".join(op + "|" + ",".join(f"{x:g}/{y:g}" for x, y in pts)
 ### 使用
 
 ```bat
-:: 一次性：下载参考字体（约 17MB）并生成轮廓索引（缓存在 output/fontcache/）
-F:\Python314\python.exe tools\build_fontmap.py
-
-:: 之后 fetch / probe 会自动用上；规则里 auto_build=true 时首次也会自动构建
+:: 什么都不用做 —— 轮廓索引已随仓库分发，运行时零下载
 F:\Python314\python.exe -m noveldown probe "https://fanqienovel.com/page/<bookId>"
+
+:: （仅维护者）从 OFL-1.1 参考字体重建随仓索引，需联网下载约 17MB
+F:\Python314\python.exe tools\build_fontmap.py --shipped --force
+
+:: 校验随仓索引可读、条目数正常
+F:\Python314\python.exe tools\build_fontmap.py --verify
 ```
 
 依赖：`fontTools`（+ `brotli`，读 woff2 时需要）。**只影响这类站点**，
 缺失时其它站点照常工作，并会给出带 pip 命令的明确提示。
 
-> 参考字体**不随仓库分发**（OFL-1.1 开源字体，17MB；索引约 1.2MB 也只在本地缓存），
-> 由脚本按需下载并校验 sha256。理由见 [REFERENCE.md](./REFERENCE.md)。
+> 参考字体**本体（16MB）不随仓库分发**，但**派生索引随仓**（459KB）——这是
+> v0.5.0 起的改动：让终端用户开箱即用、完全离线。索引由 `tools/build_fontmap.py`
+> 离线从 OFL-1.1 的 SourceHanSansSC-Normal 2.002 派生。理由与许可依据见
+> [REFERENCE.md](./REFERENCE.md) 第四节。
 
 ---
 

@@ -43,7 +43,6 @@
     ]
   },
   "font_decode": {
-    "mode": "outline_match",
-    "auto_build": true
+    "enable": true
   }
 }

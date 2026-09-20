@@ -187,9 +187,31 @@ class TestChapterExtract(unittest.TestCase):
         ps, _ = extract_paragraphs(soup.select_one("#c"), [])
         self.assertEqual(ps, ["缩进正文"])
 
+    def test_paragraph_selector_ignores_extra_nodes(self):
+        """段落级选择器：正文段是 <span>，同 `<p>` 里还混着段评数/点赞数节点。
 
-if __name__ == "__main__":
-    unittest.main()
+        实测起点：`<p><span class="content-text">痛！</span>
+        <span class="review">999</span></p>` —— 整块取文本会得到「痛！999」，
+        按段落元素取则只拿 content-text。
+        """
+        from noveldown.rules import Rule
+        rule = Rule({
+            "id": "t.qd", "name": "T", "match": ["qidian.com"], "free_only": True,
+            "book": {"url_pattern": "/book/(\\d+)"},
+            "catalog": {"item_selector": "a"},
+            "chapter": {"content_selector": "main.content",
+                        "paragraph_selector": "span.content-text"},
+        })
+        html = ('<html><body><main class="content">'
+                '<p><span class="content-text">痛！</span>'
+                '<span class="review">999</span></p>'
+                '<p><span class="content-text">太痛了！</span>'
+                '<span class="review">12</span></p>'
+                '</main></body></html>')
+        res = parse_chapter_page(rule, html,
+                                 "https://www.qidian.com/chapter/1/2/", "2")
+        self.assertEqual(res["paragraphs"], ["痛！", "太痛了！"])
+        self.assertNotIn("999", "\n".join(res["paragraphs"]))
 
 
 class TestJsonApiCatalog(unittest.TestCase):
@@ -247,6 +269,37 @@ class TestJsonApiCatalog(unittest.TestCase):
                                  self.SAMPLE, "9", "https://x")
         self.assertIn("取不到列表", str(ctx.exception))
 
+    # 起点形态：卷 → 章 两层嵌套 data.vs[].cs[]，且 sS 是**反直觉**的 VIP 标记
+    QIDIAN_STYLE = ('{"data":{"vs":['
+                    '{"cs":[{"id":"100","cN":"第一章","sS":"1"},'
+                    '{"id":"101","cN":"第二章","sS":"0"}]},'
+                    '{"cs":[{"id":"102","cN":"第三章","sS":"1"}]}]}}')
+
+    def test_flatten_field_unrolls_volumes(self):
+        """层叠目录：flatten_field 把 data.vs[].cs[] 展平成章节列表。
+
+        起点 `sS` 反直觉：**1 = 免费，0 = VIP**（实测）。规则用 vip_truthy=["0"]
+        把 0 判为受保护，这里一并回归。
+        """
+        from noveldown.parser import collect_json_catalog
+        rule = self._rule(items_path="data.vs", flatten_field="cs",
+                          cid_field="id", title_field="cN",
+                          vip_field="sS", vip_truthy=["0"])
+        items, locked = collect_json_catalog(
+            rule, self.QIDIAN_STYLE, "999", "https://www.qidian.com")
+        self.assertEqual([i["cid"] for i in items], ["100", "102"])
+        self.assertEqual([i["cid"] for i in locked], ["101"])
+        self.assertEqual(items[0]["title"], "第一章")
+
+    def test_flatten_field_tolerates_non_group_items(self):
+        """展平时遇到没有子列表的条目：原样保留，不能丢章。"""
+        from noveldown.parser import collect_json_catalog
+        rule = self._rule(items_path="data.vs", flatten_field="cs")
+        sample = ('{"data":{"vs":[{"cs":[{"id":"1","title":"甲","is_vip":"0"}]},'
+                  '{"id":"2","title":"乙","is_vip":"0"}]}}')
+        items, _ = collect_json_catalog(rule, sample, "9", "https://x")
+        self.assertEqual([i["cid"] for i in items], ["1", "2"])
+
 
 class TestTitlePattern(unittest.TestCase):
     """书名清洗：SPA 站点书名只在 <title> 里，且带站点后缀。"""
@@ -278,3 +331,7 @@ class TestTitlePattern(unittest.TestCase):
         html = "<html><head></head><body><div class='title'>备用书名</div></body></html>"
         info = parse_book_info(self._rule(), html, "https://x/s/1/", "1")
         self.assertEqual(info["title"], "备用书名")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -103,22 +103,25 @@
 | 下载源 | `https://cdn.jsdelivr.net/gh/adobe-fonts/source-han-sans@2.002R/OTF/SimplifiedChinese/SourceHanSansSC-Normal.otf` |
 | 许可 | **SIL Open Font License 1.1**（OFL-1.1）——允许自由使用、修改、再分发 |
 | 大小 / 指纹 | 约 16.1 MB；`sha256 = 69a090057ee75936…`（前 16 位，脚本会校验） |
-| 本仓取用 | **只取事实性对应关系**：由 `tools/build_fontmap.py` 生成 `{字形轮廓哈希: 字符}` 索引（44 260 条，压缩后约 1.2 MB），缓存于 `output/fontcache/` |
+| 本仓取用 | **只取事实性对应关系**：由 `tools/build_fontmap.py` 派生出 `{字形轮廓哈希: 字符}` 索引 |
 
-### 为什么不把它（和索引）放进仓库
+### 字体本体不入仓，但派生索引**随仓分发**
 
-1. **不是代码依赖，是数据工具**——本项目**没有**把字体当资产分发，而是让脚本
-   按需下载并校验指纹；索引只是派生数据，可从公开字体重建。
-2. **体积**：字体 16 MB、索引 1.2 MB，而两者都可一条命令重建，没有入库的理由。
-3. **版本敏感性**：参考字体**换版本就会解码失配**（实测 2.005 只有 7/363 命中）。
-   固定在 `2.002R` 并由脚本校验 sha256，比在仓库里存一份容易过期的副本更可靠。
+从 v0.5.0 起，字体解码在运行时**不再依赖参考字体、也不再联网**：
 
-> OFL-1.1 允许再分发，因此**入库在许可上是可行的**——这里是工程取舍（体积 / 可重建性），
-> 不是许可限制。若将来要离线使用，把字体放到 `output/fontcache/` 并在
-> `tools/build_fontmap.py` 里改用本地路径即可。
->
+| 产物 | 是否入仓 | 体积 | 说明 |
+|---|---|---|---|
+| 参考字体 `SourceHanSansSC-Normal.otf` | **否** | ~16.1 MB | 只有维护者重建索引时才由 `tools/build_fontmap.py` 按需下载并校验 sha256 |
+| 紧凑索引 `noveldown/fontmaps/sourcehan-sc-2.002.bin` | **是** | ~459 KB | gzip 压缩的 JSON（44 260 条 `{6字节轮廓哈希: 字符}`）；运行时唯一路径，零下载 |
+
+1. **字体本体不入仓**：16 MB 且可一条命令重建，没有入库理由；版本敏感（换版本会解码失配），
+   固定在 `2.002R` 并由脚本校验 sha256 更可靠。
+2. **派生索引入仓**：它是**事实性对应关系**（轮廓哈希 → 字符），不是字体数据本身；
+   体积仅 459 KB，入仓即可让终端用户开箱即用、完全离线。
+   OFL-1.1 允许再分发，此做法在许可上无碍。
+
 > 该字体是**本站点专用**能力：`font_decode` 未启用的规则完全不涉及它，
-> 也不影响其它三个站点的运行。
+> 也不影响其它站点的运行。索引缺失时只会让番茄这类站点解码失败并给出明确指引。
 
 ---
 
@@ -131,6 +134,8 @@
 | 2026-09-20 | `www.shuquge.com` | 标准笔趣阁结构；目录页 1594 项含 12 项「最新章节倒序回显」→ 归一化后 1582 章 |
 | 2026-09-20 | `www.bqgbe.cc` | 正文按段 base64 编码进 `document.writeln(随机命名空间.随机函数名('…'))`；章节内部分页（`54948_1.html`）；目录用 CSS `nth-child(n){display:none}` 隐藏列表项；目录 3 页 → 169 章 |
 | 2026-09-20 | `www.biqu520.net` | 与 bqgbe 同模板；目录项为 `onclick="随机函数名(id)"`（无 href）；27 页 → 2653 章，与站点自报分页完全一致 |
+| 2026-09-20 | `www.qidian.com` | 腾讯 Chaos VM：捆绑 Chromium + headless → `sec-ch-ua` 含 `HeadlessChrome`、`navigator.webdriver=true`，202 挑战页 42s 不放行；本机真 Chrome + headed + 关 AutomationControlled → 数秒内渲染出 67~70 万字节书页，`#bookName`/`.chapter-name`(1418) 命中，指纹 `webdriver=false / plugins=5 / languages=zh-CN,zh / UA 不含 HeadlessChrome`。目录走 JSON 接口 `/ajax/book/category`（`data.vs[].cs[]`，逐章 `sS`：**1=免费、0=VIP**，与直觉相反） |
+| 2026-09-20 | `www.qidian.com` | **A/B 对照**：带与不带 `stealth.min.js`，上述指纹与渲染结果**完全一致** → 判定 stealth 对本站点非必需（故不随仓分发，见第六节） |
 | 2026-09-20 | 多站 | 不可达（curl 000）：bqg70.com、b520.cc、biqiuge.com、bqgui.cc、22biqu.com、xbiquge.la、69shuba.com、bqg128.com；WAF 403：beqege.cc |
 
 ---
@@ -142,3 +147,20 @@
 - `curl_cffi`：已接入（`--curl-cffi`），但四个可用站点均无 TLS 指纹校验，默认关闭。
 - `fontTools` / `brotli`：**已采用，但仅服务字体反爬那一项功能**（见第四节）。
   非必需依赖——未安装时其它站点照常工作。
+
+### puppeteer-extra-plugin-stealth（评估后**未随仓分发**）
+
+| 项 | 内容 |
+|---|---|
+| 组件 | `puppeteer-extra-plugin-stealth` 产出的 `stealth.min.js` |
+| 上游 | <https://github.com/berstend/puppeteer-extra> |
+| 许可 | MIT |
+| 本仓取用 | **不入仓**。仅保留一个**可选外挂入口**：设环境变量 `NOVELDOWN_STEALTH_JS` 或规则里 `browser.stealth_js` 指向自备的 `stealth.min.js`，即会在页面脚本前注入 |
+
+**为什么不分发**：① 本仓铁律「第三方源码不入仓」（与 FictionDown / novel-downloader 同一处理，
+见第三节）；② **实测非必需** —— 起点的关键阻断是「捆绑 Chromium + headless 暴露
+`HeadlessChrome`、`navigator.webdriver=true`」，用**本机真 Chrome + headed +
+`--disable-blink-features=AutomationControlled`** 即可解掉；带/不带 stealth.min.js
+的 A/B 对照结果一致（见第五节）。因此内置伪装即可，第三方脚本降级为可选增强。
+（`stealth.min.js` 已在 `.gitignore` 中，即便本地放置也不会被提交。）
+

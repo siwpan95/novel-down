@@ -25,11 +25,11 @@ class TestLoadRules(unittest.TestCase):
              "zongheng.com",                                 # 正版·含 VIP（只抓免费章）
              "qimao.com",                                    # 正版·全免费（JSON 接口目录）
              "17k.com",                                      # 正版（浏览器路由 + 站点级 VIP 特征）
-             "qidian.com"})                                   # 调研存根（腾讯 Chaos VM）
+             "qidian.com"})                                   # 正版·含 VIP（反检测浏览器过腾讯 Chaos VM）
         enabled = {r.id for r in rules.values() if r.enabled}
         self.assertEqual(enabled, {"shuquge.com", "bqgbe.cc", "biqu520.net",
                                    "fanqienovel.com", "zongheng.com", "qimao.com",
-                                   "17k.com"})
+                                   "17k.com", "qidian.com"})
         for r in rules.values():
             self.assertTrue(r.free_only, f"{r.id} 必须声明 free_only")
         for r in rules.values():
@@ -43,13 +43,18 @@ class TestLoadRules(unittest.TestCase):
                 f"{r.id} 缺少目录来源")
             self.assertTrue(r.chapter_cfg.get("content_selector"))
 
-    def test_disabled_rules_are_documentation_stubs(self):
-        """停用规则是「调研记录存根」：必须写明为何做不到，且原因应是技术性的。"""
+    def test_all_shipped_rules_are_enabled(self):
+        """当前随仓规则**全部可用**（Qidian 也已被反检测浏览器打通 Chaos VM）。
+
+        另留一条通则：若有朝一日新增了停用规则，它必须是写明技术原因的调研存根。
+        """
         rules = load_rules()
-        for rid in ("qidian.com",):
-            r = rules[rid]
-            self.assertFalse(r.enabled)
-            self.assertGreater(len(r.disabled_reason), 20, f"{rid} 需写明停用原因")
+        for r in rules.values():
+            if not r.enabled:
+                self.assertGreater(len(r.disabled_reason), 20,
+                                   f"{r.id} 若停用必须写明技术原因")
+        self.assertEqual({r.id for r in rules.values() if not r.enabled}, set(),
+                         "当前不应有停用规则")
 
     def test_vip_site_rule_is_enabled_and_guards_vip(self):
         """回归：含 VIP 的正版站（纵横）必须是**启用**状态。
@@ -108,14 +113,35 @@ class TestLoadRules(unittest.TestCase):
     def test_matching_disabled_rule_reports_reason(self):
         """命中的规则被停用时必须报出原因，而不是含糊的「没有规则」。
 
-        且原因是**技术性的**（起点是 WAF 挡路），不是「因为含 VIP」。
+        当前随仓规则**全部启用**，所以用一个合成停用规则来覆盖这条分支；
+        原因必须是**技术性**描述（不是「因为含 VIP」）。
         """
+        from noveldown.rules import Rule
+        stub = Rule({
+            "id": "demo.example", "name": "演示站",
+            "match": ["demo.example"], "enabled": False, "free_only": True,
+            "disabled_reason": "目录由 JS 动态渲染，正文走腾讯云 Chaos VM 校验，"
+                               "纯 HTTP 取不到，需要真实浏览器会话。",
+        })
         with self.assertRaises(RuleError) as ctx:
-            find_rule("https://www.qidian.com/book/1010868264/")
+            find_rule("https://demo.example/book/1/", {"demo.example": stub})
         msg = str(ctx.exception)
         self.assertIn("已停用", msg)
-        # 原因是**技术性的**，且要具体到实测结论（腾讯云 Chaos VM），而不是含糊的"有 WAF"
         self.assertIn("Chaos VM", msg)
+
+    def test_qidian_is_now_enabled(self):
+        """回归：起点已从「调研存根」转为**启用**（反检测浏览器过 Chaos VM）。"""
+        rules = load_rules()
+        r = rules["qidian.com"]
+        self.assertTrue(r.enabled)
+        self.assertEqual(r.fetch_mode, "browser")
+        self.assertTrue((r.browser_cfg or {}).get("anti_detect"))
+        # 目录走 JSON 接口
+        self.assertEqual(r.catalog_cfg.get("mode"), "json_api")
+        # 启用后可正常解析（不再抛「已停用」）
+        self.assertEqual(
+            find_rule("https://www.qidian.com/book/1010868264/", rules).id,
+            "qidian.com")
 
     def test_paid_sites_recognized_by_rule_layer(self):
         """回归：站点层不再拒绝含 VIP 的正版站，规则层也必须认得出它们。"""

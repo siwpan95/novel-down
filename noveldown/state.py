@@ -90,6 +90,7 @@ class StateStore:
             "url": book.url,
             "title": book.title,
             "author": book.author,
+            "catalog_sort": getattr(book, "catalog_sort", "cid_numeric_asc"),
             "stats": book.stats(),
             "chapters": [
                 {"index": c.index, "title": c.title, "url": c.url, "cid": c.cid,

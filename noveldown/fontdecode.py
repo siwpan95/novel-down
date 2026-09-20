@@ -34,8 +34,15 @@ woff2 子集字体把这些码位渲染成真正的字形。DOM 里是 `'寒\\ue
 `fontTools`（+ `brotli` 用于读 woff2）。这两个包**只**服务本功能，
 缺失时其它站点照常工作，只是番茄这类站点无法解码并会给出明确提示。
 
-参考字体**不随仓库分发**：由 `tools/build_fontmap.py` 按需下载并生成索引
-（索引缓存在输出目录下），理由见 docs/REFERENCE.md。
+运行时零参考字体依赖
+--------------------
+途径二所需的「字形轮廓 → 字符」索引**随仓库分发**
+（`noveldown/fontmaps/sourcehan-sc-2.002.bin`，gzip 压缩的 JSON，
+44 260 条、约 460 KB）——因此运行时**不联网、不下载 17 MB 参考字体**，
+`FontDecoder` 也没有任何下载分支。该索引由 `tools/build_fontmap.py` 离线从
+OFL-1.1 的 SourceHanSansSC-Normal **2.002** 派生（来源与许可证见
+docs/REFERENCE.md 第四节）；**参考字体本体不入仓**，只有维护者重建索引时
+才需要按需获取。
 """
 
 import gzip
@@ -47,13 +54,20 @@ import re
 PUA_START, PUA_END = 0xE000, 0xF8FF
 FONT_EXT_RE = ("woff2", "woff", "otf", "ttf")
 
-# 参考字体（唯一已验证可用的版本；换版本会失配，见模块 docstring）
-REF_FONT_URL = ("https://cdn.jsdelivr.net/gh/adobe-fonts/source-han-sans"
-                "@2.002R/OTF/SimplifiedChinese/SourceHanSansSC-Normal.otf")
-REF_FONT_SHA256 = ("69a090057ee75936"  # 前 16 位，完整值见 tools/build_fontmap.py 校验
-                   )
+# 参考字体版本（换版本会失配，见模块 docstring）。**运行时不需要字体本体**：
+# 所需的字形轮廓索引随仓库分发，见下方 SHIPPED_INDEX。
 REF_FONT_VERSION = "2.002"
+
+# 参考索引的缓存文件名（本地/早期版本产物；gzip 压缩的 JSON {轮廓哈希: 码位}）。
 REF_INDEX_NAME = "sourcehan-sc-2.002.index.json.gz"
+
+# 随仓分发的**字形轮廓索引**（gzip 压缩的 JSON，44 260 条，约 460 KB）：
+# **有它就不需要下载 17 MB 参考字体，也不需要联网** —— 这是唯一运行时路径。
+# 生成方式：tools/build_fontmap.py --shipped；来源与许可证见 docs/REFERENCE.md 第四节。
+REF_INDEX_BIN = "sourcehan-sc-2.002.bin"
+SHIPPED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fontmaps")
+SHIPPED_INDEX = os.path.join(SHIPPED_DIR, REF_INDEX_BIN)
+_HASH_LEN = 6
 
 
 class FontDecodeError(RuntimeError):
@@ -234,13 +248,16 @@ def _cp_priority(cp: int) -> int:
 
 
 def _outline_key(glyph_set, name: str) -> str:
-    """把一个字形的轮廓点集序列化成哈希。"""
+    """把一个字形的轮廓点集序列化成哈希（**前 6 字节**，与紧凑索引一致）。
+
+    取 6 字节而非完整 20 字节：实测 44260 条**零碰撞**，索引体积小一个量级。
+    """
     from fontTools.pens.recordingPen import RecordingPen
     pen = RecordingPen()
     glyph_set[name].draw(pen)
     parts = [op + "|" + ",".join(f"{x:g}/{y:g}" for x, y in pts)
              for op, pts in pen.value]
-    return hashlib.sha1(";".join(parts).encode()).hexdigest()
+    return hashlib.sha1(";".join(parts).encode()).hexdigest()[:_HASH_LEN * 2]
 
 
 def build_ref_index(font_path: str, log=None) -> dict:
@@ -281,7 +298,8 @@ def load_ref_index(path: str) -> dict:
     if not os.path.exists(path):
         raise FontDecodeError(
             f"缺少字体轮廓索引：{path}\n"
-            f"请先运行：F:\\Python314\\python.exe tools\\build_fontmap.py")
+            f"正常安装应随仓自带 noveldown/fontmaps/{REF_INDEX_BIN}。"
+            f"若确实缺失，请跑：F:\\Python314\\python.exe tools\\build_fontmap.py --shipped")
     with gzip.open(path, "rt", encoding="utf-8") as f:
         return {h: cp for h, cp in json.load(f).items()}
 
@@ -296,8 +314,9 @@ def pua_map_from_font(font_bytes: bytes, ref_index: dict = None,
 
     两条途径，**优先用便宜的那条**：
       ① `glyph_name` —— 按 glyph 名解（英文单词 / uniXXXX）；
-         能解就不用参考字体，秒级完成。
-      ② `outline`     —— 字形轮廓匹配；需要同版本参考字体（约 17MB + 索引）。
+         能解就不用任何字体重建，秒级完成。
+      ② `outline`     —— 字形轮廓匹配；用**随仓**的轮廓索引
+         （`noveldown/fontmaps/`，零下载、零参考字体）。
 
     返回 {"map", "mode", "coverage", "unmatched", "total_pua"}；
     当 mode == "needs_outline" 时表示名字解不出来，需要调用方提供 ref_index 再来一次。
@@ -359,49 +378,28 @@ class FontDecoder:
         os.makedirs(self.cache_dir, exist_ok=True)
 
     # ---------- 参考索引 ----------
-    def ref_index(self, build_if_missing=False, downloader=None):
-        if self._ref is None:
-            if os.path.exists(self.ref_index_path):
-                self._ref = load_ref_index(self.ref_index_path)
-                self.log(f"  字体索引已加载（{len(self._ref)} 个轮廓）")
-            elif build_if_missing:
-                self._ref = self._build_index(downloader)
-            else:
-                load_ref_index(self.ref_index_path)   # 抛带指引的错误
+    def ref_index(self):
+        """取字形轮廓索引（**运行时零下载、零参考字体**）。
+
+        查找顺序：
+          1. 随仓索引 `noveldown/fontmaps/sourcehan-sc-2.002.bin`（默认路径）
+          2. 缓存目录里的索引（本地重建产物；仅供开发/离线校验）
+        两者都没有才报错——错误信息会给出重建指引（需维护者离线重建，
+        见 tools/build_fontmap.py）。**本方法不再有任何下载分支。**
+        """
+        if self._ref is not None:
+            return self._ref
+        for path in (SHIPPED_INDEX, self.ref_index_path):
+            if os.path.exists(path):
+                self._ref = load_ref_index(path)
+                self.log(f"  字形轮廓索引已加载（{len(self._ref)} 条，"
+                         f"{os.path.basename(path)}）")
+                return self._ref
+        load_ref_index(SHIPPED_INDEX)      # 抛带指引的错误
         return self._ref
 
-    def _build_index(self, downloader):
-        """下载参考字体（一次性）并生成索引。"""
-        import tempfile
-        if downloader is None:
-            raise FontDecodeError("需要下载参考字体，但未提供下载函数")
-        self.log("  首次使用：下载参考字体 SourceHanSansSC-Normal 2.002（约 17MB，一次性）")
-        data = downloader(REF_FONT_URL)
-        if not data or len(data) < 1024 * 1024:
-            raise FontDecodeError(f"参考字体下载异常（{len(data or b'')} 字节）")
-        sha = hashlib.sha256(data).hexdigest()
-        self.log(f"  参考字体 sha256={sha[:16]}…")
-        if not sha.startswith(REF_FONT_SHA256):
-            self.log(f"  ! 警告：参考字体指纹与记录不一致（期望 {REF_FONT_SHA256}…）"
-                     f"——版本漂移会导致解码失败，请复核 REF_FONT_URL")
-        fd, tmp = tempfile.mkstemp(suffix=".otf")
-        os.close(fd)
-        try:
-            with open(tmp, "wb") as f:
-                f.write(data)
-            idx = build_ref_index(tmp, self.log)
-        finally:
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
-        size = save_ref_index(idx, self.ref_index_path)
-        self.log(f"  索引已写出：{self.ref_index_path}（{size / 1024:.0f} KB）")
-        return idx
-
     # ---------- 单字体映射 ----------
-    def map_for_font(self, font_bytes: bytes, build_if_missing=False,
-                     downloader=None) -> dict:
+    def map_for_font(self, font_bytes: bytes) -> dict:
         sig = hashlib.sha1(font_bytes).hexdigest()[:16]
         if sig in self._maps:
             return self._maps[sig]
@@ -419,13 +417,12 @@ class FontDecoder:
             except (OSError, json.JSONDecodeError, KeyError):
                 pass
 
-        # 先试「按 glyph 名解」—— 秒级、且不需要 17MB 参考字体
+        # 先试「按 glyph 名解」—— 秒级、且不需要任何字体重建
         res = pua_map_from_font(font_bytes, None)
         if res["mode"] == "needs_outline":
             self.log("  按 glyph 名解不出（名字是索引而非字符），"
-                     "改用轮廓匹配（需同版本参考字体）")
-            ref = self.ref_index(build_if_missing=build_if_missing,
-                                 downloader=downloader)
+                     "改用轮廓匹配（随仓同版本轮廓索引）")
+            ref = self.ref_index()
             res = pua_map_from_font(font_bytes, ref)
         m = res["map"]
         self.last_mode = res["mode"]

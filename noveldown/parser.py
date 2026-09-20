@@ -453,6 +453,20 @@ def collect_json_catalog(rule, text: str, bid: str, origin: str):
         raise ValueError(f"目录接口返回的不是 JSON：{e}；前 80 字：{(text or '')[:80]!r}")
 
     items = _dig(data, cfg.get("items_path", "data.chapters"))
+    # 嵌套展开：起点把章节放在 data.vs[].cs[]（卷 → 章）里
+    ff = cfg.get("flatten_field")
+    if ff and isinstance(items, list):
+        flat = []
+        for grp in items:
+            if isinstance(grp, dict):
+                subs = grp.get(ff)
+                if isinstance(subs, list):
+                    flat.extend(subs)
+                else:
+                    flat.append(grp)
+            else:
+                flat.append(grp)
+        items = flat
     if not isinstance(items, list):
         raise ValueError(
             f"目录接口的 items_path={cfg.get('items_path')!r} 取不到列表；"
@@ -547,7 +561,23 @@ def parse_chapter_page(rule, html: str, url: str, current_cid: str):
         for sel in cfg.get("strip_selectors") or []:
             for el in work.select(sel):
                 el.decompose()
-        paragraphs, ads = extract_paragraphs(work, cfg.get("ad_patterns"))
+        # `paragraph_selector`：按**段落元素**逐个取文本，而不是把容器整块文本按换行切。
+        # 用于「正文段是 <span>，而 <p> 里还混着段评数/点赞数等附加节点」的站点
+        # （实测起点：<p><span class="content-text">痛！</span><span class="review">…999…</span></p>，
+        #  整块取文本会得到「痛！999」）。
+        para_sel = cfg.get("paragraph_selector")
+        if para_sel:
+            paragraphs, ads = [], 0
+            for node in work.select(para_sel):
+                line = _norm_space(node.get_text(" "))
+                if not line:
+                    continue
+                if _is_ad_line(line, cfg.get("ad_patterns")):
+                    ads += 1
+                    continue
+                paragraphs.append(line)
+        else:
+            paragraphs, ads = extract_paragraphs(work, cfg.get("ad_patterns"))
 
     # 续页判定
     next_url = None

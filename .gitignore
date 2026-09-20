@@ -14,6 +14,12 @@ _ref/
 *.tar.gz
 *.tgz
 
+# --- 可选第三方 stealth 脚本（自备，不入仓）---
+# 内置指纹伪装（真 Chrome + headed + 关 AutomationControlled + 语言自洽）实测已足够，
+# 故不随仓分发任何第三方 stealth 源码（理由见 docs/REFERENCE.md 第六节）。
+# 若确需更强的伪装而自行放置，也不会被提交进来。
+stealth.min.js
+
 # --- Python ---
 __pycache__/
 *.py[cod]

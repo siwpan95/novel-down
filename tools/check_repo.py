@@ -64,6 +64,11 @@ EXPECTED_THIRD_PARTY = (
         "url": "github.com/zombie110year/backupqidian",
         "license": "未声明",
     },
+    {
+        "name": "puppeteer-extra-plugin-stealth",
+        "url": "github.com/berstend/puppeteer-extra",
+        "license": "MIT",
+    },
 )
 REFERENCE_DOC = os.path.join("docs", "REFERENCE.md")
 
