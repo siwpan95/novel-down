@@ -1,0 +1,85 @@
+{
+  "id": "mirror-newlist-a-561dd7",
+  "name": "免费镜像族 · 目录 #newlist a",
+  "pool": "免费镜像",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://www.isex.work/book/52972",
+  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `#newlist a` + 正文 `#TextContent`；域数 2；书号形态 ['digits'] → url_pattern=^.*/(\\d+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · isex.work — 96 章 / 1306 字\n  · po18w.vip — 114 章 / 5338 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。",
+  "match": [
+    "isex.work",
+    "po18w.vip"
+  ],
+  "book": {
+    "url_pattern": "^.*/(\\d+)(?:/|\\.html?)?$",
+    "info_url": "{url}"
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single"
+    },
+    "item_selector": "#newlist a",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/(?P<cid>\\d+)(?:_\\d+)?\\.html?"
+    },
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first",
+    "item_deny_text": [
+      "开始阅读",
+      "在线书库",
+      "TXT下载",
+      "txt下载",
+      "最新章节",
+      "加入书架",
+      "推荐本书",
+      "查看全部",
+      "更多章节",
+      "返回目录",
+      "手机阅读",
+      "返回书页"
+    ]
+  },
+  "chapter": {
+    "content_selector": "#TextContent",
+    "content_selectors": [
+      "#TextContent"
+    ],
+    "strip_selectors": [
+      "script",
+      "style",
+      ".bottem",
+      ".bottem1",
+      ".bottem2",
+      "#center_tip"
+    ],
+    "ad_patterns": [
+      "请记住本站",
+      "手机版阅读",
+      "最新网址",
+      "笔趣阁",
+      "一秒记住",
+      "本章未完",
+      "点击下一页继续阅读",
+      "将本站设为首页",
+      "把本站",
+      "加入书架",
+      "推荐本书",
+      "返回目录",
+      "上一章",
+      "下一章",
+      "章节错误",
+      "求收藏",
+      "求推荐",
+      "内容加载失败",
+      "请稍后重试",
+      "收藏本站",
+      "收藏本书",
+      "收藏本页",
+      "加入收藏"
+    ]
+  }
+}

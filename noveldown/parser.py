@@ -335,6 +335,7 @@ def collect_catalog_items(rule, html: str, page_url: str, bid: str):
 
     items, locked = [], []
     state = {"vol": ""}
+    deny_text = rule.catalog_cfg.get("item_deny_text") or []
 
     def _handle(el):
         href = el.get("href") or ""
@@ -342,6 +343,13 @@ def collect_catalog_items(rule, html: str, page_url: str, bid: str):
         if not cid:
             return
         title = _norm_space(el.get_text())
+        # `catalog.item_deny_text`：丢掉**站点导航类**的伪目录项。
+        # 实测常见：「开始阅读」「在线书库」「TXT下载」「最新章节」——
+        # 它们和真章节一样带数字 href（`/book/21/1.html`），cid 甚至与第 1 章**相同**，
+        # 于是 `dedupe=keep_first` 会把「开始阅读」留在章号 1 上、把真标题挤掉。
+        # 这类项不是"另一个站点"，纯粹是模板噪声，故按文本显式剔除。
+        if deny_text and title and any(d in title for d in deny_text):
+            return
         cls = " ".join(el.get("class") or [])
         parent_cls = ""
         if el.parent is not None and getattr(el.parent, "get", None):

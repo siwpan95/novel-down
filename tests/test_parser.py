@@ -460,6 +460,51 @@ class TestContainerItemAndVipChild(unittest.TestCase):
         self.assertEqual(len(items), 2)
 
 
+class TestCatalogItemDenyText(unittest.TestCase):
+    """`catalog.item_deny_text`：丢掉站点导航类的**伪目录项**（v0.8.2）。
+
+    实测：镜像站目录里混着「开始阅读」「在线书库」「TXT下载」，它们和真章节
+    一样带数字 href（`/book/21/1.html`），cid 甚至与第 1 章**相同** ——
+    于是 `dedupe=keep_first` 会把真标题挤掉，导出里第 1 章叫「开始阅读」。
+    """
+
+    def _items(self, deny):
+        from noveldown.parser import collect_catalog_items
+        from noveldown.rules import Rule
+        cat = {
+            "item_selector": "ul.dirlist a",
+            "id_from": {"mode": "href", "pattern": "/(?P<cid>\\d+)\\.html"},
+            "sort": "cid_numeric_asc", "dedupe": "keep_first",
+        }
+        if deny is not None:
+            cat["item_deny_text"] = deny
+        rule = Rule({
+            "id": "t.m", "name": "T", "match": ["x.com"], "free_only": True,
+            "book": {"url_pattern": "/(\\d+)/"},
+            "catalog": cat,
+            "chapter": {"content_selector": "div#c"},
+        }).validate()
+        html = ('<ul class="dirlist">'
+                '<li><a href="/book/21/1.html">开始阅读</a></li>'
+                '<li><a href="/book/21/1.html">第1章 甲</a></li>'
+                '<li><a href="/book/21/2.html">第2章 乙</a></li>'
+                '<li><a href="/book/21/3.html">TXT下载</a></li>'
+                '</ul>')
+        items, _locked = collect_catalog_items(rule, html,
+                                              "https://x.com/book/21/", "21")
+        return items
+
+    def test_without_deny_nav_item_wins_first(self):
+        items = self._items(None)
+        titles = [i["title"] for i in items]
+        self.assertIn("开始阅读", titles, "不配 deny 时应能看到噪声项")
+
+    def test_deny_text_drops_nav_items(self):
+        items = self._items(["开始阅读", "TXT下载"])
+        titles = [i["title"] for i in items]
+        self.assertEqual(titles, ["第1章 甲", "第2章 乙"])
+
+
 class TestVipVolumeMarkers(unittest.TestCase):
     """目录按**分段**标注免费/VIP（塔读：`<h2><span>免费章节<i>/N章</i></span></h2>`）。"""
 

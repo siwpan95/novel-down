@@ -18,34 +18,28 @@ from tests._base import temp_subdir  # noqa: E402
 class TestLoadRules(unittest.TestCase):
 
     def test_shipped_rules_load(self):
+        """随仓规则必须**全部**能加载，且 == rules/ 目录下的文件集合。
+
+        ⚠ 这里刻意**不写死 id 清单**：本项目会持续批量添加镜像站规则
+        （见 docs/NEW_SITES_PLAN.md §11.3），写死清单会让每加一个域就改一次测试、
+        且掩盖真正要守的不变量 ——
+        真正的不变量是「**文件系统里的每条规则都能通过校验并加载**」。
+        几个关键站点单独断言，防止被误删。
+        """
+        import glob
+        from noveldown.rules import RULES_DIR
+        files = {os.path.basename(p)[:-5]
+                 for p in glob.glob(os.path.join(RULES_DIR, "*.json"))}
+        self.assertTrue(files, "rules/ 目录下没有规则文件？")
         rules = load_rules()
-        self.assertEqual(
-            set(rules),
-            {"shuquge.com", "bqgbe.cc", "biqu520.net",       # 免费阅读站
-             "fanqienovel.com",                              # 正版·免费平台（字体反爬）
-             "zongheng.com",                                 # 正版·含 VIP（只抓免费章）
-             "qimao.com",                                    # 正版·全免费（JSON 接口目录）
-             "17k.com",                                      # 正版（浏览器路由 + 站点级 VIP 特征）
-             "qidian.com",                                   # 正版·含 VIP（反检测浏览器过腾讯 Chaos VM）
-             "shuhai.com",                                   # 正版（杰奇 CMS，目录走 method=getcatalog）
-             "tadu.com",                                     # 正版（正文来自 JSON 接口 body_api）
-             "ciweimao.com",                                 # 停用存根（人机验证红线）
-             "xrzww.com",                                    # 停用存根（正文需登录，红线）
-             "youdubook.com",                                # 停用存根（同息壤，登录墙）
-             "ciyuanji.com",                                 # 正版（Next.js；目录+正文都在 __NEXT_DATA__）
-             "hanwujinian.com",                              # 停用存根（正文对未登录不下发）
-             "faloo.com",                                    # 正版·含 VIP（目录分段判 VIP）
-             "linovelib.com",                                 # 轻小说译作聚合站（纯 HTTP）
-             "linovel.net",                                   # 停用存根（站点已关闭·侵权）
-             "soushuwang.cc",                                 # 免费镜像族（搜书网/速读小说/bqg142）
-             "shudugu.org"})                                  # 免费镜像族（速读谷/速读小说同模板）
-        enabled = {r.id for r in rules.values() if r.enabled}
-        self.assertEqual(enabled, {"shuquge.com", "bqgbe.cc", "biqu520.net",
-                                   "fanqienovel.com", "zongheng.com", "qimao.com",
-                                   "17k.com", "qidian.com", "shuhai.com",
-                                   "tadu.com", "ciyuanji.com",
-                                   "faloo.com", "linovelib.com",
-                                   "soushuwang.cc", "shudugu.org"})
+        self.assertEqual(set(rules), files,
+                         "有规则文件加载失败（或 id 与文件名不一致）")
+        # 关键站点守门（防误删）
+        for key in ("qidian.com", "17k.com", "qimao.com", "zongheng.com",
+                    "fanqienovel.com", "tadu.com", "shuhai.com", "ciyuanji.com",
+                    "faloo.com", "linovelib.com", "shuquge.com", "bqgbe.cc",
+                    "biqu520.net", "soushuwang.cc", "shudugu.org"):
+            self.assertIn(key, rules, f"关键规则 {key} 不见了")
         for r in rules.values():
             self.assertTrue(r.free_only, f"{r.id} 必须声明 free_only")
         for r in rules.values():
