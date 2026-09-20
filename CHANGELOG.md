@@ -77,6 +77,11 @@
   `--vip` 开关、起点调试保护绕过、正版/盗版互补补 VIP 流程。
   借鉴记账见 [docs/REFERENCE.md](docs/REFERENCE.md)，约束细则见 [docs/FREE_ONLY.md](docs/FREE_ONLY.md)。
 - 受保护章节的正文**不落缓存**（防止绕过导出层泄漏）。
+- **第三方源码不入仓**：调研参照的 FictionDown（GPL-3.0）、404-novel-downloader
+  （AGPL-3.0-or-later）、backupqidian（未声明许可证）**只记来源与许可，不收录源码**，
+  避免与本仓 MIT 产生许可含混。该约束由 `tools/check_repo.py` 机械校验
+  （许可文件唯一性 / 无第三方目录 / 无归档 / 无大文件 / 无凭据 / 借鉴记账完整），
+  并用注入测试证明门禁有效。
 
 ### Known Issues
 

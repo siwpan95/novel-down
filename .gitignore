@@ -5,9 +5,14 @@ cache/
 *.epub
 
 # --- 调研素材（参照项目压缩包与解压结果，仅本地）---
+# 刻意不入仓：FictionDown 是 GPL-3.0、novel-downloader 是 AGPL-3.0-or-later，
+# 本项目是 MIT；把 GPL/AGPL 源码随 MIT 仓分发会让许可状态含混。
+# 本项目只借鉴其设计思路、未复制任何代码 —— 详见 docs/REFERENCE.md 第三节。
+# 该约束由 tools/check_repo.py 机械校验。
 _ref/
 *.zip
 *.tar.gz
+*.tgz
 
 # --- Python ---
 __pycache__/

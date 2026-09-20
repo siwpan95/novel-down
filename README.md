@@ -148,6 +148,7 @@ novel-down/
 ├── tools/probe_site.py        站点结构探针（编写新规则用）
 ├── tools/verify_reader.py     真实浏览器验证 HTML 阅读器（Playwright）
 ├── tools/make_screenshot.py   生成 README 演示截图（用自撰文本，不含第三方正文）
+├── tools/check_repo.py        仓库卫生门禁（本仓不含第三方源码 / 凭据 / 产物）
 ├── tests/                     85 个用例（含端到端拦截集成测试）+ fixtures
 ├── docs/
 │   ├── REFERENCE.md           借鉴记账（来源 + 许可证 + 范围 + 排除项）
@@ -188,7 +189,7 @@ F:\Python314\python.exe -m unittest discover -s tests -t .
 目录归一化、目录页发现、正文提取、免费六层拦截、四格式导出
 （含 EPUB 结构与 XML 合法性校验）、断点续爬状态机、规则校验、校对报告。
 
-另有两项**端到端**验证：
+另有三项**端到端**验证：
 
 ```bat
 :: 1. 真实引擎 + 本地合成站点：证明「locked 章节零请求」「付费墙正文被丢弃」
@@ -197,6 +198,10 @@ F:\Python314\python.exe -m unittest tests.test_integration_guard -v
 
 :: 2. 真实浏览器（Playwright + Chromium）操作 HTML 阅读器并断言 30 项
 F:\Python314\python.exe tools\verify_reader.py "output\<书名>_<站点>\<书名>_<站点>.html"
+
+:: 3. 仓库卫生门禁：不含第三方源码 / 凭据 / 产物，且借鉴记账完整
+F:\Python314\python.exe tools\check_repo.py
+F:\Python314\python.exe tools\check_repo.py --selfcheck   # 证明门禁本身有效
 ```
 
 ---
@@ -212,4 +217,10 @@ F:\Python314\python.exe tools\verify_reader.py "output\<书名>_<站点>\<书名
 
 ## 许可
 
-MIT，见 [LICENSE](./LICENSE)。第三方来源与许可证记账见 [docs/REFERENCE.md](./docs/REFERENCE.md)。
+MIT，见 [LICENSE](./LICENSE)。
+
+**第三方来源**：本项目在调研阶段参照过三个第三方项目（FictionDown / 404-novel-downloader /
+backupqidian），**只借鉴设计思路，未复制任何代码**，其源码**不入本仓**
+（其中两份是 GPL-3.0 与 AGPL-3.0-or-later，与本仓 MIT 不兼容）。
+来源链接、许可证依据、取用范围与排除项逐条记在 [docs/REFERENCE.md](./docs/REFERENCE.md)，
+并由 `tools/check_repo.py` 机械校验「本仓不含第三方源码」＋「借鉴记账完整」。
