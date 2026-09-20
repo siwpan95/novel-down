@@ -539,8 +539,11 @@ def parse_chapter_page(rule, html: str, url: str, current_cid: str):
     """解析单个正文页。
 
     Returns: {
-        "title", "paragraphs", "ads_removed", "decode_note", "next_url"
+        "title", "paragraphs", "ads_removed", "decode_note", "extract_note", "next_url"
     }
+
+    `extract_note` 非空表示正文抽取**走了回退路径**（段落选择器未命中）——
+    调用方应把它并进章节备注，便于发现站点改版。
     """
     cfg = rule.chapter_cfg
     html2, dstats = predecode(html, enabled=rule.predecode)
@@ -552,7 +555,7 @@ def parse_chapter_page(rule, html: str, url: str, current_cid: str):
         title = clean_page_title(t_el.get_text())
 
     container = select_first(soup, cfg.get("content_selectors") or cfg.get("content_selector"))
-    paragraphs, ads = [], 0
+    paragraphs, ads, extract_note = [], 0, ""
     if container is not None:
         # 在**深拷贝**上剔除元素。
         # 坑（实测踩过）：直接 decompose 原容器会把 div.read_btn 也删掉，
@@ -576,8 +579,13 @@ def parse_chapter_page(rule, html: str, url: str, current_cid: str):
                     ads += 1
                     continue
                 paragraphs.append(line)
-        else:
+        # 回退：段落选择器**一个都没命中**（站点改版 / 换了渲染变体）时，
+        # 退回「容器整体切分」——否则整章会**静默变空**（比多几个噪声字严重得多）。
+        # 回退结果同样干净：strip_selectors 已在上面剔掉段评数等附加节点。
+        if not paragraphs:
             paragraphs, ads = extract_paragraphs(work, cfg.get("ad_patterns"))
+            if para_sel:
+                extract_note = f"段落选择器「{para_sel}」未命中，已回退为容器整体切分"
 
     # 续页判定
     next_url = None
@@ -609,5 +617,6 @@ def parse_chapter_page(rule, html: str, url: str, current_cid: str):
         "paragraphs": paragraphs,
         "ads_removed": ads,
         "decode_note": (f"base64×{dstats['payloads']}" if dstats.get("payloads") else ""),
+        "extract_note": extract_note,
         "next_url": next_url,
     }

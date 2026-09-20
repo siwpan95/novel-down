@@ -88,10 +88,10 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | 字段 | 说明 |
 |---|---|
 | `title_selector` | 可选。正文页标题（会自动剥离「（第N页）」后缀） |
-| `browser_wait_selector` | 可选。**章节页**专用的浏览器等待条件（与顶层 `browser.wait_selector` 解耦——书籍页与章节页往往要等不同元素） |
+| `browser_wait_selector` | 可选。**章节页**专用的浏览器等待条件（与顶层 `browser.wait_selector` 解耦——书籍页与章节页往往要等不同元素）。⚠ **只放"内容就绪"那一支**：`wait_for_selector` 是 OR 语义，塞入骨架期即命中的宽松选择器会导致提前放行 |
 | `content_selector` | ✓ 正文容器 CSS |
 | `content_selectors` | 可选**候选列表**（同一站不同请求可能给不同容器；按序取第一个命中） |
-| `paragraph_selector` | 可选。**按段落元素逐个取文本**，而非整块容器文本。用于 `<p>` 里混着段评数/点赞数等附加节点的站点（如起点 `span.content-text`） |
+| `paragraph_selector` | 可选。**按段落元素逐个取文本**，而非整块容器文本。用于 `<p>` 里混着段评数/点赞数等附加节点的站点（如起点 `span.content-text`）。**未命中时会自动回退为容器整体切分**，并把原因写进章节备注（`extract_note`），避免整章静默变空 |
 | `strip_selectors` | 需从容器内剔除的元素（导航 / 标题 / 脚本 / 水印） |
 | `vip_markers` | 可选。**整页**付费特征词/类名（付费信号不在正文里、而在 CSS 文件名或页面元素上的站点，如 17K 的 `chapter_vip`） |
 | `next_page.selector` | 分页导航链接选择器 |
@@ -437,7 +437,7 @@ A–H 覆盖从「标准免费站」到「反检测浏览器 + JSON 接口目录
   "chapter": {
     "content_selector": "main.content",
     "paragraph_selector": "span.content-text",
-    "browser_wait_selector": "main.content span.content-text, #reader-content p",
+    "browser_wait_selector": "main.content span.content-text",
     "strip_selectors": ["span.review", ".review-count", ".chapter-nav", "aside"]
   }
 }
@@ -459,9 +459,13 @@ A–H 覆盖从「标准免费站」到「反检测浏览器 + JSON 接口目录
 5. **反检测是必需的**（见「浏览器路由」一节的「反检测模式」）：捆绑 Chromium + headless
    的 `sec-ch-ua` 含 `HeadlessChrome`、`navigator.webdriver=true` → 202 挑战页 42s 不放行；
    本机真 Chrome + headed + 关 AutomationControlled → 数秒出 67~70 万字节书页。
+6. **等待条件不能塞宽松分支**（v0.5.1 修正）：`browser_wait_selector` 原为
+   `"main.content span.content-text, #reader-content p"`，而 `#reader-content p` 在**骨架期就命中**
+   → 等待**提前放行**，返回时 `span.content-text` 数 = **0**，全靠 `wait_ms` 兜。
+   现收紧为只留 `main.content span.content-text`。详见「浏览器路由」一节的坑列表。
 
 > 《诡秘之主》实测：1418 章 = **153 免费 + 1265 VIP**，VIP 章在目录接口层被判为 locked、
-> **零请求**；抓 14 章 46 364 字，校对 PASS。
+> **零请求**；抓 17 章 56 932 字，校对 PASS。
 
 ---
 
@@ -503,6 +507,16 @@ A–H 覆盖从「标准免费站」到「反检测浏览器 + JSON 接口目录
   打开只看到 2 个章节链接（JS 版是懒加载的），而**纯 HTTP 取到的静态 HTML 里有完整
   700 章**。所以不要默认"JS 站就得用浏览器"，先用 `probe_site.py` 与
   `python -m noveldown probe` 各试一次，用实测证据决定。
+- ⚠ **`wait_selector` 是 OR 语义，别塞宽松分支**（v0.5.1 实测踩到）：
+  `wait_for_selector("A, B")` **任一分支命中就返回**。若其中一支在**骨架期**就存在，
+  等待会**提前放行**，随后取到的 DOM 里正文是空的。
+  实测起点：`"main.content span.content-text, #reader-content p"` 中
+  `#reader-content p` 骨架期即命中 → 返回时 `span.content-text` 数 = **0**（`main.content p` = 69），
+  该等待**完全没起作用**，只是被 `wait_ms` 掩盖了。
+  对照实验（同页、`wait_ms=0`）：只留 `main.content span.content-text` → **69 段**、首段「痛！」；
+  旧 OR → **0 段**。
+  → **只放"真正代表内容就绪"的那一支**；宁可等超时（引擎会警告并继续），也不要在骨架上放行。
+  变体兼容交给**抽取阶段**的候选列表（`content_selectors` / `paragraph_selector` 回退）。
 
 ### 反检测模式（`browser.anti_detect`）—— 过 WAF/机器人挑战
 

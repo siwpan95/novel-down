@@ -187,6 +187,78 @@ class TestChapterExtract(unittest.TestCase):
         ps, _ = extract_paragraphs(soup.select_one("#c"), [])
         self.assertEqual(ps, ["缩进正文"])
 
+    def test_paragraph_selector_falls_back_when_missing(self):
+        """站点改版 / 换渲染变体：段落选择器一个都没命中时，必须回退整体切分。
+
+        否则整章会**静默变空**（比多几个噪声字严重得多）。回退要留痕（extract_note）。
+        """
+        from noveldown.rules import Rule
+        rule = Rule({
+            "id": "t.fb", "name": "T", "match": ["x.com"], "free_only": True,
+            "book": {"url_pattern": "/c/(\\d+)"},
+            "catalog": {"item_selector": "a"},
+            "chapter": {"content_selector": "main.content",
+                        "paragraph_selector": "span.content-text",   # 故意不存在的标记
+                        "strip_selectors": ["span.review", ".review-count"]},
+        })
+        html = '<main class="content"><p>第一段</p><p>第二段</p></main>'
+        res = parse_chapter_page(rule, html, "https://x/c/1/", "1")
+        self.assertEqual(res["paragraphs"], ["第一段", "第二段"])
+        self.assertIn("回退", res["extract_note"])
+        self.assertIn("span.content-text", res["extract_note"])
+
+    def test_fallback_result_is_clean_after_strip(self):
+        """回退路径同样干净：strip_selectors 已先剔掉段评数节点。
+
+        实测起点形态：<p><span class="content-text">痛！</span>
+        <span class="review">999</span></p> —— 若 strip 生效，回退也不会得到「痛！999」。
+        """
+        from noveldown.rules import Rule
+        rule = Rule({
+            "id": "t.fb2", "name": "T", "match": ["x.com"], "free_only": True,
+            "book": {"url_pattern": "/c/(\\d+)"},
+            "catalog": {"item_selector": "a"},
+            "chapter": {"content_selector": "main.content",
+                        "paragraph_selector": "span.nonexistent",
+                        "strip_selectors": ["span.review", ".review-icon", ".review-count"]},
+        })
+        html = ('<main class="content"><p><span class="content-text">痛！</span>'
+                '<span class="review"><span class="review-icon"></span>'
+                '<span class="review-count">999</span></span></p></main>')
+        res = parse_chapter_page(rule, html, "https://x/c/1/", "1")
+        self.assertEqual(res["paragraphs"], ["痛！"])
+        self.assertNotIn("999", "\n".join(res["paragraphs"]))
+
+    def test_no_fallback_note_when_selector_hits(self):
+        """走主路径时不得留下回退痕迹（否则没法靠备注发现站点改版）。"""
+        from noveldown.rules import Rule
+        rule = Rule({
+            "id": "t.hit", "name": "T", "match": ["x.com"], "free_only": True,
+            "book": {"url_pattern": "/c/(\\d+)"},
+            "catalog": {"item_selector": "a"},
+            "chapter": {"content_selector": "main.content",
+                        "paragraph_selector": "span.content-text"},
+        })
+        html = '<main class="content"><p><span class="content-text">痛！</span></p></main>'
+        res = parse_chapter_page(rule, html, "https://x/c/1/", "1")
+        self.assertEqual(res["paragraphs"], ["痛！"])
+        self.assertEqual(res["extract_note"], "")
+
+    def test_no_content_container_still_returns_extract_note_key(self):
+        """容器都选不到时也不能 NameError（回归：extract_note 必须在 if 外初始化）。"""
+        from noveldown.rules import Rule
+        rule = Rule({
+            "id": "t.noc", "name": "T", "match": ["x.com"], "free_only": True,
+            "book": {"url_pattern": "/c/(\\d+)"},
+            "catalog": {"item_selector": "a"},
+            "chapter": {"content_selector": "main.nope",
+                        "paragraph_selector": "span.content-text"},
+        })
+        res = parse_chapter_page(rule, "<html><body>空</body></html>",
+                                 "https://x/c/1/", "1")
+        self.assertEqual(res["paragraphs"], [])
+        self.assertEqual(res["extract_note"], "")
+
     def test_paragraph_selector_ignores_extra_nodes(self):
         """段落级选择器：正文段是 <span>，同 `<p>` 里还混着段评数/点赞数节点。
 

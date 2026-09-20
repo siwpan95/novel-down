@@ -7,7 +7,7 @@
   "requires_js": true,
   "fetch_mode": "browser",
   "demo_url": "https://www.qidian.com/book/1010868264/",
-  "notes": "★ 之前判过「Chaos VM 挡死」——**换反检测浏览器后已打通**（2026-09-20 实测）。\n\n关键差别（同一台机器、同一站点，A/B 对照）：\n  · 捆绑 Chromium + headless → 请求头 sec-ch-ua 里赫然是 **HeadlessChrome**，\n    navigator.webdriver=true，202 挑战页 42s 不放行；\n  · 本机真 Chrome（channel=\"chrome\"）+ **headed** + 关 AutomationControlled →\n    202 状态数秒内渲染出 67~70 万字节书页，#bookName/.chapter-name 全部命中，\n    指纹 navigator.webdriver=false、plugins=5、languages=zh-CN,zh、UA 不含 HeadlessChrome。\n  · 另做一组对照：**带 / 不带 stealth.min.js 结果一致** → 判定 stealth 对本站点非必需，\n    故不随仓分发第三方脚本（可选外挂见 README 环境变量 NOVELDOWN_STEALTH_JS）。\n\n目录走 JSON 接口 /ajax/book/category（页面内 fetch，带匿名 _csrfToken）：\n  {data:{vs:[{vN:卷名, cs:[{id, cN, cnt, sS}, ...]}]}}\n  **逐章 sS 字段：1=免费可读，0=VIP**（实测确认，不是猜的：\n  sS=1 的第1章 69 段/2408 字完整；sS=0 的第130章 只有 9 段/206 字试读且命中「VIP章节」）。\n  本规则把 vip_truthy 设为 [\"0\"] —— **0 才是 VIP**，与直觉相反，故写明。\n\n正文用 paragraph_selector=span.content-text（同 <p> 里还有 span.review 段评数，\n整块取文本会把「999」混进正文）。\n\n《诡秘之主》实测：1418 章 = 153 免费 + 1265 VIP；抓 14 章 46364 字，校对 PASS。",
+  "notes": "★ 之前判过「Chaos VM 挡死」——**换反检测浏览器后已打通**（2026-09-20 实测）。\n\n关键差别（同一台机器、同一站点，A/B 对照）：\n  · 捆绑 Chromium + headless → 请求头 sec-ch-ua 里赫然是 **HeadlessChrome**，\n    navigator.webdriver=true，202 挑战页 42s 不放行；\n  · 本机真 Chrome（channel=\"chrome\"）+ **headed** + 关 AutomationControlled →\n    202 状态数秒内渲染出 67~70 万字节书页，#bookName/.chapter-name 全部命中，\n    指纹 navigator.webdriver=false、plugins=5、languages=zh-CN,zh、UA 不含 HeadlessChrome。\n  · 另做一组对照：**带 / 不带 stealth.min.js 结果一致** → 判定 stealth 对本站点非必需，\n    故不随仓分发第三方脚本（可选外挂见 README 环境变量 NOVELDOWN_STEALTH_JS）。\n\n目录走 JSON 接口 /ajax/book/category（页面内 fetch，带匿名 _csrfToken）：\n  {data:{vs:[{vN:卷名, cs:[{id, cN, cnt, sS}, ...]}]}}\n  **逐章 sS 字段：1=免费可读，0=VIP**（实测确认，不是猜的：\n  sS=1 的第1章 69 段/2408 字完整；sS=0 的第130章 只有 9 段/206 字试读且命中「VIP章节」）。\n  本规则把 vip_truthy 设为 [\"0\"] —— **0 才是 VIP**，与直觉相反，故写明。\n\n正文用 paragraph_selector=span.content-text（同 <p> 里还有 span.review 段评数，\n整块取文本会把「999」混进正文）。\n\n《诡秘之主》实测：1418 章 = 153 免费 + 1265 VIP；抓 14 章 46364 字，校对 PASS。\n\n正文等待条件收紧（2026-09-20 实测）：\n  · browser_wait_selector 原本是 \"main.content span.content-text, #reader-content p\"。\n    wait_for_selector 是 **OR** 语义，另一支 #reader-content p 在**骨架期就命中** →\n    等待**提前放行**：返回那一刻 span.content-text 数量 = 0（而 main.content p = 69），\n    这个等待其实**没起到「等正文就绪」的作用**，全靠 wait_ms=3500 兜住。\n  · 现收紧为只留 \"main.content span.content-text\"。变体兼容交给\n    chapter.content_selectors 候选列表 + parser 的「段落选择器未命中 → 回退整体切分」。",
   "match": [
     "qidian.com"
   ],
@@ -69,7 +69,7 @@
       "#reader-content",
       "div.reader-content"
     ],
-    "browser_wait_selector": "main.content span.content-text, #reader-content p",
+    "browser_wait_selector": "main.content span.content-text",
     "strip_selectors": [
       "script",
       "style",

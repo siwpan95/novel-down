@@ -100,7 +100,7 @@ F:\Python314\python.exe -m noveldown selfcheck
 
 | 站点 | 类型 | 匹配域名 | 章节数 | 实测结果 |
 |---|---|---|---|---|
-| **起点中文网** | 正版·含 VIP | `qidian.com` | **1418（153 免费 / 1265 VIP）** | **反检测浏览器路由**过腾讯 Chaos VM；目录走 **JSON 接口**（`data.vs[].cs[]`，逐章 `sS`：1=免费/0=VIP），1265 章标记 locked、**零请求**；抓 14 章 46 364 字，校对 PASS |
+| **起点中文网** | 正版·含 VIP | `qidian.com` | **1418（153 免费 / 1265 VIP）** | **反检测浏览器路由**过腾讯 Chaos VM；目录走 **JSON 接口**（`data.vs[].cs[]`，逐章 `sS`：1=免费/0=VIP），1265 章标记 locked、**零请求**；抓 17 章 56 932 字，校对 PASS |
 | **17K小说网** | 正版 | `17k.com` | **586（全免费）** | 目录 `dl.Volume dd a`；正文 `div#readAreaBox`；20 章 46 058 字；**无字体反爬** |
 | **七猫免费小说** | 正版·免费阅读 | `qimao.com` | **708（20 可读 / 688 APP独占）** | 目录走 **JSON 接口**，逐章带 `is_vip`；688 章标记 locked、**零请求**；20 章 43 065 字 |
 | **纵横中文网** | 正版·含 VIP | `zongheng.com` | **700（50 免费 / 650 VIP）** | 650 章在**目录层**带 `class="vip col-4"` → 标记 locked、**零请求**；50 章免费正文 163 576 字 |
@@ -183,7 +183,7 @@ novel-down/
 ├── tools/verify_reader.py     真实浏览器验证 HTML 阅读器（Playwright）
 ├── tools/make_screenshot.py   生成 README 演示截图（用自撰文本，不含第三方正文）
 ├── tools/check_repo.py        仓库卫生门禁（本仓不含第三方源码 / 凭据 / 产物）
-├── tests/                     143 个用例（含端到端拦截集成测试）+ fixtures
+├── tests/                     147 个用例（含端到端拦截集成测试）+ fixtures
 ├── docs/
 │   ├── REFERENCE.md           借鉴记账（来源 + 许可证 + 范围 + 排除项）
 │   ├── RULES.md               规则格式与典型形态（含字体反爬 / 浏览器路由）
@@ -227,11 +227,11 @@ F:\Python314\python.exe -m pip install -r requirements.txt
 F:\Python314\python.exe -m unittest discover -s tests -t .
 ```
 
-**143 个用例，约 3 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
+**147 个用例，约 3 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
 目录归一化（含 `document_order`/`keep_last`）、目录页发现、正文提取、
 免费六层拦截、四格式导出（含 EPUB 结构与 XML 合法性校验）、
 断点续爬状态机、规则校验、校对报告、字体反爬解码（glyph 名 / 轮廓索引）、
-JSON 接口目录（含 `flatten_field` 卷→章展开）、段落级正文选择器、
+JSON 接口目录（含 `flatten_field` 卷→章展开）、段落级正文选择器（含**未命中回退**）、
 反检测启动参数与语言自洽、书名清洗。
 
 另有四项**端到端**验证：

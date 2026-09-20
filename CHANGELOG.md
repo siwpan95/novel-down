@@ -5,6 +5,42 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.5.1] - 2026-09-20
+
+修一处**浏览器等待条件的隐性缺陷**（由一次外部项目评估的实测副产物发现）。
+
+### Fixed
+
+- **`wait_for_selector` 是 OR 语义，会被宽松分支提前放行**（起点规则实测踩到）：
+  `chapter.browser_wait_selector` 原为 `"main.content span.content-text, #reader-content p"`，
+  而 `#reader-content p` 在**骨架期就存在** → 等待立即返回，但此时正文段
+  `span.content-text` 数量是 **0**。**这个等待其实没起到「等正文就绪」的作用，全靠
+  `wait_ms: 3500` 兜住。** 对照实验（同页、`wait_ms=0`）：
+
+  | 等待条件 | `span.content-text` 数 | 首段 |
+  |---|---|---|
+  | 收紧后 `main.content span.content-text` | **69** | `痛！` |
+  | 旧 OR `…, #reader-content p` | **0** | `None` |
+
+  → 收紧为只留 `main.content span.content-text`。
+- **`paragraph_selector` 未命中时会「静默变空」**：新增**回退**——段落选择器一个都没命中时，
+  退回「容器整体切分」（`extract_paragraphs`），并把 `extract_note`（如
+  「段落选择器「span.content-text」未命中，已回退为容器整体切分」）并入章节备注。
+  回退结果同样干净：`strip_selectors` 已先剔掉段评数等附加节点。
+  设计取向：**宁可留痕地降级，也不要静默丢章**。
+
+### Tests
+
+- 143 → **147** 个用例。新增：段落选择器未命中→回退（含 `extract_note` 留痕）、
+  回退结果经 strip 后仍无段评数污染、主路径命中时不留回退痕迹、
+  容器选不到时不因 `extract_note` 未初始化而 `NameError`。
+
+### Verified
+
+- 起点 E2E：`fetch --limit 3` → ok=17 / locked=1265 / 待抓 136，56 932 字，校对 **PASS**，
+  产物终检 **PASS**（零请求 / 零泄漏 / 无 PUA 残留），**全程无「等待超时」「回退」告警**
+  （证明等待条件真的生效、且走的是主抽取路径）。
+
 ## [0.5.0] - 2026-09-20
 
 按全哥指定的两个方向推进：**起点（Qidian）浏览器指纹伪装 → 反检测打通** +

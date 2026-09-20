@@ -437,6 +437,9 @@ class Downloader:
                 title = info["title"]
                 ch.decode_note = info["decode_note"]
             ch.ads_removed += info["ads_removed"]
+            if info.get("extract_note"):
+                # 正文抽取走了回退路径（段落选择器未命中）——记进备注，便于发现站点改版
+                ch.decode_note = (ch.decode_note + " " + info["extract_note"]).strip()
             paragraphs.extend(info["paragraphs"])
             if not info["next_url"]:
                 break
