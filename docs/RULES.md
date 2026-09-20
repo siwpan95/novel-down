@@ -359,6 +359,52 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 5. **书名只在 `<title>` 里**（SPA），且带「免费阅读-七猫中文网」后缀 →
    用 `@title` + `title_pattern` 清洗。
 
+### G. 浏览器路由 + 站点级 VIP 特征（17k.com）
+
+**正版**站点，阿里云 WAF（`acw_tc` / `acw_sc__v2`）→ 需浏览器路由。
+实测《师弟，你的丹药太不正经了》586 章**全免费**。
+
+```json
+{
+  "id": "17k.com", "free_only": true, "fetch_mode": "browser",
+  "match": ["17k.com"],
+  "book": {"url_pattern": "/(?:book|list|chapter)/(\\d+)",
+           "info_url": "{origin}/book/{bid}.html",
+           "title": ["@title"], "title_pattern": "^(.*?)_"},
+  "browser": {"wait_ms": 2500},
+  "catalog": {
+    "pages": {"mode": "single", "url": "{origin}/list/{bid}.html"},
+    "item_selector": "dl.Volume dd a[href*='/chapter/']",
+    "id_from": {"mode": "href", "pattern": "/chapter/\\d+/(?P<cid>\\d+)\\.html"},
+    "browser_wait_selector": "dl.Volume dd a[href*='/chapter/']"
+  },
+  "chapter": {
+    "content_selectors": ["div#readAreaBox", "div.readAreaBox", "div#readArea"],
+    "browser_wait_selector": "div.readAreaBox, div#readAreaBox, div#readArea",
+    "strip_selectors": ["h1", "h2", ".chapter_update_time", ".chapter_text_ad",
+                        ".read_tit", ".nextChapter", ".preChapter"],
+    "vip_markers": ["chapter_vip", "VIP章节", "订阅本章", "购买本章", "余额不足"]
+  }
+}
+```
+
+关键实测发现：
+
+1. **`browser_wait_selector` 三处都要配**（书籍页/目录页/章节页要等的元素不同）：
+   原本只有顶层 `browser.wait_selector`，对 17K 这种「书籍页 + 独立目录页 + 章节页」
+   三形态站点不够 —— 加了 `catalog.browser_wait_selector` 与
+   `chapter.browser_wait_selector`。**不配就只能等固定毫秒，容易时快时慢地取到空 DOM**
+   （实测：目录页只等 1.5s → **0 章**；页面其实要 3-5s 才渲染出 586 章）。
+2. **`content_selector` 有变体**：同一站在不同请求下可能给
+   `id="readAreaBox"` 或 `class="readAreaBox content"`。用 `content_selectors`
+   候选列表更稳（按序取第一个命中）。
+3. **VIP 信号在 CSS 文件名里**：免费章加载 `chapter_free.css`，付费章应为
+   `chapter_vip.css` —— **正文里根本没有这个字样**，所以要用
+   `chapter.vip_markers` + 在**整页 HTML** 上匹配（本项目新增
+   `freeguard.check_page_markers`）。
+   注意：这条规则只在一本**全免费**的 17K 书上实测过，`chapter_vip` 是按 CSS 命名
+   规律推断的 —— 已如实记在规则 notes 里，并由第 4 层正文付费墙兜底。
+
 ---
 
 ## 浏览器路由（`fetch_mode: browser`）
@@ -422,7 +468,25 @@ F:\Python314\python.exe -m noveldown fetch "https://新站点.com/book/123/" --l
 | 比 charstring 字节日码 | 子集重新打包过，0/363 命中 |
 | 找页面其他位置的明文 | 无（meta / JSON-LD 同样被混淆），也无明文 API |
 
-### 可行方法：字形轮廓匹配
+### 途径一（优先）：按 glyph 名字解码 —— 秒级，**不需要参考字体**
+
+这是字体反爬里**最常见也最便宜**的做法。子集字体不给 PUA 真实 cmap，
+但 glyph 名保留了可读信息。两种主流写法：
+
+| 写法 | 例子 | 解法 |
+|---|---|---|
+| **英文单词** | `zero` / `one` / … / `nine` / `period` | 查单词表 → `0123456789.` |
+| **码位十六进制** | `uni98CE` / `u5929` / `CJK UNIFIED IDEOGRAPH-98CE` | 直接 `chr(int(hex, 16))` |
+| 单字符名 | `A` / `5` / `zero.sc`（去 `.后缀`） | 直接取该字符 |
+| **索引名**（解不出） | `gid58646` / `cid44285` | **明确放弃** —— 那是索引不是字符 |
+
+> 这条路子源自起点老版反爬（见 [REFERENCE.md](./REFERENCE.md) 中知乎 58209887 的记账）：
+> 数字被映射成乱码，但 `TTFont.getBestCmap()` 拿到的 glyph 名就是英文单词，直接可还原。
+
+`fontdecode.char_from_glyph_name()` 实现这套解析；`map_from_glyph_names()` 给出覆盖率。
+**覆盖率 ≥ 60% 就走这条路**，否则自动退回途径二。
+
+### 途径二（兜底）：字形轮廓匹配
 
 子集字体的 CFF charstring 就是来源字体的**字形轮廓**。拿到**同版本**参考字体后，
 把两者每个字形的轮廓点集序列化取哈希即可精确对应（不是 OCR 近似）：
@@ -434,6 +498,7 @@ key = ";".join(op + "|" + ",".join(f"{x:g}/{y:g}" for x, y in pts)
                for op, pts in pen.value)   # → sha1(key)
 ```
 
+**只在途径一解不出时才需要它**（例如番茄用 `gid58646` 这类索引名）。
 **版本必须严格对上**（实测）：
 
 | 参考字体版本 | 命中率 |

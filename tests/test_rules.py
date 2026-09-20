@@ -24,10 +24,12 @@ class TestLoadRules(unittest.TestCase):
              "fanqienovel.com",                              # 正版·免费平台（字体反爬）
              "zongheng.com",                                 # 正版·含 VIP（只抓免费章）
              "qimao.com",                                    # 正版·全免费（JSON 接口目录）
-             "qidian.com", "17k.com"})                        # 调研存根
+             "17k.com",                                      # 正版（浏览器路由 + 站点级 VIP 特征）
+             "qidian.com"})                                   # 调研存根（腾讯 Chaos VM）
         enabled = {r.id for r in rules.values() if r.enabled}
         self.assertEqual(enabled, {"shuquge.com", "bqgbe.cc", "biqu520.net",
-                                   "fanqienovel.com", "zongheng.com", "qimao.com"})
+                                   "fanqienovel.com", "zongheng.com", "qimao.com",
+                                   "17k.com"})
         for r in rules.values():
             self.assertTrue(r.free_only, f"{r.id} 必须声明 free_only")
         for r in rules.values():
@@ -44,7 +46,7 @@ class TestLoadRules(unittest.TestCase):
     def test_disabled_rules_are_documentation_stubs(self):
         """停用规则是「调研记录存根」：必须写明为何做不到，且原因应是技术性的。"""
         rules = load_rules()
-        for rid in ("qidian.com", "17k.com"):
+        for rid in ("qidian.com",):
             r = rules[rid]
             self.assertFalse(r.enabled)
             self.assertGreater(len(r.disabled_reason), 20, f"{rid} 需写明停用原因")
@@ -93,6 +95,16 @@ class TestLoadRules(unittest.TestCase):
         self.assertIn("@title", r.book_cfg.get("title"))
         self.assertTrue(r.book_cfg.get("title_pattern"))
 
+    def test_17k_rule_shape(self):
+        """17K：浏览器路由 + 站点级 VIP 特征（CSS 区分免费/付费章）。"""
+        r = load_rules()["17k.com"]
+        self.assertEqual(r.fetch_mode, "browser")
+        self.assertTrue(r.catalog_cfg.get("browser_wait_selector"))
+        self.assertTrue(r.chapter_cfg.get("browser_wait_selector"))
+        # 17K 的 VIP 信号在 CSS 文件名里，正文里没有 —— 必须靠站点级特征
+        markers = r.chapter_cfg.get("vip_markers") or []
+        self.assertTrue(any("chapter_vip" in m for m in markers), markers)
+
     def test_matching_disabled_rule_reports_reason(self):
         """命中的规则被停用时必须报出原因，而不是含糊的「没有规则」。
 
@@ -102,7 +114,8 @@ class TestLoadRules(unittest.TestCase):
             find_rule("https://www.qidian.com/book/1010868264/")
         msg = str(ctx.exception)
         self.assertIn("已停用", msg)
-        self.assertIn("WAF", msg)
+        # 原因是**技术性的**，且要具体到实测结论（腾讯云 Chaos VM），而不是含糊的"有 WAF"
+        self.assertIn("Chaos VM", msg)
 
     def test_paid_sites_recognized_by_rule_layer(self):
         """回归：站点层不再拒绝含 VIP 的正版站，规则层也必须认得出它们。"""

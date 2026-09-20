@@ -5,7 +5,9 @@
   "free_only": true,
   "requires_js": true,
   "demo_url": "https://www.qidian.com/book/1010868264/",
-  "disabled_reason": "技术原因，非政策拒绝：免费章节本可匿名阅读，但站点 WAF 要求浏览器会话——首页返回 202 且下发 x-waf-captcha-referer，免费目录接口 ajax/book/category 匿名调用返回 {\"code\":1,\"msg\":\"失败\"}（实测 2026-09-20）。本项目不含浏览器引擎，故暂不支持。",
-  "match": ["qidian.com"],
-  "notes": "★ 重要：本文件不是「因为含 VIP 就拒绝」。起点一本小说的前几十章是免费可读的，那部分属于本项目射程内。停用纯粹因为 WAF 挡在前面。若将来接入浏览器引擎（Playwright 解 WAF）或找到匿名可用的目录接口，把 enabled 改 true 并补全 catalog/chapter 段即可；届时 VIP 章节仍由目录标记（不请求）与正文付费墙（丢弃）在章节级拦下。"
+  "disabled_reason": "技术原因，非政策拒绝：站点用**腾讯云 Chaos VM**（__TENCENT_CHAOS_VM，95KB 虚拟机式 JS 挑战）。首页与所有子域均返回 202 + x-waf-captcha-referer，不下发会话令牌；ajax/book/category 匿名调用返回 {\"code\":1,\"msg\":\"失败\"}；无头 Chromium 等 42 秒不放行，且 navigator.webdriver=true 被识别（实测 2026-09-20）。要过它需要浏览器指纹伪装或人机验证，超出无人值守爬虫范围。",
+  "match": [
+    "qidian.com"
+  ],
+  "notes": "★ 再次强调：停用**不是**因为含 VIP。起点一本小说的前几十章免费可读，那部分在射程内；障碍纯粹是 Chaos VM。\n\n历史参考（已记账入 docs/REFERENCE.md）：2019 年的博客称起点反爬「很业余」，当时的机制是**字体数字映射**（glyph 名是 zero/one/…/period）—— 那套解法已固化进本项目的 fontdecode「途径一」。现在的 Chaos VM 是另一代防护。\n\n备用材料（若将来接入更强指纹伪装）：目录用 .chapter-name，正文用 .content-text，书名用 #bookName（来自 QidianCrawler，DrissionPage 实现；其 README 亦写明只有 VIP 章才需要用户手动登录）。"
 }

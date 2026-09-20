@@ -5,6 +5,58 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.4.0] - 2026-09-20
+
+按全哥指定的两个方向推进：**17K 站点** + **fontdecode 优先按 glyph 名解码**。
+
+### Added
+
+- **正版站点规则：17K小说网**（`17k.com`）。实测一本 586 章全免费书；
+  20 章 46 058 字，校对 PASS。站点用阿里云 WAF → 浏览器路由。
+- **`fontdecode` 途径一：按 glyph 名解码**（**优先**，秒级，**不需要 17MB 参考字体**）。
+  覆盖三类写法：英文单词（`zero`/`period`，起点老版反爬的形态）、
+  码位十六进制（`uni98CE`/`u5929`/`CJK UNIFIED IDEOGRAPH-98CE`）、单字符名；
+  并**明确拒绝** `gid58646`/`cid44285` 这类索引名（那是索引不是字符，别瞎猜）。
+  覆盖率 ≥60% 即走这条路，否则自动退回轮廓匹配。
+  → 这条路子源自 `_ref/2.txt`（知乎 58209887）记录的起点老版解法，已记入借鉴记账。
+- **站点级 VIP 特征 `chapter.vip_markers`** + `freeguard.check_page_markers()`：
+  有些站点的付费信号**不在正文里**，而在整页层面（17K 用
+  `chapter_free.css` vs `chapter_vip.css` 区分免费/付费章）。
+- **`catalog.browser_wait_selector`**：目录页专用浏览器等待条件
+  （此前只有顶层与章节页两处）。
+- **`chapter.content_selectors`**：正文容器候选列表（同一站不同请求可能给
+  `id="readAreaBox"` 或 `class="readAreaBox content"`）。
+
+### Fixed
+
+- 实测：**浏览器路由不配 `wait_selector` 会时快时慢地取到空 DOM** ——
+  17K 目录页只等 1.5s 就拿到 **0 章**，页面其实要 3-5s 才渲染出 586 章。
+  三者（书籍/目录/章节）都要配各自的等待条件。
+- 17K 正文容器内的 `h1`（章节标题）与 `.chapter_update_time`（书名+作者+字数）
+  会混进正文首段，需一并剔除。
+
+### 实测订正
+
+- 起点老版字体反爬（`_ref/1.txt`/`2.txt`、QidianScrapy）确实是「数字 → 英文单词
+  glyph 名」的简单映射；**但现在已换成腾讯云 Chaos VM**，
+  有说法"起点反爬很业余"已过时。
+- 两份新参考（QidianScrapy / QidianCrawler）**都没有 LICENSE 文件** →
+  按著作权法默认「保留全部权利」，比 GPL/AGPL 更严 →
+  本项目只取**事实性信息**（选择器、映射规律）并记账，**未复制任何代码**。
+  QidianCrawler 的 README 亦明示「下载 VIP 章节需在弹出的浏览器中登录后重新执行」，
+  该凭据流程完全不采用。
+
+### 验证
+
+- 130 用例全绿（约 2s）；新增 `char_from_glyph_name` 的 8 组用例
+  （含"必须拒绝索引名"的反向用例）。
+- 17K E2E：586 章目录 → 抓 20 章 46 058 字；校对 PASS。
+- 番茄回归：`gid` 索引名 → 自动退回轮廓匹配 → **362/362 码位、100% 覆盖**，
+  正文仍为「寒风呼啸，漫天飞雪。」（证明两途径切换无回归）。
+- 免费约束自检 PASS；仓库卫生门禁 PASS。
+
+---
+
 ## [0.3.0] - 2026-09-20
 
 按投入产出继续补站点能力，补上「**JSON 接口目录**」这一整类来源。

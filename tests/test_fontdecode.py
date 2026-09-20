@@ -152,3 +152,64 @@ class TestDepsCheck(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGlyphNameDecoding(unittest.TestCase):
+    """途径一：按 glyph 名解码（比轮廓匹配便宜得多，且不需参考字体）。
+
+    实测来源：`_ref/2.txt` 记录起点老版反爬就是这一套 ——
+    glyph 名直接是 `zero`/`one`/…/`period`，数字在 HTML 里是乱码但仍可还原。
+    """
+
+    def test_english_word_names(self):
+        for name, ch in (("zero", "0"), ("nine", "9"), ("period", "."),
+                         ("comma", ","), ("hyphen", "-"), ("space", " ")):
+            self.assertEqual(fd.char_from_glyph_name(name), ch, name)
+
+    def test_word_names_with_suffix(self):
+        self.assertEqual(fd.char_from_glyph_name("zero.sc"), "0")
+        self.assertEqual(fd.char_from_glyph_name("one.alt"), "1")
+
+    def test_unicase_names(self):
+        self.assertEqual(fd.char_from_glyph_name("uni98CE"), "风")
+        self.assertEqual(fd.char_from_glyph_name("uni4E00"), "一")
+        self.assertEqual(fd.char_from_glyph_name("uni98CE.alt"), "风")
+        self.assertEqual(fd.char_from_glyph_name("u5929"), "天")
+        self.assertEqual(fd.char_from_glyph_name("U+98CE"), "风")
+
+    def test_adobe_style_ideograph_names(self):
+        self.assertEqual(
+            fd.char_from_glyph_name("CJK UNIFIED IDEOGRAPH-98CE"), "风")
+
+    def test_single_char_names(self):
+        self.assertEqual(fd.char_from_glyph_name("A"), "A")
+        self.assertEqual(fd.char_from_glyph_name("5"), "5")
+
+    def test_index_names_are_rejected(self):
+        """cidNNNNN / gidNNNNN 是索引不是字符 —— 必须明确放弃，别瞎猜。
+
+        这正是番茄那种子集字体的形态（gid58646），只能走轮廓匹配。
+        """
+        self.assertIsNone(fd.char_from_glyph_name("gid58646"))
+        self.assertIsNone(fd.char_from_glyph_name("cid44285"))
+        self.assertIsNone(fd.char_from_glyph_name(".notdef"))
+        self.assertIsNone(fd.char_from_glyph_name(""))
+
+    def test_map_from_glyph_names_coverage(self):
+        pairs = [(0xE000, "zero"), (0xE001, "one"), (0xE002, "gid123")]
+        m, cov = fd.map_from_glyph_names(pairs)
+        self.assertEqual(m, {0xE000: "0", 0xE001: "1"})
+        self.assertAlmostEqual(cov, 2 / 3)
+        m2, cov2 = fd.map_from_glyph_names([])
+        self.assertEqual((m2, cov2), ({}, 0.0))
+
+    def test_threshold_decides_path(self):
+        """名字能解出 ≥60% 就走 glyph_name；否则报告需要轮廓匹配。"""
+        # 用假的「字体字典」直接测判定逻辑（不构造真字体）
+        good = [(0xE000 + i, n) for i, n in enumerate(
+            ["zero", "one", "two", "three", "four", "gid9"])]
+        m, cov = fd.map_from_glyph_names(good)
+        self.assertGreaterEqual(cov, 0.6)
+        bad = [(0xE000 + i, f"gid{i}") for i in range(6)]
+        m2, cov2 = fd.map_from_glyph_names(bad)
+        self.assertEqual(cov2, 0.0)

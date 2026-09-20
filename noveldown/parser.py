@@ -537,7 +537,7 @@ def parse_chapter_page(rule, html: str, url: str, current_cid: str):
     if t_el is not None:
         title = clean_page_title(t_el.get_text())
 
-    container = select_first(soup, cfg.get("content_selector"))
+    container = select_first(soup, cfg.get("content_selectors") or cfg.get("content_selector"))
     paragraphs, ads = [], 0
     if container is not None:
         # 在**深拷贝**上剔除元素。

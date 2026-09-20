@@ -42,6 +42,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 
 PUA_START, PUA_END = 0xE000, 0xF8FF
 FONT_EXT_RE = ("woff2", "woff", "otf", "ttf")
@@ -117,7 +118,96 @@ def font_urls_from_html(html: str) -> list:
 
 
 # ============================================================
-#  字形轮廓索引
+#  途径一（优先）：按 glyph 名字解码
+# ============================================================
+# 这是字体反爬里**最常见也最便宜**的做法：子集字体不给 PUA 真实的 cmap，
+# 但 glyph 名保留了可读信息。实测两种主流写法：
+#
+#   ① **英文单词**（起点老版、很多中小站）：
+#      glyph 名直接是 `zero` / `one` / … / `nine` / `period`
+#      —— 所以数字会显示成乱码但仍是数字。`TTFont.getBestCmap()` 即可还原。
+#   ② **uniXXXX / uXXXXX**：名字里带码位十六进制，直接可解。
+#
+# 能靠名字解就不用下载 17MB 参考字体 —— 先试这条，失败再退回轮廓匹配。
+
+_WORD_TO_CHAR = {
+    "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+    "period": ".", "comma": ",", "hyphen": "-", "space": " ",
+    "colon": ":", "semicolon": ";", "slash": "/", "backslash": "\\",
+    "percent": "%", "plus": "+", "asterisk": "*", "underscore": "_",
+    "equal": "=", "at": "@", "numbersign": "#", "dollar": "$",
+    "ampersand": "&", "parenleft": "(", "parenright": ")",
+    "bracketleft": "[", "bracketright": "]", "braceleft": "{",
+    "braceright": "}", "quotesingle": "'", "quotedbl": '"',
+    "less": "<", "greater": ">", "question": "?", "exclam": "!",
+    "bar": "|", "asciitilde": "~", "asciicircum": "^", "degree": "°",
+    "hyphenminus": "-", "quotedblleft": "“", "quotedblright": "”",
+    "quoteleft": "‘", "quoteright": "’", "ellipsis": "…",
+    "periodcentered": "·", "onequote": "'",
+}
+
+
+def char_from_glyph_name(name: str):
+    """尽力从 glyph 名推断真实字符；推不出返回 None。
+
+    支持的形态（按可靠性排序）：
+      `uni4E00` / `uni4E00.alt`  → 码位十六进制，**精确**
+      `u4E00` / `U+4E00`         → 同上
+      `CJK UNIFIED IDEOGRAPH-4E00` → 同上
+      `zero` / `period` / …      → 英文单词表
+      `a` / `A` / `zero.sc`      → 单字符名（去掉 `.后缀` 后）
+      `cid12345` / `gid12345`    → **推不出**（那是索引，不是字符）
+    """
+    if not name or name == ".notdef":
+        return None
+    n = name.split(".")[0].strip()          # 去掉 .alt / .sc 之类后缀
+    low = n.lower()
+
+    # ---- 码位十六进制 ----
+    m = re.fullmatch(r"uni([0-9a-fA-F]{4,6})", n)
+    if m:
+        cp = int(m.group(1), 16)
+        return chr(cp) if 0x20 <= cp <= 0x10FFFF else None
+    m = re.fullmatch(r"[uU]\+?([0-9a-fA-F]{4,6})", n)
+    if m:
+        cp = int(m.group(1), 16)
+        return chr(cp) if 0x20 <= cp <= 0x10FFFF else None
+    m = re.search(r"UNIFIED IDEOGRAPH[- ]([0-9A-Fa-f]{4,6})", n, re.I)
+    if m:
+        cp = int(m.group(1), 16)
+        return chr(cp) if 0x20 <= cp <= 0x10FFFF else None
+
+    # ---- cidNNNNN / gidNNNNN：是索引不是字符，明确放弃 ----
+    if re.fullmatch(r"(cid|gid)\d+", low):
+        return None
+
+    # ---- 英文单词 ----
+    if low in _WORD_TO_CHAR:
+        return _WORD_TO_CHAR[low]
+
+    # ---- 单字符名 ----
+    if len(n) == 1 and n.isprintable():
+        return n
+    return None
+
+
+def map_from_glyph_names(pairs) -> tuple:
+    """pairs = [(pua_codepoint, glyph_name)] → (映射, 覆盖率)。
+
+    纯函数、不依赖字体文件 —— 便于单测。
+    """
+    out, total = {}, 0
+    for cp, name in pairs:
+        total += 1
+        ch = char_from_glyph_name(name)
+        if ch is not None:
+            out[cp] = ch
+    return out, (len(out) / total if total else 0.0)
+
+
+# ============================================================
+#  途径二（兜底）：字形轮廓匹配
 # ============================================================
 
 def _cp_priority(cp: int) -> int:
@@ -200,20 +290,45 @@ def load_ref_index(path: str) -> dict:
 #  子集字体 → PUA 映射
 # ============================================================
 
-def pua_map_from_font(font_bytes: bytes, ref_index: dict) -> dict:
-    """把子集字体解成 {PUA 码位: 真字符}。"""
+def pua_map_from_font(font_bytes: bytes, ref_index: dict = None,
+                     name_threshold: float = 0.6) -> dict:
+    """把子集字体解成 {PUA 码位: 真字符}。
+
+    两条途径，**优先用便宜的那条**：
+      ① `glyph_name` —— 按 glyph 名解（英文单词 / uniXXXX）；
+         能解就不用参考字体，秒级完成。
+      ② `outline`     —— 字形轮廓匹配；需要同版本参考字体（约 17MB + 索引）。
+
+    返回 {"map", "mode", "coverage", "unmatched", "total_pua"}；
+    当 mode == "needs_outline" 时表示名字解不出来，需要调用方提供 ref_index 再来一次。
+    """
     from fontTools.ttLib import TTFont
     import io
     font = TTFont(io.BytesIO(font_bytes))
     cmap = font.getBestCmap()
-    glyph_set = font.getGlyphSet()
+    pua_pairs = [(cp, n) for cp, n in cmap.items() if PUA_START <= cp <= PUA_END]
+    total = len(pua_pairs)
 
-    out, unmatched = {}, []
-    for cp, name in cmap.items():
-        if not (PUA_START <= cp <= PUA_END):
+    # ---- 途径一：glyph 名 ----
+    name_map, cov = map_from_glyph_names(pua_pairs)
+    if total and cov >= name_threshold:
+        return {"map": name_map, "mode": "glyph_name", "coverage": cov,
+                "unmatched": [cp for cp, _ in pua_pairs if cp not in name_map],
+                "total_pua": total}
+
+    # ---- 途径二：轮廓匹配 ----
+    if ref_index is None:
+        return {"map": {}, "mode": "needs_outline", "coverage": cov,
+                "unmatched": [cp for cp, _ in pua_pairs if cp not in name_map],
+                "total_pua": total}
+
+    glyph_set = font.getGlyphSet()
+    out, unmatched = dict(name_map), []
+    for cp, nm in pua_pairs:
+        if cp in out:
             continue
         try:
-            h = _outline_key(glyph_set, name)
+            h = _outline_key(glyph_set, nm)
         except Exception:
             unmatched.append(cp)
             continue
@@ -222,8 +337,9 @@ def pua_map_from_font(font_bytes: bytes, ref_index: dict) -> dict:
             unmatched.append(cp)
         else:
             out[cp] = chr(real)
-    return {"map": out, "unmatched": unmatched,
-            "total_pua": sum(1 for cp in cmap if PUA_START <= cp <= PUA_END)}
+    return {"map": out, "mode": "outline",
+            "coverage": (len(out) / total if total else 1.0),
+            "unmatched": unmatched, "total_pua": total}
 
 
 # ============================================================
@@ -239,6 +355,7 @@ class FontDecoder:
         self.ref_index_path = os.path.join(self.cache_dir, REF_INDEX_NAME)
         self._ref = None
         self._maps = {}
+        self.last_mode = None       # 上次用于解码的途径（glyph_name / outline）
         os.makedirs(self.cache_dir, exist_ok=True)
 
     # ---------- 参考索引 ----------
@@ -296,21 +413,30 @@ class FontDecoder:
                     d = json.load(f)
                 m = {int(k): v for k, v in d["map"].items()}
                 self._maps[sig] = m
-                self.log(f"  PUA 映射命中缓存（{len(m)} 个码位，字体 {sig}）")
+                self.last_mode = d.get("mode", "?")
+                self.log(f"  PUA 映射命中缓存（{len(m)} 个码位，{self.last_mode}，字体 {sig}）")
                 return m
             except (OSError, json.JSONDecodeError, KeyError):
                 pass
 
-        ref = self.ref_index(build_if_missing=build_if_missing,
-                             downloader=downloader)
-        res = pua_map_from_font(font_bytes, ref)
+        # 先试「按 glyph 名解」—— 秒级、且不需要 17MB 参考字体
+        res = pua_map_from_font(font_bytes, None)
+        if res["mode"] == "needs_outline":
+            self.log("  按 glyph 名解不出（名字是索引而非字符），"
+                     "改用轮廓匹配（需同版本参考字体）")
+            ref = self.ref_index(build_if_missing=build_if_missing,
+                                 downloader=downloader)
+            res = pua_map_from_font(font_bytes, ref)
         m = res["map"]
-        self.log(f"  PUA 映射：{len(m)}/{res['total_pua']} 个码位已还原"
+        self.last_mode = res["mode"]
+        how = {"glyph_name": "按 glyph 名", "outline": "轮廓匹配"}.get(
+            res["mode"], res["mode"])
+        self.log(f"  PUA 映射（{how}）：{len(m)}/{res['total_pua']} 个码位已还原"
                  + (f"，{len(res['unmatched'])} 个未匹配" if res["unmatched"] else ""))
         try:
             with open(cache_path, "w", encoding="utf-8") as f:
-                json.dump({"map": {str(k): v for k, v in m.items()}}, f,
-                          ensure_ascii=False)
+                json.dump({"map": {str(k): v for k, v in m.items()},
+                           "mode": res["mode"]}, f, ensure_ascii=False)
         except OSError:
             pass
         self._maps[sig] = m

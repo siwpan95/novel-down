@@ -24,7 +24,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import parser
 from .constants import DEFAULT_CONFIG
-from .freeguard import (assert_site_allowed, check_content, FreeGuardError)
+from .freeguard import (assert_site_allowed, check_content,
+                        check_page_markers, FreeGuardError)
 from .http_client import build_headers, http_get, parse_proxy
 from .identity_manager import get_identity_manager
 from .models import (Book, STATUS_BLOCKED, STATUS_EMPTY, STATUS_FAILED,
@@ -264,7 +265,17 @@ class Downloader:
         max_rounds = int(cfg.get("max_rounds", 4))
 
         if mode == "single":
-            return [(book_url, book_html)]
+            url = (cfg.get("url") or book_url)
+            url = url.replace("{origin}", origin).replace("{bid}", bid)
+            if url == book_url:
+                return [(book_url, book_html)]
+            try:
+                html = self._fetch(url, referer=book_url,
+                                   wait_selector=cfg.get("browser_wait_selector"))
+            except Exception as e:
+                self.log(f"[目录] 抓取失败 {url} — {e}", "error")
+                html = None
+            return [(url, html)]
 
         if mode == "template":
             urls = catalog_page_urls(rule, book_html, bid, origin, book_url)
@@ -294,9 +305,11 @@ class Downloader:
             if not candidates:
                 break
             queue = []
+            cat_wait = rule.catalog_cfg.get("browser_wait_selector")
             for u in candidates[:max_pages - len(known)]:
                 try:
-                    known[u] = self._fetch(u, referer=book_url)
+                    known[u] = self._fetch(u, referer=book_url,
+                                           wait_selector=cat_wait)
                     self.log(f"[目录] 发现子目录页 {u}")
                 except Exception as e:
                     self.log(f"[目录] 子目录页抓取失败 {u} — {e}", "error")
@@ -435,8 +448,14 @@ class Downloader:
             ch.title = title
         ch.source_pages = pages
 
-        # 第 4 层：付费墙 + 最小字数
-        protected, status, reason = check_content(paragraphs)
+        # 第 4 层：付费墙 + 最小字数（含规则自带的站点级特征）
+        extra = self.rule.chapter_cfg.get("vip_markers") or []
+        protected, status, reason = check_content(paragraphs, extra_markers=extra)
+        if not protected and first_html and extra:
+            # 站点级信号也可能写在页面而非正文里（如 17K 的 chapter_vip.css）
+            hit, why = check_page_markers(first_html, extra)
+            if hit:
+                protected, status, reason = True, STATUS_BLOCKED, why
         if protected:
             ch.status = STATUS_BLOCKED
             ch.note = reason

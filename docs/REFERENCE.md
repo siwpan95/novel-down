@@ -39,6 +39,10 @@
 | [CSDN 136774768](https://blog.csdn.net/Du_XiaoNan/article/details/136774768)《小说网站数据爬取》 | 未声明 | 基础 requests + BeautifulSoup 流程、请求头写法、`time.sleep` 限速意识 | 用 F12 断点绕过起点调试保护以取 Cookie 的做法 |
 | [CSDN 139809090](https://blog.csdn.net/Du_XiaoNan/article/details/139809090)《多线程多进程的 python 爬虫脚本项目》 | 未声明 | **生产者-消费者 + 线程池**的并发结构（`Queue` + `ThreadPoolExecutor`） | 标题即「可爬起点 **VIP** 内容」，其全部 VIP 语义与 Cookie 依赖 |
 | [52pojie 896364](https://www.52pojie.cn/thread-896364-1-1.html) FictionDown 发布帖 | — | 用于定位 FictionDown 项目与其设计目标（章节缺失/乱序校对） | — |
+| [知乎 235616861](https://zhuanlan.zhihu.com/p/235616861)《爬取起点月票榜前100名》 | 未声明 | 请求头 + 随机 UA 的基础写法；「看 Network 原始响应而非 Elements」的调试习惯 | 只爬**书籍元信息**（书名/作者/简介），与章节无关；本项目未采用其代码 |
+| [CSDN 103728095](https://blog.csdn.net/u012757419/article/details/103728095) | 未声明 | — | — |
+| [知乎 58209887](https://zhuanlan.zhihu.com/p/58209887)《使用 Python 爬取起点小说网全部文章》 | 未声明 | **起点老版字体反爬的解法**：数字被映射成乱码，但 `<style>` 里的 woff 字体其 glyph 名直接是 `zero`/`one`/…/`period`，`TTFont.getBestCmap()` 即可还原 → **本项目的「按 glyph 名解码」途径即源于此**（见 `fontdecode.char_from_glyph_name`）；另记「page 参数位置会变」的小坑 | 同样只爬书籍元信息；其对起点反爬「很业余」的判断**已过时**（现为腾讯云 Chaos VM） |
+| 本地 `_ref/1.txt` / `_ref/2.txt` | 同上两文正文留存 | — | — |
 
 ---
 

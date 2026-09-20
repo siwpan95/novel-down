@@ -95,8 +95,15 @@ def is_vip_item(class_attr: str, text: str) -> tuple:
     return False, ""
 
 
-def check_content(paragraphs) -> tuple:
+def check_content(paragraphs, extra_markers=None) -> tuple:
     """第 4 层：正文付费墙 + 字数校验。
+
+    Args:
+        paragraphs: 段落列表
+        extra_markers: 站点级补充特征词（规则里的 `chapter.vip_markers`）。
+            用于全局表覆盖不到的站点自有信号 —— 例如 17K 用不同的 CSS 文件区分
+            免费/付费章（`chapter_free.css` / `chapter_vip.css`），
+            把 `chapter_vip` 写进规则即可判定。
 
     Returns: (是否受保护, 状态, 原因)
     """
@@ -107,9 +114,30 @@ def check_content(paragraphs) -> tuple:
     for m in PAYWALL_MARKERS:
         if m.lower() in low:
             return True, STATUS_BLOCKED, f"正文命中付费墙特征 '{m}'"
+    for m in (extra_markers or []):
+        if m and m.lower() in low:
+            return True, STATUS_BLOCKED, f"正文命中站点级受保护特征 '{m}'"
     if len(text.strip()) < MIN_CHAPTER_CHARS:
         return False, STATUS_EMPTY, f"正文仅 {len(text.strip())} 字，低于阈值 {MIN_CHAPTER_CHARS}"
     return False, None, ""
+
+
+def check_page_markers(page_html: str, extra_markers=None) -> tuple:
+    """在**页面 HTML**（而非正文段落）里找站点级受保护特征。
+
+    有些站点不把付费墙写在正文里，而是换个 CSS / 加个标记类
+    （17K：`chapter_free.css` vs `chapter_vip.css`）。
+    这类信号要在整页 HTML 上匹配才有效。
+
+    Returns: (是否受保护, 原因)
+    """
+    if not page_html:
+        return False, ""
+    low = page_html.lower()
+    for m in (extra_markers or []):
+        if m and m.lower() in low:
+            return True, f"页面命中站点级受保护特征 '{m}'"
+    return False, ""
 
 
 def assert_no_protected(chapters, context: str = "export"):
