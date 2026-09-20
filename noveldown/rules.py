@@ -190,8 +190,24 @@ class Rule:
 #  加载
 # ============================================================
 
+def iter_rule_files(rules_dir: str = RULES_DIR):
+    """列出规则文件（**递归**含子目录，顺序确定）。
+
+    为什么允许子目录：手工维护的规则放顶层，**批量生成的镜像池放 `mirrors/`** ——
+    镜像池是"一个模板一个文件"自动产出的，数量会到几百条；
+    与手写规则混在同一层会让 `rules/` 不可读。
+    """
+    out = []
+    for root, dirs, files in os.walk(rules_dir):
+        dirs.sort()
+        for fn in sorted(files):
+            if fn.endswith(".json"):
+                out.append(os.path.join(root, fn))
+    return out
+
+
 def load_rules(rules_dir: str = RULES_DIR, strict: bool = True) -> dict:
-    """加载全部规则。返回 {id: Rule}。
+    """加载全部规则（含子目录）。返回 {id: Rule}。
 
     strict=True 时非法规则直接抛错；False 时跳过并收集错误。
     """
@@ -199,10 +215,8 @@ def load_rules(rules_dir: str = RULES_DIR, strict: bool = True) -> dict:
     errors = []
     if not os.path.isdir(rules_dir):
         raise RuleError(f"规则目录不存在：{rules_dir}")
-    for fn in sorted(os.listdir(rules_dir)):
-        if not fn.endswith(".json"):
-            continue
-        path = os.path.join(rules_dir, fn)
+    for path in iter_rule_files(rules_dir):
+        fn = os.path.relpath(path, rules_dir)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 raw = json.load(f)

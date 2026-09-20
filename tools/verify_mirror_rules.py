@@ -24,16 +24,17 @@
 """
 
 import argparse
-import glob
 import json
 import os
 import re
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from noveldown.engine import Downloader            # noqa: E402
 from noveldown.models import STATUS_OK                    # noqa: E402
-from noveldown.rules import RULES_DIR, load_rules  # noqa: E402
+from noveldown.rules import iter_rule_files, load_rules  # noqa: E402
 
 
 def verify_one(rule):
@@ -82,6 +83,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--prefix", default="mirror-", help="只验 id 以该前缀开头的规则")
+    ap.add_argument("--concurrency", type=int, default=1,
+                    help="并行验证条数。每条规则会真起一个 Downloader，"
+                         "默认 1（串行）；批量复核时建议 6~8")
     ap.add_argument("--from", dest="fromfile",
                     default=os.path.join(".sources", "verify_rules.jsonl"),
                     help="--only-failed 时读取上次结果的路径")
@@ -95,8 +99,7 @@ def main():
     ap.add_argument("--out", default=os.path.join(".sources", "verify_rules.jsonl"))
     args = ap.parse_args()
 
-    ids = sorted(os.path.basename(p)[:-5]
-                 for p in glob.glob(os.path.join(RULES_DIR, "*.json")))
+    ids = sorted(os.path.basename(p)[:-5] for p in iter_rule_files())
     rules = load_rules()
     ids = [i for i in ids if i.startswith(args.prefix) and i in rules]
     if args.only_failed and os.path.exists(args.fromfile):
@@ -120,15 +123,25 @@ def main():
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     ok_n = 0
-    with open(args.out, "w", encoding="utf-8") as f:
-        for i, rid in enumerate(ids, 1):
-            ok, msg = verify_one(rules[rid])
-            ok_n += ok
-            flag = "✓" if ok else "✗"
-            print(f"  {flag} [{i}/{len(ids)}] {rid:26} {msg}")
-            f.write(json.dumps({"id": rid, "ok": ok, "msg": msg},
-                               ensure_ascii=False) + "\n")
-            f.flush()
+    lock = threading.Lock()
+    # 并发跑：每条规则起一个独立 Downloader（http_client 的 session 是线程本地的），
+    # 串行跑 200 条要半个多小时，批量复核时太慢。
+    with open(args.out, "w", encoding="utf-8") as f, \
+            ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as ex:
+        futs = {ex.submit(verify_one, rules[rid]): rid for rid in ids}
+        for i, fut in enumerate(as_completed(futs), 1):
+            rid = futs[fut]
+            try:
+                ok, msg = fut.result()
+            except Exception as e:
+                ok, msg = False, f"{type(e).__name__}: {str(e)[:70]}"
+            with lock:
+                ok_n += ok
+                f.write(json.dumps({"id": rid, "ok": ok, "msg": msg},
+                                   ensure_ascii=False) + "\n")
+                f.flush()
+                flag = "✓" if ok else "✗"
+                print(f"  {flag} [{i}/{len(ids)}] {rid:26} {msg}")
     print(f"\n通过 {ok_n}/{len(ids)}（{100*ok_n/max(len(ids),1):.0f}%）→ {args.out}")
 
 

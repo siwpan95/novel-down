@@ -1,28 +1,27 @@
 {
-  "id": "mirror-newlist-a-561dd7",
-  "name": "免费镜像族 · 目录 #newlist a",
+  "id": "mirror-list-a-ba8096",
+  "name": "免费镜像族 · 目录 #list a",
   "pool": "免费镜像",
   "enabled": true,
   "free_only": true,
   "predecode": false,
   "requires_js": false,
   "fetch_mode": "http",
-  "demo_url": "https://www.isex.work/book/52972",
-  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `#newlist a` + 正文 `#TextContent`；域数 3；书号形态 ['alnum', 'digits'] → url_pattern=^.*/([A-Za-z0-9_-]+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · isex.work — 96 章 / 1306 字\n  · po18w.vip — 114 章 / 5338 字\n  · xitongliu.cn — 4577 章 / 1796 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。",
+  "demo_url": "http://xhytd.com/0/466/",
+  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `#list a` + 正文 `div#content`；域数 2；书号形态 ['digits'] → url_pattern=^.*/(\\d+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · xhytd.com — 811 章 / 1994 字\n  · 17xs.net — 886 章 / 1445 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。",
   "match": [
-    "isex.work",
-    "po18w.vip",
-    "xitongliu.cn"
+    "17xs.net",
+    "xhytd.com"
   ],
   "book": {
-    "url_pattern": "^.*/([A-Za-z0-9_-]+)(?:/|\\.html?)?$",
+    "url_pattern": "^.*/(\\d+)(?:/|\\.html?)?$",
     "info_url": "{url}"
   },
   "catalog": {
     "pages": {
       "mode": "single"
     },
-    "item_selector": "#newlist a",
+    "item_selector": "#list a",
     "id_from": {
       "mode": "href",
       "pattern": "/(?P<cid>\\d+)(?:_\\d+)?\\.html?"
@@ -45,9 +44,9 @@
     ]
   },
   "chapter": {
-    "content_selector": "#TextContent",
+    "content_selector": "div#content",
     "content_selectors": [
-      "#TextContent"
+      "div#content"
     ],
     "strip_selectors": [
       "script",

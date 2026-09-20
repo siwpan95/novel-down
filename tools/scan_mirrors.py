@@ -186,47 +186,73 @@ def css_of(el) -> str:
     return el.name or ""
 
 
-def best_catalog_container(soup, page_url: str):
-    """自动找出**目录容器**：包含章节式链接最多的那个节点。
+# 章节链接的**文字**形态：`第12章` / `序章` / `1~标题` 等。
+# 为什么需要它：光看 href 分不出「章节」与「分类」——实测 `/sort/1/1.html`
+# （分类页）和 `/book/21/451.html`（章节页）都符合「数字 + .html」。
+# 但**文字**分得开：分类链接写「玄幻/都市」，章节链接写「第1章 …」。
+CHAP_TITLE_RE = re.compile(
+    r"(第\s*[0-9０-９一二三四五六七八九十百千零两]{1,7}\s*[章节回卷]|"
+    r"^\s*(序章|序言|楔子|前言|终章|尾声|完本感言|后记|番外))")
 
-    为什么不只用固定候选选择器：实测 `sequge.com` 的目录是
-    `ul.dirlist.three.clearfix` —— 不在任何通用候选表里，于是被判「无可用目录」。
-    固定表永远追不上站点的类名花样；而「谁的章节链接多」是**结构事实**。
-    所以：先按结构自动发现，再把它变成选择器记下来（供生成规则用）。
+
+def best_catalog_container(soup, page_url: str):
+    """自动找出**目录容器**：优先「链接文字像章标题」最多的那个节点。
+
+    打分顺序：`(章标题样文字数, 章节样 href 数)`。
+    只用 href 数会选到导航/分类容器（实测 shuhuangxs 的 `div.row` 有 338 个
+    分类链接、压过真目录），加上文字判据就把真目录挑出来了。
     """
     from collections import Counter
-    cnt, nodes = Counter(), {}
-    n_links = 0
+    n_href, n_title, nodes = Counter(), Counter(), {}
     for a in soup.find_all("a", href=True):
         href = (a.get("href") or "").strip()
         if not href:
             continue
-        full = urljoin(page_url, href)
-        p = urlparse(full).path
-        if not re.search(r"\d+(_\d+)?\.html?$", p):
+        p = urlparse(urljoin(page_url, href)).path
+        href_ok = re.search(r"\d+(_\d+)?\.html?$", p) is not None
+        title_ok = CHAP_TITLE_RE.search((a.get_text() or "").strip())
+        if not href_ok and not title_ok:
             continue
-        n_links += 1
-        # 以「链接的父节点」为起点往上找 3 层
         node = a.parent
         for _ in range(4):
             if node is None:
                 break
             nodes[id(node)] = node
-            cnt[id(node)] += 1
+            if href_ok:
+                n_href[id(node)] += 1
+            if title_ok:
+                n_title[id(node)] += 1
             node = node.parent
-    if not cnt:
+    if not n_href and not n_title:
         return None, 0, []
-    key, best_n = cnt.most_common(1)[0]
+    keys = set(n_href) | set(n_title)
+
+    def _plausible(k) -> bool:
+        """容器是否像**目录**：链接数够，且其中**足够比例**的文字像章标题。
+
+        ⚠ 主判据必须是**链接数**（_href），文字判据只当**护栏** ——
+        反过来（文字优先）会把外层容器排到精确容器前面：
+        实测 `sequge.com` 由 643 章退化成 451 章（选中了 `div.body` 而非 `ul.dirlist`）。
+        """
+        h, t = n_href[k], n_title[k]
+        if h == 0:
+            return False
+        return t >= max(1, int(h * 0.3))
+
+    cands = [k for k in keys if _plausible(k)] or [k for k in keys if n_href[k]]
+    if not cands:
+        return None, 0, []
+    key = max(cands, key=lambda k: (n_href[k], n_title[k]))
     el = nodes[key]
-    # 容器内的章节链接（用于后续取第一章）
     links = [a for a in el.find_all("a", href=True)
              if re.search(r"\d+(_\d+)?\.html?$",
-                          urlparse(urljoin(page_url, a["href"])).path)]
+                          urlparse(urljoin(page_url, a["href"])).path)
+             or CHAP_TITLE_RE.search((a.get_text() or "").strip())]
     # ⚠ 必须返回「**链接**的选择器」而不是「容器的选择器」。
     # 引擎的 `item_selector` 若选中一个容器，语义是「把这个容器当**一个**目录项」
     # （href 取内嵌首个 <a>、标题取容器全文）——实测 `dl` 于是只产出 1 章、
     # 标题是整张目录的全文。加上后代选择器 ` a` 才是「每章一项」。
-    return f"{css_of(el)} a", best_n, links
+    return f"{css_of(el)} a", n_href[key], links
 
 
 def any_internal_candidates(html: str, base: str, limit: int = 8):
@@ -287,6 +313,10 @@ def derive_book_urls(html: str, base: str):
         m = CHAPTER_HREF_RE.match(path)
         if not m or not m.group("bid"):
             continue
+        # ⚠ 书号段不能是**结构词**：`/shu/91318.html` 会匹配成「书号=shu」，
+        # 于是反推出垃圾 `/shu/`（实测 32 个全是 404，把试位占满）。
+        if m.group("bid").lower() in PATH_KEYWORDS:
+            continue
         bid = m.group("bid")
         book_path = path[:path.rfind("/" + bid + "/")] + f"/{bid}/"
         if chapter_like(book_path):
@@ -298,14 +328,49 @@ def derive_book_urls(html: str, base: str):
     return out
 
 
+# 「路径关键字」—— 这些段是**站点结构词**，不是书号。
+# 用来消解一个真实的歧义：路径末段是 `数字.html` 且**整条只有一个数字段**时，
+#   · `/book/91318.html`  → 关键字段在末段之前 → **书籍页**
+#   · `/txt/vpnm/1.html`  → 末段之前是**书号**（vpnm）→ **章节页**
+# 光看 href 形态分不开这两者，得靠「末段之前那一段是不是结构词」。
+# ⚠ 这不是「穷举站点前缀」——只列通用结构词，不列站点专有前缀。
+PATH_KEYWORDS = {
+    "book", "books", "txt", "shu", "novel", "read", "reader", "info", "list",
+    "sort", "html", "htm", "biquge", "xs", "all", "top", "full", "quanben",
+    "article", "chapter", "chapters", "new", "hot", "mulu", "dir", "index",
+    "page", "view", "show", "content", "bookinfo", "detail", "post",
+}
+
+
 def chapter_like(path: str) -> bool:
-    """路径本身看着就像章节页/分页，不能当书籍页。"""
-    tail = path.rstrip("/").split("/")[-1]
-    return bool(re.search(r"\d+\.html?$", tail))
+    """路径像不像**章节页**。
+
+    判据：末段是 `数字(.html)`，且满足其一
+      · 路径里**两个以上数字段**（书号 + 章号）：`/book/21/451.html`、`/1/22/33.html`
+      · 只有一个数字段，但**末段之前那一段不是结构词** → 那是书号：`/txt/vpnm/1.html`
+
+    ⚠ 早先的判据是「末段是数字.html 就算章节页」，把 `/shu/91318.html` 这类
+    **单段数字的书籍页**也跳过了 → 438 个站的书籍页找不到。
+    """
+    if re.search(r"\d+(?:_\d+)?\.html?$", path) is None:
+        return False
+    if len(re.findall(r"\d+", path)) >= 2:
+        return True
+    segs = [s for s in path.split("/") if s]
+    if len(segs) < 2:
+        return False
+    return segs[-2].lower() not in PATH_KEYWORDS
 
 
 def find_book_link(html: str, base: str):
-    """在首页里找形似书籍详情页的链接（作为 derive_book_urls 的补充）。"""
+    """在首页里找形似书籍详情页的链接。
+
+    两条路：
+    1. **固定路径形态**（`/book/123`、`/txt/123/`、…）—— 覆盖最常见的几类；
+    2. **通用兜底**：路径末段是 `数字.html` 且**整条路径只有一个数字段** →
+       视为书籍页。实测这一条能吃到 `前缀` 千奇百怪的站
+       （`/shu/91318.html`、`/xx/91318.html`…），而固定表永远列不全前缀。
+    """
     soup = make_soup(html)
     seen = []
     for a in soup.find_all("a", href=True):
@@ -316,10 +381,11 @@ def find_book_link(html: str, base: str):
         path = urlparse(full).path
         if chapter_like(path):
             continue
-        for rx in BOOK_PATH_RES:
-            if rx.search(path):
-                seen.append(full)
-                break
+        hit = any(rx.search(path) for rx in BOOK_PATH_RES)
+        if not hit and re.search(r"\d+\.html?$", path) and len(re.findall(r"\d+", path)) == 1:
+            hit = True                    # 通用兜底：单段数字 + .html
+        if hit:
+            seen.append(full)
     return seen
 
 
@@ -341,6 +407,28 @@ def _resolves(dom: str) -> bool:
         except Exception:
             continue
     return False
+
+
+# 「根路径被拒」时的**备用入口**。
+# 实测 314 个域根路径 404、57 个 403 —— 但很多站只是**首页换了个路径**
+# 或被 WAF 只挡了根路径，书页本身是好的。逐个试几个通用入口，
+# 命中即可继续走正常深探。（成本有界：每域最多 +len(ENTRY_PATHS) 个请求）
+ENTRY_PATHS = ["/index.html", "/sort/", "/top/", "/all/"]
+
+
+def _try_entry_paths(domain: str, timeout: float):
+    """根路径被拒时改试备用入口，返回 `(base, resp)`；都不通返回 `(None, None)`。
+
+    ⚠ 不要用「第二个元素是错误串」这种混合返回 —— 调用方会拿字符串当 Response 用
+    （实测 `AttributeError: 'str' object has no attribute 'text'`）。
+    """
+    # ⚠ 备用入口是**尽力探测**，用单次尝试（retries=0）：
+    # 否则 6 入口 × (1+retries) 次 = 每域十几二十个请求，785 个域要跑一个多小时。
+    for p in ENTRY_PATHS:
+        r, _err = _get_ex(f"https://{domain}{p}", timeout, retries=0)
+        if r is not None and r.status_code < 400 and r.text.count("<a ") > 0:
+            return f"https://{domain}{p}", r
+    return None, None
 
 
 def scan_live(domain: str, timeout: float):
@@ -379,10 +467,22 @@ def scan_live(domain: str, timeout: float):
                 rec["excluded"] = why
             return rec
         last = err or last
-        if err.startswith("HTTP 4"):
-            # 站点有响应 → 活着（403 WAF / 404 首页路径特殊）
+        if err.startswith("HTTP 4") or err.startswith("HTTP 5"):
+            # 站点有响应但根路径被拒/上游故障 → 先别判死，试备用入口
+            base2, r2 = _try_entry_paths(domain, timeout)
+            if r2 is not None:
+                title = _page_title(r2.text)
+                if not DEAD_TITLE_RE.search(title or ""):
+                    rec = {"domain": domain, "alive": True, "base": base2,
+                           "status": r2.status_code, "final": r2.url,
+                           "len": len(r2.content), "title": title,
+                           "entry_path": base2[len(f"https://{domain}"):]}
+                    why = classify("", domain, title)
+                    if why:
+                        rec["excluded"] = why
+                    return rec
             return {"domain": domain, "alive": False, "blocked": True,
-                    "note": f"站点有响应但拒绝（{err}）"}
+                    "note": f"站点有响应但拒绝（{err}），备用入口也未命中"}
     return {"domain": domain, "alive": False, "unknown": True,
             "note": f"多次尝试未连上（{last}）"}
 
@@ -414,7 +514,12 @@ def scan_deep(rec: dict, timeout: float):
             out["verdict"] = f"首页取不到（{err}）"
             return out
         # 优先用「最新章节链接反推」（命中率高），再补上路径形态匹配
-        cands = (derive_book_urls(r.text, base) + find_book_link(r.text, base)
+        # ⚠ 顺序很重要：**先把「按链接形态找到的书籍页」放最前**。
+        # `derive_book_urls` 是从最新章节反推、覆盖面广但**会产出 404**
+        # （实测 shuhuangxs 反推出 `/shu/` 等 32 个，全是 404，把前 6 个试位占满，
+        # 导致真正可用的 `/shu/44312.html` 根本没被试到）。
+        cands = (find_book_link(r.text, base)
+                 + derive_book_urls(r.text, base)
                  + any_internal_candidates(r.text, base))
         # 去重保序
         seen, uniq = set(), []
@@ -429,7 +534,7 @@ def scan_deep(rec: dict, timeout: float):
 
         # 依次试书籍页候选，找到能取出目录的那个（最多试 4 个，控制请求数）
         best = None
-        for bu in cands[:6]:
+        for bu in cands[:10]:
             rb = _get(bu, timeout)
             if rb is None:
                 continue
@@ -481,11 +586,20 @@ def scan_deep(rec: dict, timeout: float):
                 out["content_cjk"] = cjk
                 break
         if not out["content_selector"]:
-            # 候选全未命中 → 退回自动识别，只作参考（不算通过）
+            # 候选全未命中 → 用 v0.8.0 的**自动识别正文容器**兜底。
+            # 实测这能救回一批站（`目录可用但正文候选未命中`），
+            # 而且自动识别的结果**就是一个可用的 CSS 选择器**，直接写进规则即可。
             el = guess_content_container(csoup, min_cjk=200)
             if el is not None:
-                out["content_hint_auto"] = _classes(el)
-                out["content_cjk"] = len(re.findall(r"[\u4e00-\u9fff]", el.get_text()))
+                sel = _classes(el)
+                cjk = len(re.findall(r"[\u4e00-\u9fff]", el.get_text()))
+                if sel and cjk >= MIN_CJK:
+                    out["content_selector"] = sel
+                    out["content_cjk"] = cjk
+                    out["content_auto"] = True
+                    out["verdict"] = (f"可做：目录 {len(links)} 章（{sel}），"
+                                      f"正文 {cjk} 字（自动识别 {sel}）")
+                    return out
             out["verdict"] = (f"目录可用（{len(links)} 章），正文候选未命中"
                               f"（自动识别到 {out.get('content_hint_auto', '?')}，"
                               f"{out['content_cjk']} 字）")
@@ -666,7 +780,8 @@ def main():
         # 默认合并「首次全量」与「未确认重扫」两份结果 —— 不合并会丢第二轮救回的站
         default_in = ",".join([os.path.join(".sources", "live.jsonl"),
                                os.path.join(".sources", "live.retry.jsonl"),
-                               os.path.join(".sources", "live.retry2.jsonl")])
+                               os.path.join(".sources", "live.retry2.jsonl"),
+                               os.path.join(".sources", "live.blocked.jsonl")])
         srcs = [x for x in (args.inp or default_in).split(",") if x.strip()]
         srcs = [x for x in srcs if os.path.exists(x)]
         tidy(srcs, args.out or os.path.join(".sources", "live.clean.jsonl"))
@@ -692,8 +807,10 @@ def main():
             print(f"    {v:5}  {a}  +  {b}")
         return
 
-    if args.phase == "live" and args.only != "all" and not args.out:
+    if args.phase == "live" and args.only == "unknown" and not args.out:
         args.out = os.path.join(".sources", "live.retry.jsonl")
+    if args.phase == "live" and args.only == "blocked" and not args.out:
+        args.out = os.path.join(".sources", "live.blocked.jsonl")
     out_path = args.out or os.path.join(
         ".sources", "live.jsonl" if args.phase == "live" else "deep.jsonl")
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)

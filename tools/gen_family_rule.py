@@ -154,7 +154,12 @@ def build_rule(domains, cat_sel, con_sel, samples):
         "catalog": {
             "pages": {"mode": "single"},
             "item_selector": ", ".join(cat_sels),
-            "id_from": {"mode": "href", "pattern": "/(?P<cid>\\d+)(?:_\\d+)?\\.html?"},
+            # ⚠ 模式要**宽松**：末段章号后面 `.html` 是**可有可无**的。
+            # 实测踩到：扫描器靠「链接文字像章标题」认出了章链接（如 `/book/21/451`），
+            # 但这里只写 `\.html` → 引擎一个 cid 都提取不到 →
+            # 规则报「目录只 0 章」（占失败项的 1/3）。
+            "id_from": {"mode": "href",
+                        "pattern": "/(?P<cid>\\d+)(?:_\\d+)?(?:\\.html?)?$"},
             "sort": "cid_numeric_asc",
             "dedupe": "keep_first",
             # 剔除「站点导航类」伪目录项：它们和真章节一样带数字 href，

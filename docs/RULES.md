@@ -25,6 +25,21 @@ python -m noveldown probe "https://新站点.com/book/123/"
 python -m noveldown fetch "https://新站点.com/book/123/" --limit 5
 ```
 
+### 规则文件放哪
+
+```
+noveldown/rules/                 手工维护的规则（一站点一文件）—— 站点有自己的形态，值得逐个精读
+noveldown/rules/mirrors/         **批量铺开的镜像池**（自动聚类生成，见 §11.3/§11.4 of NEW_SITES_PLAN）
+```
+
+加载器**递归**读子目录（`noveldown.rules.iter_rule_files`）。
+镜像池之所以单独放一层：它是「一个模板一个文件」自动产出的，数量会到**几百条**，
+与手写规则混在同一层会让 `rules/` 完全没法看。
+
+⚠ 镜像池里的每条规则，其 `match` 中的域名都经过**逐域实测**
+（目录 ≥20 章 + 正文 ≥300 字）并用**真实引擎复验过**（`tools/verify_mirror_rules.py`），
+不是按模板猜的 —— 详见 `docs/NEW_SITES_PLAN.md §11.4`。
+
 ---
 
 ## 字段全表

@@ -26,10 +26,8 @@ class TestLoadRules(unittest.TestCase):
         真正的不变量是「**文件系统里的每条规则都能通过校验并加载**」。
         几个关键站点单独断言，防止被误删。
         """
-        import glob
-        from noveldown.rules import RULES_DIR
-        files = {os.path.basename(p)[:-5]
-                 for p in glob.glob(os.path.join(RULES_DIR, "*.json"))}
+        from noveldown.rules import iter_rule_files
+        files = {os.path.basename(p)[:-5] for p in iter_rule_files()}
         self.assertTrue(files, "rules/ 目录下没有规则文件？")
         rules = load_rules()
         self.assertEqual(set(rules), files,
