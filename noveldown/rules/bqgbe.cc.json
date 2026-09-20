@@ -1,0 +1,59 @@
+{
+  "id": "bqgbe.cc",
+  "name": "笔趣阁（bqgbe）",
+  "enabled": true,
+  "free_only": true,
+  "predecode": true,
+  "requires_js": false,
+  "demo_url": "https://www.bqgbe.cc/txt/445/",
+  "notes": "正文按段 base64 编码进 <script>document.writeln(随机命名空间.随机函数名('base64'))</script>，需预解码（见 predecode.py）。章节内部分页：正文页为 54948.html、54948_1.html、54948_2.html，靠「下一章」链接的 cid 是否与当前章节相同来判定续页（站点把续页链接误标为「下一章」）。目录页由 <select> 的 option 给出；目录列表用 CSS .section-list.ycxsid>li:nth-child(n){display:none} 隐藏首尾若干项做反爬，靠 cid 去重+升序排序消除。",
+  "match": ["bqgbe.cc"],
+  "book": {
+    "url_pattern": "/txt/(\\d+)/",
+    "info_url": "{origin}/txt/{bid}/",
+    "title": ["meta[property='og:novel:book_name']", "h1"],
+    "author": ["meta[property='og:novel:author']"],
+    "intro": ["meta[property='og:novel:description']", "meta[name='description']"],
+    "cover": ["meta[property='og:image']"],
+    "status": ["meta[property='og:novel:status']"]
+  },
+  "catalog": {
+    "pages": {
+      "mode": "auto",
+      "option_selector": "select option",
+      "value_attribute": "value",
+      "keep_pattern": "/txt/{bid}/",
+      "link_pattern": "/txt/\\d+/ml\\d+\\.html",
+      "max_pages": 80,
+      "max_rounds": 4
+    },
+    "item_selector": "ul.section-list li a",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/txt/\\d+/(?P<cid>\\d+)(?:_\\d+)?\\.html"
+    },
+    "sort": "cid_numeric_asc",
+    "volume_selector": null
+  },
+  "chapter": {
+    "title_selector": "div.word_read h3",
+    "content_selector": "div.word_read",
+    "strip_selectors": ["h2.layout-tit", "h3", "div.read_btn", "script", "style"],
+    "next_page": {
+      "selector": "div.read_btn a",
+      "text_contains": "下一章",
+      "continue_when": "same_base_id",
+      "href_pattern": "/txt/\\d+/(?P<cid>\\d+)(?:_\\d+)?\\.html"
+    },
+    "ad_patterns": [
+      "笔趣阁",
+      "bqgbe",
+      "最新网址",
+      "请记住本站",
+      "手机版阅读",
+      "花有重开日",
+      "将本站设为首页",
+      "收藏笔趣阁"
+    ]
+  }
+}

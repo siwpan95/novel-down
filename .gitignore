@@ -1,0 +1,35 @@
+# --- 产物 / 缓存（不入版本库）---
+output/
+state/
+cache/
+*.epub
+
+# --- 调研素材（参照项目压缩包与解压结果，仅本地）---
+_ref/
+*.zip
+*.tar.gz
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- 编辑器 / 系统 ---
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# --- 本地临时 ---
+.tmptest/
+.screenshot_tmp/
+*.tmp
+*.log

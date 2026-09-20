@@ -1,0 +1,26 @@
+# 统一换行：仓库内一律 LF，避免 Windows 上 CRLF 反复改动的噪声
+* text=auto eol=lf
+
+# Python / 文档 / 配置 明确按文本处理
+*.py    text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.txt   text eol=lf
+*.html  text eol=lf
+*.css   text eol=lf
+
+# 二进制：不要做任何换行转换
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.epub  binary
+*.zip   binary
+*.gz    binary
+*.exe   binary
+*.dll   binary
+
+# 让 git diff / GitHub-Gitee 语言统计更准
+*.py    linguist-language=Python

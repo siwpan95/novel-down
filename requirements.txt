@@ -1,0 +1,19 @@
+# novel-down 依赖
+#
+# 运行期只需这两个（EPUB/HTML 导出为纯标准库实现，不依赖 ebooklib/pandoc）
+requests>=2.31
+beautifulsoup4>=4.12
+
+# 建议安装：bs4 的快速解析器（缺失时自动回退 Python 内置 html.parser）
+lxml>=5.0
+
+# 可选：TLS 指纹伪装（--curl-cffi）
+# curl_cffi>=0.7
+
+# ---------------------------------------------------------------
+# 以下为参照项目曾用到、本项目**不采用**的依赖，列出以便对照：
+#   trafilatura / readability / newspaper3k  —— 通用正文抽取，对小说章节页过重
+#                                               且会破坏段落边界，改用规则化容器选择器
+#   requests_cache                           —— 缓存改由 state.py 按 cid 自管
+#   playwright / ddddocr                     —— 本项目无 JS 引擎与验证码识别需求
+# ---------------------------------------------------------------
