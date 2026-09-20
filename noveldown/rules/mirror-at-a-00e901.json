@@ -8,11 +8,18 @@
   "requires_js": false,
   "fetch_mode": "http",
   "demo_url": "https://zym888.com/xiaoshuo/46/46412/",
-  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `#at a` + 正文 `#content`；域数 4；书号形态 ['alnum', 'digits'] → url_pattern=^.*/([A-Za-z0-9_-]+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · zym888.com — 565 章 / 3040 字\n  · xiaoshuopu.com — 536 章 / 2212 字\n  · heenee.com — 392 章 / 2415 字\n  · ssdzgj.com — 973 章 / 2243 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。",
+  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `#at a` + 正文 `#content`；域数 11；书号形态 ['alnum', 'digits'] → url_pattern=^.*/([A-Za-z0-9_-]+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · zym888.com — 565 章 / 3040 字\n  · xiaoshuopu.com — 536 章 / 2212 字\n  · heenee.com — 392 章 / 2415 字\n  · ssdzgj.com — 973 章 / 2243 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。",
   "match": [
+    "dnmcn.com",
+    "esstr.com",
     "heenee.com",
+    "nsdkh.com",
+    "shqxjx.com",
+    "shuq.net",
     "ssdzgj.com",
     "xiaoshuopu.com",
+    "zgbnt.com",
+    "znxdxs.com",
     "zym888.com"
   ],
   "book": {

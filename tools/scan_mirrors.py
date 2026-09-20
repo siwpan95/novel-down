@@ -572,23 +572,30 @@ def classify(name: str, domain: str, title: str = "") -> str:
     return ""
 
 
-def tidy(path: str, out: str):
-    """去重 + 用**当前**的判定规则重新过一遍历史记录。
+def tidy(paths, out: str):
+    """去重 + 用**当前**的判定规则重新过一遍历史记录（可合并多个输入）。
 
-    为什么需要：扫描是分批跑的，中途改过判据（补了「占位页」「正版后缀」等），
+    ⚠ 必须能合并多份输入：扫描是分批跑的（首次全量 + 多轮「未确认重扫」），
+    结果落在 `live.jsonl` / `live.retry.jsonl` 两个文件里。
+    若不合并，第二轮救回的站就白扫了 —— 报告里仍按「不可达」算。
+
+    为什么需要重新判定：扫描是分批跑的，中途改过判据（补了「空壳页」「正版后缀」等），
     早期写下的记录会带着**过时**的结论留在文件里（实测出现过
     `没有找到站点` 的 nginx 默认页被记成 alive）。与其重扫一遍（每个域要发请求），
-    不如就地用已存的 `title`/`final` 重新判定 —— 判定是纯函数，不需要网络。
+    不如就地用已存的字段重新判定 —— 判定是纯函数，不需要网络。
     """
     recs = {}
     order = []
-    for r in load_jsonl(path):
-        dom = r.get("domain")
-        if not dom:
-            continue
-        if dom not in recs:
-            order.append(dom)
-        recs[dom] = r          # 后者覆盖前者（越晚的记录越新）
+    total_lines = 0
+    for path in paths:
+        for r in load_jsonl(path):
+            total_lines += 1
+            dom = r.get("domain")
+            if not dom:
+                continue
+            if dom not in recs:
+                order.append(dom)
+            recs[dom] = r          # 后者覆盖前者（越晚的记录越新）
     kept, dropped = [], []
     for dom in order:
         r = dict(recs[dom])
@@ -622,7 +629,7 @@ def tidy(path: str, out: str):
     usable = [r for r in kept if not r.get("excluded") and not r.get("placeholder")]
     blocked = [r for r in dropped if r.get("blocked")]
     unknown = [r for r in dropped if r.get("unknown")]
-    print(f"去重前 {len(load_jsonl(path))} → 唯一域 {len(order)}")
+    print(f"合并 {len(paths)} 份输入 {total_lines} 行 → 唯一域 {len(order)}")
     ph = [r for r in kept if r.get("placeholder")]
     print(f"可达 {len(kept)} · 其中空壳/占位 {len(ph)} · 可用候选 {len(usable)}")
     print(f"站点有响应但拒绝(WAF/404) {len(blocked)} · "
@@ -637,7 +644,8 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--phase", choices=["live", "deep", "stats", "tidy"], required=True)
     ap.add_argument("--in", dest="inp", default=None,
-                    help="输入文件。live/tidy 默认 .sources/live.jsonl；"
+                    help="输入文件（tidy 可给逗号分隔的多个，会按域合并）。"
+                         "live 默认 .sources/live.jsonl；"
                          "deep 默认 .sources/live.clean.jsonl（不存在则用 live.jsonl）")
     ap.add_argument("--out", default=None)
     ap.add_argument("--limit", type=int, default=0, help="只扫前 N 个（0 = 全部）")
@@ -655,8 +663,13 @@ def main():
     _RETRIES = max(0, args.retries)
 
     if args.phase == "tidy":
-        tidy(args.inp or os.path.join(".sources", "live.jsonl"),
-             args.out or os.path.join(".sources", "live.clean.jsonl"))
+        # 默认合并「首次全量」与「未确认重扫」两份结果 —— 不合并会丢第二轮救回的站
+        default_in = ",".join([os.path.join(".sources", "live.jsonl"),
+                               os.path.join(".sources", "live.retry.jsonl"),
+                               os.path.join(".sources", "live.retry2.jsonl")])
+        srcs = [x for x in (args.inp or default_in).split(",") if x.strip()]
+        srcs = [x for x in srcs if os.path.exists(x)]
+        tidy(srcs, args.out or os.path.join(".sources", "live.clean.jsonl"))
         return
 
     if args.phase == "stats":

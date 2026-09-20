@@ -89,6 +89,8 @@ def main():
                     help="只复验上次未通过的（读上一次的 --out 结果）。"
                          "⚠ 本机单次请求失败率约 45%%，一次 404/SSLError **不足以判死**，"
                          "先复验再决定是否剔除")
+    ap.add_argument("--ids", default=None,
+                    help="只验这些 id（逗号分隔）")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--out", default=os.path.join(".sources", "verify_rules.jsonl"))
     args = ap.parse_args()
@@ -109,6 +111,9 @@ def main():
         failed = {k for k, v in prev.items() if not v.get("ok")}
         ids = [i for i in ids if i in failed]
         print(f"只复验上次未通过的 {len(ids)} 条")
+    if args.ids:
+        want = {x.strip() for x in args.ids.split(",") if x.strip()}
+        ids = [i for i in ids if i in want]
     if args.limit:
         ids = ids[:args.limit]
     print(f"待验证 {len(ids)} 条规则（前缀 {args.prefix}）")

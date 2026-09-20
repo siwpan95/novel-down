@@ -8,9 +8,12 @@
   "requires_js": false,
   "fetch_mode": "http",
   "demo_url": "https://douyinxs.com/bqg/223080/",
-  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `body a` + 正文 `div#chaptercontent`；域数 2；书号形态 ['alnum', 'digits'] → url_pattern=^.*/([A-Za-z0-9_-]+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · douyinxs.com — 27 章 / 1029 字\n  · m.shoujixsw.com — 87 章 / 1799 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。",
+  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `body a` + 正文 `div#chaptercontent`；域数 5；书号形态 ['alnum', 'digits'] → url_pattern=^.*/([A-Za-z0-9_-]+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · douyinxs.com — 27 章 / 1029 字\n  · m.shoujixsw.com — 87 章 / 1799 字\n  · m.douyinxs.com — 27 章 / 1029 字\n  · m.biquge700.com — 335 章 / 2758 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。",
   "match": [
     "douyinxs.com",
+    "m.biquge700.com",
+    "m.douyinxs.com",
+    "m.gebiqu.com",
     "m.shoujixsw.com"
   ],
   "book": {

@@ -28,10 +28,42 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def load(path):
+    """读深探结果，**按域去重**。
+
+    ⚠ 为什么必须去重：深探是分批跑的（首轮 + 多轮「未确认重扫」救回后再深探），
+    同一个域会有**多条**记录 —— 早先失败、后来通过（判据改进了），或反过来。
+    若不去重，`match` 里会出现重复域名、且可能用**过时的那条**下结论。
+    规则：**只要有一条通过就用它**；都没通过就留最新一条。
+    """
     if not os.path.exists(path):
         return []
-    with open(path, encoding="utf-8") as f:
-        return [json.loads(l) for l in f if l.strip()]
+    best = {}
+    for r in load_raw(path):
+        dom = r.get("domain")
+        if not dom:
+            continue
+        cur = best.get(dom)
+        if cur is None:
+            best[dom] = r
+        elif passed(r) and not passed(cur):
+            best[dom] = r            # 后来通过了 → 覆盖
+        elif passed(r) == passed(cur):
+            best[dom] = r            # 同状态 → 取更新的
+    return list(best.values())
+
+
+def load_raw(path):
+    out = []
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except Exception:
+                continue                     # 容忍坏行（并发写入可能留半行）
+    return out
 
 
 def passed(rec) -> bool:
@@ -78,6 +110,22 @@ def build_rule(domains, cat_sel, con_sel, samples):
     import hashlib
     sig_hash = hashlib.sha1(f"{cat_sel}|{con_sel}".encode("utf-8")).hexdigest()[:6]
     slug = re.sub(r"[^0-9a-zA-Z]+", "-", cat_sel).strip("-").lower()[:22] or "generic"
+    # ⚠ `demo_url` 必须落在本规则 `match` 覆盖的域名上，否则**引擎会报
+    # 「没有匹配的站点规则」**（实测踩到 2 条：深探时站点跳转到了另一个域名，
+    # 于是 book_url 的主机名不在 match 里）。
+    # 这里挑一个主机名在 match 内的样本做 demo；都没有就退回域根。
+    from urllib.parse import urlparse
+    def _host_ok(u):
+        h = (urlparse(u or "").hostname or "").lower()
+        return any(h == d or h.endswith("." + d) for d in domains)
+    demo = next((s.get("book_url") for s in samples if _host_ok(s.get("book_url"))), None)
+    if not demo:
+        # ⚠ 没有**可验证**的 demo 就不生成这条规则。
+        # 实测这种组的成因：站点把书页**跳转到另一个域名**，于是深探记下的
+        # book_url 主机名不在本组域名里 —— 生成的规则既报「没有匹配的站点规则」，
+        # 回退到域根又因 `url_pattern` 匹配不上而报「无法提取书籍 ID」。
+        # 与其产出一条注定验证不过的规则，不如**不产出**（留给下轮改进深探来覆盖）。
+        return None
     return {
         "id": f"mirror-{slug}-{sig_hash}",
         "name": (f"免费镜像族 · 目录 {cat_sel}"
@@ -88,7 +136,7 @@ def build_rule(domains, cat_sel, con_sel, samples):
         "predecode": False,
         "requires_js": False,
         "fetch_mode": "http",
-        "demo_url": samples[0].get("book_url"),
+        "demo_url": demo,
         "notes": (
             "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n"
             f"签名：目录 `{cat_sel}` + 正文 `{con_sel}`；域数 {len(domains)}；"
@@ -161,6 +209,7 @@ def main():
     ordered = sorted(groups.items(), key=lambda kv: -len(kv[1]))
     os.makedirs(args.out_dir, exist_ok=True)
     made = 0
+    skipped = []
     for (cat, con), rs in ordered:
         doms = [r["domain"] for r in rs]
         bshapes = Counter(url_shape(r.get("book_path")) for r in rs)
@@ -172,12 +221,19 @@ def main():
             f"{', '.join(doms[:4])} |")
         if len(rs) >= args.min_domains:
             rule = build_rule(doms, cat, con, rs)
+            if rule is None:
+                skipped.append(f"{cat} + {con}")
+                continue
             p = os.path.join(args.out_dir, rule["id"] + ".json")
             with open(p, "w", encoding="utf-8") as f:
                 json.dump(rule, f, ensure_ascii=False, indent=2)
             made += 1
     with open(args.report, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+    if skipped:
+        print(f"⚠ 跳过 {len(skipped)} 组（无可验证 demo：书页跳到了本组域名之外）：")
+        for x in skipped:
+            print(f"    {x}")
     print(f"\n聚类 {len(groups)} 组 · 生成 {made} 条规则草稿 → {args.out_dir}")
     print(f"报告 → {args.report}")
     print("\n最大 8 组：")
