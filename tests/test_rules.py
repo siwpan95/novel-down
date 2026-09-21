@@ -389,6 +389,43 @@ class _Stub:
         self.rule = rule
 
 
+class TestXugesRule(unittest.TestCase):
+    """虚阁网（v0.8.16）：本仓第一条**文库型**规则，书 ID 是路径。"""
+
+    def test_shipped_rule_shape(self):
+        r = load_rules()["xuges.com"]
+        self.assertTrue(r.enabled)
+        self.assertEqual(r.fetch_mode, "http")
+        self.assertFalse(r.requires_js)
+        # 书 ID = 分类/集子 路径
+        self.assertEqual(r.extract_bid("https://www.xuges.com/gdwx/hlm/index.htm"),
+                         "gdwx/hlm")
+        self.assertIsNone(r.extract_bid("https://www.xuges.com/gdwx/hlm/001.htm"),
+                          "章节页不是合法的书籍入口")
+        self.assertEqual(r.book_page_url("https://www.xuges.com/gdwx/hlm/index.htm",
+                                        "gdwx/hlm"),
+                         "https://www.xuges.com/gdwx/hlm/index.htm")
+        # 目录 = 书籍页本身（single 模式复用同一份 HTML）
+        self.assertEqual(r.catalog_cfg["pages"]["mode"], "single")
+        self.assertNotIn("url", r.catalog_cfg["pages"])
+        # 多页章回的续页判据
+        self.assertEqual(r.catalog_cfg["continuation_title_pattern"],
+                         "^[（(]\\d+[）)]$")
+        # 正文：纯 CSS 即可
+        self.assertEqual(r.chapter_cfg["content_selector"], "td:not([class])")
+        self.assertEqual(r.chapter_cfg["title_selector"], "td.t50")
+        self.assertTrue(r.book_cfg.get("author_pattern_strict"),
+                        "该站 <title> 有不带作者的形态，必须开严格模式")
+        self.assertIn("xuges.com", r.match)
+
+    def test_content_selector_rejects_nonworking_forms(self):
+        """回归守卫：别把已实测**命中 0** 的相邻兄弟选择器写回去。"""
+        r = load_rules()["xuges.com"]
+        for bad in ("td.t50 + td", "td.t50 ~ td"):
+            self.assertNotEqual(r.chapter_cfg["content_selector"], bad)
+            self.assertNotIn(bad, r.chapter_cfg.get("content_selectors") or [])
+
+
 class TestXrzRuleAndNewJsonKeys(unittest.TestCase):
     """仙人掌小说（360）规则形状 + v0.8.15 新增的 JSON 分页/逐章地址键的校验。"""
 

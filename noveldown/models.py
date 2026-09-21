@@ -28,6 +28,7 @@ class Chapter:
     cid: str = ""                       # 站点章节 ID（用于去重/排序/续页判定）
     volume: str = ""                    # 所属卷名（无卷为空）
     api_url: str = ""                   # 逐章正文接口地址（正文不在章节页时才用）
+    extra_pages: List[str] = field(default_factory=list)   # 目录层给出的**续页** URL（多页章回）
     status: str = STATUS_PENDING
     paragraphs: List[str] = field(default_factory=list)
     source_pages: List[str] = field(default_factory=list)   # 实际请求过的 URL（含分页）
@@ -68,6 +69,7 @@ class Chapter:
             cid=d.get("cid", ""),
             volume=d.get("volume", ""),
             api_url=d.get("api_url", ""),
+            extra_pages=list(d.get("extra_pages") or []),
             status=d.get("status", STATUS_PENDING),
             paragraphs=list(d.get("paragraphs") or []),
             source_pages=list(d.get("source_pages") or []),

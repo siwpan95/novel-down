@@ -120,6 +120,27 @@ class Rule:
             tr = req.get("truthy")
             if tr is not None and not (isinstance(tr, list) and tr):
                 raise RuleError(f"{self.id}: chapter.body_api.require.truthy 必须是非空数组")
+        # `catalog.continuation_title_pattern`（v0.8.16）：多页章回的续页合并依据。
+        # 必须是**合法正则**且不能过宽 —— 过宽会把正常章节也并掉（静默少章）。
+        ctp = (self.raw["catalog"].get("continuation_title_pattern")
+               if isinstance(self.raw.get("catalog"), dict) else None)
+        if ctp is not None:
+            if not isinstance(ctp, str) or not ctp.strip():
+                raise RuleError(f"{self.id}: catalog.continuation_title_pattern 不能为空")
+            try:
+                rx = re.compile(ctp)
+            except re.error as e:
+                raise RuleError(f"{self.id}: catalog.continuation_title_pattern "
+                                f"不是合法正则（{e}）")
+            # 过宽判据：能匹配空串、或能匹配任意常见章节标题（用一组样本试）
+            if rx.match(""):
+                raise RuleError(f"{self.id}: continuation_title_pattern 能匹配空串 —— "
+                                f"会把所有无标题条目都并掉，几乎必然是写错了")
+            for sample in ("第一章 起", "第1章", "卷一", "序", "楔子", "[清]曹雪芹"):
+                if rx.match(sample):
+                    raise RuleError(
+                        f"{self.id}: continuation_title_pattern 过宽 —— 它匹配到了正常标题 "
+                        f"{sample!r}。该模式只应匹配「纯页码标记」（如 ^[（(]\\d+[）)]$）")
         if not self.raw["chapter"].get("content_selector"):
             raise RuleError(f"{self.id}: chapter.content_selector 不能为空")
         # `book.info_api`（v0.8.13）：书籍页是 SPA 外壳、简介/封面由 XHR

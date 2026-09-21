@@ -323,7 +323,12 @@ class Downloader:
 
         sort_mode = rule.catalog_cfg.get("sort", "cid_numeric_asc")
         dedupe = rule.catalog_cfg.get("dedupe", "keep_first")
-        chapters = normalize_catalog(all_items + all_locked, sort_mode, dedupe)
+        chapters = normalize_catalog(all_items + all_locked, sort_mode, dedupe,
+                                     rule.catalog_cfg.get("continuation_title_pattern"))
+        n_cont = sum(len(c.extra_pages) for c in chapters)
+        if n_cont:
+            self.log(f"[目录] 续页合并：{n_cont} 个续页条目并入前一章"
+                     f"（判定 {rule.catalog_cfg.get('continuation_title_pattern')!r}）")
 
         book.chapters = chapters
         book.catalog_sort = sort_mode
@@ -586,6 +591,7 @@ class Downloader:
         seen = set()
         title = ""
         first_html = None
+        pending = list(getattr(ch, "extra_pages", None) or [])
 
         for _ in range(MAX_PAGES_PER_CHAPTER):
             if not url or url in seen:
@@ -629,6 +635,12 @@ class Downloader:
                 # 正文抽取走了回退路径（段落选择器未命中）——记进备注，便于发现站点改版
                 ch.decode_note = (ch.decode_note + " " + info["extract_note"]).strip()
             paragraphs.extend(info["paragraphs"])
+            # 目录层给出的续页（`catalog.continuation_title_pattern`）优先于页内链接：
+            # 页尾「下一页」既可能是续页也可能是下一回，靠它判断要猜；
+            # 而目录页自己标了 `(2)`/`(3)`，是权威信号。
+            if pending:
+                url = pending.pop(0)
+                continue
             if not info["next_url"]:
                 break
             url = info["next_url"]

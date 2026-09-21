@@ -1,0 +1,73 @@
+{
+  "id": "xuges.com",
+  "name": "虚阁网（中文出版书文本库·文库型）",
+  "pool": "正版",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://www.xuges.com/gdwx/hlm/index.htm",
+  "notes": "★ 虚阁网（`www.xuges.com`）—— **中文出版书文本库**，本仓第一个「文库型」站点规则。\n  2026-09-21 实探接入，纯 HTTP、零浏览器。参照本地项目 `G:\\local\\hushi_twrj`\n  （胡适日记本地存档，本机唯一已完成的出版读物电子版工程）。\n\n【与「网文站」不同的形态：书 = 一个集子目录】\n  站点按 **分类/集子** 两级组织，书 ID 就是**路径**（`bid` = `gdwx/hlm` = 古典文学/红楼梦）：\n    /{分类}/{集子}/index.htm   ← 书籍页兼目录页（`pages.mode=single` 复用同一份 HTML）\n    /{分类}/{集子}/{NNN}.htm   ← 每篇/每回一页\n  一级分类实测：gdwx 古典文学 / xdwx 现代文学 / xdmj 现代作家 / wgwx 外国文学 /\n  ls 历史 / sc 诗词 / wuxia 武侠 等 10 个。二级规模：古典文学 **38 集子**、\n  现代文学 **65**、历史 **68**、外国文学 **6**、现代作家 **128 位作者**。\n\n【正文定位：纯 CSS 即可（无需手写解析器）】\n  页面是表格布局：\n    <td class=\"zhs\">面包屑</td> <td class=\"t50\">标题</td> <td class=\"jz\"></td>\n    <td>正文……</td>           ← 目标\n    <td></td> <td class=\"zhx\">页脚</td> <td class=\"jz\">导航</td>\n  → `content_selector: \"td:not([class])\"` 的**第一个命中**就是正文（实测红楼梦 2229 汉字）。\n  ⚠ 别写 `td.t50 + td` / `td.t50 ~ td` —— 实测命中 0（锚点与正文不在同一个 `<tr>`）。\n  ✅ `<br>` 分段**本仓抽取器已原生支持**，不需要额外的段落选择器。\n\n【多页章回（本规则的关键）：靠目录的页码标记合并，不靠页内链接】\n  红楼梦目录里 `001` = `第一回…(1)`、`002` = 标题只有 `(2)`、`003` = `(3)` ——\n  续页**没有自己的标题**，只看一个页码标记。\n  用 `catalog.continuation_title_pattern: \"^[（(]\\\\d+[）)]$\"` 把这类条目**并入前一条**，\n  其 URL 收进前一章的 `extra_pages`，由引擎顺序抓完再拼装。实测效果：\n    · 不合并 = **277 章**（含 156 个假章，标题是 `(2)` `(3)`）\n    · 合并后 = **121 章** = 作者简介 1 + 正文 **120 回** ← 与红楼梦真实回数吻合\n  ⚠ **为什么不用页内「下一页」链接**：页尾的「下一页」既可能是续页、也可能是下一回，\n    靠它判断要猜；而目录页自己标了 `(2)`/`(3)`，那是**权威信号**。\n    （若改用页内链接，就必须有可靠的停止判据，否则会**一路把整本书拼成一章**。）\n\n【⚠ 编码：同一站点不同分区不同，必须按响应头解码】\n  `xdmj/hushi/`、`gdwx/` 是 **GB2312**；`wgwx/`、`xdwx/`、`ls/` 是 **UTF-8**。\n  → 规则**不硬编码编码**：解析器用 HTTP 库按每条响应的 header/meta 解码\n  （实测 6/6 正确）。⚠ 千万不要「统一按 GB18030 解」—— 那会让 utf-8 分区全乱码（`澶栧浗鏂囧`）。\n\n【数据质量】生僻字有替换符（如 `曹頫` → `曹?`）—— 这是**站点侧**用 GB2312 存不下造成的\n  源数据缺失，**不是解码问题**，记录不修。\n\n⚠ 法律：站点为公开的中文文献文本库，本规则仅作**个人离线存档**用。",
+  "match": [
+    "xuges.com"
+  ],
+  "book": {
+    "url_pattern": "^https?://www\\.xuges\\.com/([a-z0-9_]+/[a-z0-9_]+)/index\\.htm$",
+    "info_url": "https://www.xuges.com/{bid}/index.htm",
+    "title": [
+      "td.t50",
+      "h1",
+      "@title"
+    ],
+    "title_pattern": "^([^|]+?)(?:_虚阁网)*(?:\\|.*)?$",
+    "author": [
+      "@title"
+    ],
+    "author_pattern": "\\|([^|_]+)_虚阁网",
+    "author_pattern_strict": true
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single"
+    },
+    "item_selector": "a[href$='.htm']",
+    "id_from": {
+      "mode": "href",
+      "pattern": "^(?P<cid>\\d+)\\.htm$"
+    },
+    "url_template": "https://www.xuges.com/{bid}/{cid}.htm",
+    "continuation_title_pattern": "^[（(]\\d+[）)]$",
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first",
+    "item_deny_text": [
+      "首页",
+      "上一页",
+      "下一页",
+      "回目录",
+      "回首页"
+    ]
+  },
+  "chapter": {
+    "title_selector": "td.t50",
+    "content_selector": "td:not([class])",
+    "content_selectors": [
+      "td:not([class])"
+    ],
+    "strip_selectors": [
+      "script",
+      "style",
+      "td.zhs",
+      "td.zhx",
+      "td.jz"
+    ],
+    "ad_patterns": [
+      "虚阁网",
+      "Xuges.com",
+      "上一页",
+      "下一页",
+      "回目录",
+      "回首页"
+    ]
+  }
+}

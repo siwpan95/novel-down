@@ -124,8 +124,13 @@ def main():
 
     # ---- 1. 零请求：受保护章节不得有缓存/请求痕迹 ----
     site, bid = state.get("site", ""), state.get("book_id", "")
+    # ⚠ 必须**复用引擎的 slug 规则**（`slug_of`），别在这里自己拼 `f"{site}_{bid}"`：
+    #   文库型站点的 book_id 是**路径**（虚阁网 `gdwx/hlm`），未 slug 化会带上 `/`
+    #   → 拼出 `cache/xuges.com_gdwx/hlm` 这种不存在的路径 → 「缓存 0 个」误报 FAIL。
+    #   实测 2026-09-21 就是踩了这个。同一事实只写一处，才不会两边跑偏。
+    from noveldown.state import slug_of
     cache_dir = os.path.join(os.path.dirname(os.path.dirname(state_path)), "cache",
-                             f"{site}_{bid}")
+                             slug_of(site, bid))
     locked_cids = {c["cid"] for c in protected if c.get("cid")}
     cached = {os.path.splitext(os.path.basename(p))[0]
               for p in glob.glob(os.path.join(cache_dir, "*.json"))}

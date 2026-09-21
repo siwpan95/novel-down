@@ -25,7 +25,8 @@ import soupsieve as sv
 from bs4 import BeautifulSoup
 
 from .freeguard import is_vip_item
-from .models import Chapter, STATUS_LOCKED, STATUS_PENDING
+from .models import (Chapter, PROTECTED_STATUSES, STATUS_LOCKED,
+                     STATUS_PENDING)
 from .predecode import predecode
 
 # ------------------------------------------------------------
@@ -272,6 +273,13 @@ def parse_book_info(rule, html: str, url: str, bid: str,
         m = re.search(apat, author, re.S)
         if m:
             author = (m.group(1) if m.groups() else m.group(0)).strip()
+        elif cfg.get("author_pattern_strict"):
+            # 严格模式（v0.8.16）：**不匹配就置空**，而不是保留原值。
+            # 用于「标题里恰好带作者才取、否则宁可为空」的文库型站点 ——
+            # 虚阁网的书籍页没有 h1/td.t50，书名/作者只能从 `<title>` 取，
+            # 而 `<title>` 有两种形态：`红楼梦|曹雪芹_虚阁网`（带作者）
+            # 与 `外国畅销书_虚阁网`（不带）→ 不设严格模式会把整条 title 当作者。
+            author = ""
 
     return {
         "title": title,
@@ -559,7 +567,8 @@ def catalog_links_from_page(rule, html: str, page_url: str, bid: str,
 
 
 def normalize_catalog(items, sort_mode: str = "cid_numeric_asc",
-                      dedupe: str = "keep_first"):
+                      dedupe: str = "keep_first",
+                      continuation_pattern: str = None):
     """去重 + 排序 + 编号。
 
     这是核心归一化步骤：无论目录页给的是「倒序最新章节回显」「CSS 隐藏的乱序块」
@@ -581,6 +590,18 @@ def normalize_catalog(items, sort_mode: str = "cid_numeric_asc",
 
     items 元素可带 "status" / "note" 字段（用于把受保护的 VIP 章节一并纳入编号，
     使其在章节序列中占位但永不被抓取）。
+
+    `continuation_pattern`（v0.8.16）：**续页合并**。
+    古籍/文库站常把一章拆成多页，目录里同属一章的续页往往**没有自己的标题**，
+    只写一个页码标记（实测虚阁网《红楼梦》：`001`=`第一回…(1)`、`002`=`(2)`、`003`=`(3)`）。
+    不处理的话，277 个"章节"里大量是续页、标题还是 `(2)` `(3)` 这种无意义串。
+
+    传一个正则（如 `^[（(]\\d+[）)]$`）即启用：标题匹配的条目**并入前一条**，
+    不新增章；其 URL 收进前一章的 `extra_pages`，由引擎顺序抓完再拼装。
+
+    **为什么用目录而不是页内「下一页」链接**：页尾的「下一页」既可能是续页、
+    也可能是下一回，靠它判断需要猜；而目录页自己标了 `(2)`/`(3)` —— 那是**权威信号**。
+    ⚠ 受保护的续页**只丢弃、不收 URL**（第 3 层约束优先，绝不因为拼装而多请求 VIP 页）。
     """
     if dedupe == "keep_last":
         by_cid = {}
@@ -610,12 +631,31 @@ def normalize_catalog(items, sort_mode: str = "cid_numeric_asc",
     else:  # cid_numeric_asc（默认）
         ordered = sorted(by_cid.values(), key=lambda x: _num(x["cid"]))
 
+    # 续页合并（目录层，v0.8.16）：标题是「纯页码标记」的条目并进前一条
+    extra_by_cid = {}
+    if continuation_pattern:
+        rx = re.compile(continuation_pattern)
+        kept = []
+        for it in ordered:
+            t = (it.get("title") or "").strip()
+            if kept and t and rx.match(t):
+                host = kept[-1]
+                # ⚠ 受保护的续页只丢弃、**不收集 URL** —— 绝不因拼装而多请求 VIP 页
+                if it.get("status") not in PROTECTED_STATUSES:
+                    u = it.get("url") or ""
+                    if u:
+                        extra_by_cid.setdefault(host["cid"], []).append(u)
+                continue
+            kept.append(it)
+        ordered = kept
+
     chapters = []
     for i, it in enumerate(ordered, 1):
         chapters.append(Chapter(
             index=i, title=it["title"], url=it["url"], cid=it["cid"],
             volume=it.get("volume", ""),
             api_url=it.get("api_url", ""),
+            extra_pages=list(extra_by_cid.get(it["cid"], [])),
             status=it.get("status", STATUS_PENDING),
             note=it.get("note", "")))
     return chapters

@@ -13,7 +13,7 @@ from noveldown.parser import (body_api_fragment, catalog_links_from_page,  # noq
                               extract_paragraphs, make_soup,
                               normalize_catalog, parse_book_info,
                               parse_chapter_page)
-from noveldown.rules import load_rules  # noqa: E402
+from noveldown.rules import RuleError, load_rules  # noqa: E402
 from tests._base import read_fixture  # noqa: E402
 
 RULES = load_rules()
@@ -146,6 +146,143 @@ class TestCatalogFromFixtures(unittest.TestCase):
         info = parse_book_info(rule, html, "https://www.biqu520.net/books_9484/", "9484")
         self.assertIsInstance(info, dict)
         self.assertIn("title", info)
+
+
+class TestXugesFixtures(unittest.TestCase):
+    """虚阁网（v0.8.16 接入）：本仓第一个「文库型」站点。
+
+    三个形状结论被 fixture 钉住：
+      · 书 ID 是**路径**（`gdwx/hlm`），books 页与目录页是**同一个 index.htm**；
+      · 正文 = `td:not([class])` 的第一个命中（表格布局，锚点 `td.t50` 与正文不同行）；
+      · **多页章回**：目录里续页标题只有 `(2)`/`(3)`，须合并进前一章。
+    """
+
+    IDX = "https://www.xuges.com/gdwx/hlm/index.htm"
+
+    def test_book_info_from_title_tag(self):
+        from noveldown.parser import parse_book_info
+        html = read_fixture("xuges_hlm_index.html")
+        info = parse_book_info(RULES["xuges.com"], html, self.IDX, "gdwx/hlm")
+        self.assertEqual(info["title"], "红楼梦")
+        self.assertEqual(info["author"], "曹雪芹")
+
+    def test_title_author_patterns_cover_all_five_shapes(self):
+        """`<title>` 有五种实测形态，规则的正则必须都吃对。
+
+        ⚠ 关键是最后两种（**没有作者**）：不设 `author_pattern_strict` 的话，
+        `author` 会保留整条 title 当作者名。
+        """
+        import re
+        r = RULES["xuges.com"]
+        tpat = r.book_cfg["title_pattern"]
+        apat = r.book_cfg["author_pattern"]
+        cases = [("红楼梦|曹雪芹_虚阁网", "红楼梦", "曹雪芹"),
+                 ("三国演义・三国志通俗演义|罗贯中_虚阁网", "三国演义・三国志通俗演义", "罗贯中"),
+                 ("水浒传|水浒全传|施耐庵_虚阁网", "水浒传", "施耐庵"),
+                 ("胡适日记胡适日记_虚阁网_虚阁网", "胡适日记胡适日记", ""),
+                 ("外国畅销书_虚阁网", "外国畅销书", "")]
+        for raw, want_t, want_a in cases:
+            m = re.search(tpat, raw)
+            self.assertIsNotNone(m, raw)
+            got_t = (m.group(1) if m.groups() else m.group(0)).strip()
+            self.assertEqual(got_t, want_t, f"title 清洗错：{raw!r}")
+            m2 = re.search(apat, raw)
+            got_a = (m2.group(1) if m2 else "").strip() if m2 else ""
+            self.assertEqual(got_a, want_a, f"author 抽取错：{raw!r}")
+
+    def test_catalog_merges_continuation_pages(self):
+        """277 项 → **121 章** = 作者简介 1 + 正文 120 回（红楼梦真实回数）。"""
+        html = read_fixture("xuges_hlm_index.html")
+        rule = RULES["xuges.com"]
+        items, locked = collect_catalog_items(rule, html, self.IDX, "gdwx/hlm")
+        self.assertEqual(locked, [])
+        self.assertEqual(len(items), 279, "目录原文的编号链接数")
+        raw = normalize_catalog(items, rule.catalog_cfg["sort"],
+                                rule.catalog_cfg["dedupe"])
+        self.assertEqual(len(raw), 277, "不合并时续页会变成假章")
+        merged = normalize_catalog(items, rule.catalog_cfg["sort"],
+                                   rule.catalog_cfg["dedupe"],
+                                   rule.catalog_cfg["continuation_title_pattern"])
+        self.assertEqual(len(merged), 121)
+        # 续页不再作为独立章出现、标题也不再是纯页码
+        import re as _re
+        for c in merged:
+            self.assertIsNone(_re.match(r"^[（(]\d+[）)]$", c.title),
+                              f"仍有纯页码标题的假章：{c.title!r}")
+        # 第一回拿到 002/003 两个续页
+        c1 = merged[1]
+        self.assertEqual(c1.title, "・第一回 甄士隐梦幻识通灵 贾雨村风尘怀闺秀")
+        self.assertEqual([u.rsplit("/", 1)[-1] for u in c1.extra_pages],
+                         ["002.htm", "003.htm"])
+        self.assertEqual(sum(len(c.extra_pages) for c in merged), 156)
+        # ⚠ 末章标题里的「○」在**站点数据**里就是替换符（GB2312 装不下生僻字），
+        #   所以只能断言可核对的片段 —— 这是站点侧的数据损失，不是我们的 bug
+        self.assertTrue(merged[-1].title.startswith("・第一二"))
+        self.assertIn("甄士隐详说太虚情", merged[-1].title)
+
+    def test_chapter_content_via_css_only(self):
+        """正文用 `td:not([class])` 的第一个命中；且 <br> 分段已被原生支持。"""
+        html = read_fixture("xuges_hlm_chapter.html")
+        info = parse_chapter_page(RULES["xuges.com"], html,
+                                  "https://www.xuges.com/gdwx/hlm/001.htm", "001", "")
+        ps = info["paragraphs"]
+        self.assertGreater(len(ps), 10, "应被 <br> 切分成多段")
+        self.assertTrue(ps[0].startswith("此开卷第一回也"))
+        # 导航/页脚不得混进正文
+        for nav in ("虚阁网", "上一页", "下一页", "回目录"):
+            self.assertNotIn(nav, "\n".join(ps))
+
+    def test_utf8_page_fixture_decodes_cleanly(self):
+        """同站 utf-8 页的 fixture：锁住「编码逐页不同，必须按响应头解」。"""
+        html = read_fixture("xuges_wgwx_index.html")
+        self.assertIn("虚阁网", html)
+        self.assertNotIn("澶栧浗鏂囧", html, "utf-8 页被按 gbk 解的乱码指纹")
+        self.assertNotIn("\ufffd", html)
+
+
+class TestContinuationPatternValidation(unittest.TestCase):
+    """`catalog.continuation_title_pattern` 的校验（过宽会**静默少章**）。"""
+
+    def _load(self, ctp):
+        import json as _json
+        import os as _os
+        from tests._base import temp_subdir
+        td = temp_subdir("rules")
+        _os.makedirs(td, exist_ok=True)
+        raw = {"id": "x.site", "name": "X", "match": ["x.site"], "free_only": True,
+               "book": {"url_pattern": "(\\d+)", "info_url": "{origin}"},
+               "catalog": {"item_selector": "a",
+                           "id_from": {"mode": "href", "pattern": "(?P<cid>\\d+)"}},
+               "chapter": {"content_selector": "div#c"}}
+        if ctp is not None:
+            raw["catalog"]["continuation_title_pattern"] = ctp
+        with open(_os.path.join(td, "a.json"), "w", encoding="utf-8") as f:
+            _json.dump(raw, f, ensure_ascii=False)
+        return load_rules(td)
+
+    def test_too_broad_pattern_rejected(self):
+        """校验保证的三类必须拦下：空模式 / 匹配空串 / 匹配常见标题样本。
+
+        ⚠ 这不是「万能的过宽检测」—— 只覆盖这三类**可机械判定**的情形
+        （例如 `^[（(]\d*[）)]$` 允许 `()` 这种懒写法，机械判定抓不到，靠人写规则时自觉）。
+        """
+        for bad in (".*", "", ".*$", "^$", "第.*章", "序"):
+            with self.assertRaises(RuleError) as ctx:
+                self._load(bad)
+            self.assertIn("continuation_title_pattern", str(ctx.exception))
+
+    def test_bad_regex_rejected(self):
+        with self.assertRaises(RuleError):
+            self._load("^[（(]\\d+[）)]$(")
+
+    def test_shipped_xuges_pattern_is_valid(self):
+        r = load_rules()["xuges.com"]
+        self.assertEqual(r.catalog_cfg["continuation_title_pattern"],
+                         "^[（(]\\d+[）)]$")
+
+    def test_valid_narrow_pattern_loads(self):
+        self.assertIn("x.site", self._load("^[（(]\\d+[）)]$"))
+        self.assertIn("x.site", self._load("^\\s*（续）\\s*$"))
 
 
 class TestNestedJsonFields(unittest.TestCase):
