@@ -1,0 +1,68 @@
+{
+  "id": "heiyan.com",
+  "name": "黑岩网（正版·含 VIP）",
+  "pool": "正版",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://www.heiyan.com/book/139053",
+  "notes": "★ 黑岩网，2026-09-21 实测（全哥提供）。**含 VIP，只抓免费章**。\n\n【形态 —— 纯 HTTP，零新代码】\n  · 书籍页 `/book/{bid}`；**目录在独立页 `/chapter/{bid}`**（实测 200、20 万字节、**90693 汉字**，\n    整本目录一次给全：`ul.float-list.fill-block` 里 **5184 个章链接**）。\n    章链接形如 `/book/{bid}/{cid}`。\n  · 章节页 `/book/{bid}/{cid}`，正文容器 **`div.page-content`**（直接子元素就是一串 `<p>`，\n    实测 2162 汉字，很干净、无导航混入）。\n\n【VIP 标记 —— 现成机制直接覆盖，无需改代码】\n  目录项是 `<a class=\"isvip name\">`（实测前 400 项里 374 个带 `isvip`）。\n  ⚠ `isvip` 这个词**不在** `VIP_ITEM_CLASS_MARKERS` 表里，但该表的匹配是**子串**判断\n  （`if m in cls`）→ `isvip` 命中 `vip` ✓ 所以**不用加表**。\n  → VIP 章在目录层就锁掉，零请求。\n\n【排序】目录页按阅读顺序排列（第一项是「第一章」）→ 用 `document_order`。\n\n⚠ 法律：正版平台的**免费章节**。VIP 章不请求、不导出。",
+  "match": [
+    "heiyan.com"
+  ],
+  "book": {
+    "url_pattern": "/book/(\\d+)",
+    "info_url": "{url}",
+    "title": [
+      "@title"
+    ],
+    "title_pattern": "^(.+?)最新章节",
+    "author": [
+      "@title"
+    ],
+    "author_pattern": "_([^_]+?)作品",
+    "intro": [
+      "meta[name='description']"
+    ],
+    "cover": [
+      "meta[property='og:image']"
+    ]
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single",
+      "url": "{origin}/chapter/{bid}"
+    },
+    "item_selector": "ul.float-list a, ul.fill-block a",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/book/\\d+/(?P<cid>\\d+)"
+    },
+    "url_template": "{origin}/book/{bid}/{cid}",
+    "sort": "document_order",
+    "dedupe": "keep_first"
+  },
+  "chapter": {
+    "title_selector": "h1, .chapter-title, .title",
+    "content_selector": "div.page-content",
+    "content_selectors": [
+      "div.page-content"
+    ],
+    "strip_selectors": [
+      "script",
+      "style",
+      ".footer",
+      ".nav",
+      ".comment",
+      "#comment"
+    ],
+    "ad_patterns": [
+      "黑岩网",
+      "请记住本站",
+      "加入书架",
+      "手机版阅读"
+    ]
+  }
+}
