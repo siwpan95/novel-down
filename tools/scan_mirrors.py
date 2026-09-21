@@ -808,9 +808,25 @@ def main():
                     help="live 段重扫范围：重扫「未确认」或「有响应但被拒」的域，"
                          "用于把因环境导致的假死站救回来")
     ap.add_argument("--resume", action="store_true", help="跳过已扫过的域")
+    ap.add_argument("--no-proxy", action="store_true",
+                    help="**绕过环境变量代理**（直连）。\n"
+                         "本机 `http_proxy/https_proxy` 指向 WorkBuddy 沙箱代理\n"
+                         "（`http://127.0.0.1:6906`），requests 会**自动**走它。\n"
+                         "实测在高并发长任务下它会大量报 ProxyError\n"
+                         "（2026-09-21 复扫 229 域里有 **70 个**），而**直连同样能出网**\n"
+                         "（对照实测：同一 URL 走代理 200/27247 字节，直连 200/29372 字节）。\n"
+                         "→ 遇到大量 ProxyError 时，用本参数重扫即可把这部分救回来。")
     args = ap.parse_args()
     global _RETRIES
     _RETRIES = max(0, args.retries)
+
+    # ⚠ 必须在**建任何 Session 之前**清：`requests.Session()` 是懒加载的，
+    #    清完再发请求就拿到不带代理的 Session 了（进程级、只读，线程安全）。
+    if args.no_proxy:
+        dropped = [k for k in ("http_proxy", "https_proxy", "HTTP_PROXY",
+                               "HTTPS_PROXY", "all_proxy", "ALL_PROXY")
+                   if os.environ.pop(k, None) is not None]
+        print(f"--no-proxy：已忽略环境变量代理 {dropped or '（本来就没有）'}")
 
     if args.phase == "tidy":
         # 默认合并「首次全量」与「未确认重扫」两份结果 —— 不合并会丢第二轮救回的站
