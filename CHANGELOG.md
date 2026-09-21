@@ -5,6 +5,63 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.8.34] - 2026-09-21
+
+**P0 复扫第二轮**：修好「deep 段双协议兜底」后**重跑**，可做域从 14 → **25**，走完聚族与批量生成。
+
+### 重跑效果（修复的直接证据）
+
+| 指标 | 修复前 | 重跑 |
+|---|---|---|
+| **有章节数据（可做）** | 14 | **25** ⬆️ |
+| SSLError | **109** | **6** ⬇️ |
+
+⚠ 新暴露的主要失败变成 `ProxyError` 70 + `HTTP 502` 47（**本机代理不稳 / 站点侧网关错误**，
+与之前的 SSLError 性质不同，非双协议兜底能解决）。
+
+### 批量处理结果（第二轮）
+
+**① 同签名 → 并入既有族规则（4 条规则 / +5 域）**
+
+| 规则 | 新增域 | 域数 |
+|---|---|---|
+| `mirror-div-box-a-6eab16` | `m.dushuzhe.com`、`m.zhkanshu.com`、`x83zw.com` | 12 → **15** |
+| `mirror-div-layout-a-058805` | `zhuishu.la`（`bookszw.com` 已在） | → **14** |
+| `mirror-div-container-a-06148c` | `m.woo15.com` | 4 → **5** |
+| `mirror-div-book-list-a-44a71f` | `xingyueboke.com`（已在 match） | — |
+
+**② 全新签名 → 新建 1 条规则**：`mirror-div-m-book-list-a-359693`（`doupoall.com`）
+—— probe 通过（20 章 / 3999 字）。
+
+**③ ⭐ 跳转型：手工补建/并入（本轮最大发现，价值最高）**
+
+`gen_family_rule` 对这些组报「**无可验证 demo：书页跳到了本组域名之外**」——
+真相是**入口域名会跳到另一个域名**，所以 deep 拿到的 `book_url` 已不在本组：
+
+| 入口域 | **真实承载域** |
+|---|---|
+| `ibiquges.com` / `xbiquge.la` | **`ibiqugu.net`**（1709 章） |
+| `tycqzw.com` | **`tycqzw.info`**（1718 章） |
+| `ucxsw.com` | **`shukugu.com`**（1165 章） |
+| `qfxs123.com` | `lijizhi.com`（120 章，未收录） |
+
+→ 先按 deep 记录把**入口域**并入既有同签名规则
+（`mirror-dl-a-8a654d` → **67 域**；`mirror-div-box-con-a-b14f1f` → **7 域**），
+再**手动补上真实承载域**（工具因「无 deep 记录」会拒绝）并**同步 notes 域数**（门禁第 9 项校验）。
+另外我本已写好 2 条新规则的脚本 —— **它自己的 `os.path.exists` 检查发现 id 已存在并拒绝写入**，
+正好印证了上一轮加的 id 冲突防护在起作用。
+
+**④ 验证失败 3 条已删**：`mirror-wrap-a-8281e6`（demo 是**榜单页** `/top_0.html`）、
+`mirror-list-a-023fb9`（分类页）、`mirror-ul-chapter-list-a-0a3d0d`（**`/comic/` 漫画站**）。
+
+⚠ **暴露的工具缺陷**：`gen_family_rule` 选 `demo_url` 时会选到**分类页 / 榜单页**
+（`m.sevenxue.com/top_0.html`、`m.jdzfx.com/cate1/`）→ 导致草稿必然验证失败。**待改进**。
+
+### 状态
+
+- 规则 160 → **161**（启用 145 → **146**；顶层 47 → **48**，启用 32 → **33**）
+  ｜免费镜像 123 → **124**｜**镜像覆盖域 390 → 392**｜门禁 **11 项 PASS**
+
 ## [0.8.33] - 2026-09-21
 
 按全哥「继续完成任务」—— 把「复扫 229 域 → 过滤 → deep 深探 → 聚族 → 批量生成规则」全链路走完，

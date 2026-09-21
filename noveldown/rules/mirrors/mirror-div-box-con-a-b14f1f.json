@@ -8,12 +8,15 @@
   "requires_js": false,
   "fetch_mode": "http",
   "demo_url": "https://yanqing888.org/book/6407/",
-  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `div.box_con a` + 正文 `div#content`；域数 4；书号形态 ['digits'] → url_pattern=^.*/(\\d+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · yanqing888.org — 8109 章 / 1427 字\n  · xbiqugu.net — 1582 章 / 603 字\n  · du7.la — 730 章 / 1850 字\n  · dingdianxs.la — 807 章 / 2789 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。",
+  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `div.box_con a` + 正文 `div#content`；域数 7；书号形态 ['digits'] → url_pattern=^.*/(\\d+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · yanqing888.org — 8109 章 / 1427 字\n  · xbiqugu.net — 1582 章 / 603 字\n  · du7.la — 730 章 / 1850 字\n  · dingdianxs.la — 807 章 / 2789 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。\n\n【合并】追加域名 ['ibiquges.com', 'xbiquge.la']（2026-09-21 P0 复扫救回 3（跳转型），同签名逐域实测通过）\n  · ibiquges.com — 1709 章 / 1510 字\n  · xbiquge.la — 1709 章 / 1510 字",
   "match": [
     "dingdianxs.la",
     "du7.la",
+    "ibiquges.com",
+    "xbiquge.la",
     "xbiqugu.net",
-    "yanqing888.org"
+    "yanqing888.org",
+    "ibiqugu.net"
   ],
   "book": {
     "url_pattern": "^.*/(\\d+)(?:/|\\.html?)?$",
