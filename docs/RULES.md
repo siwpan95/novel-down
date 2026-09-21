@@ -93,7 +93,7 @@ noveldown/rules/mirrors/         **批量铺开的镜像池**（自动聚类生�
 | `item_selector` | 章节项选择器（`html` 模式必需）。**也可选中容器**：此时 href 从内嵌 `<a>` 取、**标题取容器文本**（书海 33% 的 `<a>` 文本为空，只选 `<a>` 会丢标题） |
 | `id_from.mode` | `href`（从链接取）\| `onclick`（从 onclick 取） |
 | `id_from.pattern` | 必须含 **命名捕获组 `(?P<cid>...)`** |
-| `url_template` | 可选。支持 `{origin}` `{bid}` `{cid}`；不填则 `urljoin(页面URL, href)` |
+| `url_template` | 可选。支持 `{origin}` `{bid}` `{cid}`；不填则 `urljoin(页面URL, href)`。⚠ 目录与书籍页**不在同一子域**时必须写**绝对 URL** —— 逐浪的目录在 `book.zhulang.com/{bid}/`，而 `{origin}` 会解析成书籍页的 `www.zhulang.com` |
 | `browser_wait_selector` | 可选。**目录页**专用的浏览器等待条件。优先级**高于**顶层 `browser.wait_selector` 的角色值；写 `false` / `""` 表示该页**明确不等待** |
 | `sort` | `cid_numeric_asc`（默认，ID 即顺序号）\| `document_order`（保持页面顺序，用于雪花 ID 站点）\| `cid_numeric_desc` |
 | `dedupe` | `keep_first`（默认）\| `keep_last`（回显在**列表头部**时用它，见下） |
@@ -116,7 +116,7 @@ noveldown/rules/mirrors/         **批量铺开的镜像池**（自动聚类生�
 | `content_selector` | ✓ 正文容器 CSS（用 `body_api` 时填 `div.nd-api-body`） |
 | `content_selectors` | 可选**候选列表**（同一站不同请求可能给不同容器；按序取第一个命中） |
 | `drop_leading_title_paragraph` | 可选布尔。正文首段**就是标题行**、且该元素无 class 可剔时（飞卢 `div.noveContent > p:first`）开启；**仅当首段与目录标题完全相同**时才删除 —— 宁可不删，也不吃掉真正的首段 |
-| `paragraph_selector` | 可选。**按段落元素逐个取文本**，而非整块容器文本。用于 `<p>` 里混着段评数/点赞数等附加节点的站点（如起点 `span.content-text`）。**未命中时会自动回退为容器整体切分**，并把原因写进章节备注（`extract_note`），避免整章静默变空 |
+| `paragraph_selector` | 可选。**按段落元素逐个取文本**，而非整块容器文本。用于 `<p>` 里混着段评数/点赞数等附加节点的站点（如起点 `span.content-text`）。**未命中时会自动回退为容器整体切分**，并把原因写进章节备注（`extract_note`），避免整章静默变空。⚠ 也用于「容器选对了、但里面混着导航」的站点 —— 潇湘书院 `div#reader-content` 里混了登录条 + 底部菜单 + 面包屑（容器 2400 汉字 / 正文 2164），逐浪 `div#read-content` 前面挂着 `div.textinfo`（小说/作者/更新时间/字数）。这类站改 `paragraph_selector` 即可，**不必硬凑 `strip_selectors`**：只要导航不在 `<p>` 里，逐段取就天然排除 |
 | `strip_selectors` | 需从容器内剔除的元素（导航 / 标题 / 脚本 / 水印） |
 | `vip_markers` | 可选。**整页**付费特征词/类名（付费信号不在正文里、而在 CSS 文件名或页面元素上的站点，如 17K 的 `chapter_vip`） |
 | `next_page.selector` | 分页导航链接选择器 |

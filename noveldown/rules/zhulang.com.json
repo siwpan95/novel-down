@@ -1,0 +1,81 @@
+{
+  "id": "zhulang.com",
+  "name": "逐浪网（连尚文学·免费+VIP 混排）",
+  "pool": "正版",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://www.zhulang.com/780254/",
+  "notes": "★ 逐浪网（连尚文学旗下）。2026-09-21 实测接入，**纯 HTTP、零新代码**。\n\n【关键形态：书籍页与阅读页在**两个域**】\n  · 书籍页 `www.zhulang.com/{bid}/`（22459 字节）：`<title>` = 「书名(作者)最新章节首发更新_逐浪小说」\n    → `title_pattern` / `author_pattern` 从 `<title>` 清洗即可。\n    `meta[name=description]` 是**本书专属**文案（含书名+作者+简介），可用作 intro。\n    ⚠ 该页的 `h1` 是**站头**「逐浪小说」，不是书名 —— 别把 h1 写进 title 候选。\n    ⚠ 该页只有「章节目录 / 查看全部章节」的**跳转链接**，目录本身不在这里。\n  · **目录在阅读域 `book.zhulang.com/{bid}/`**（29704 字节，纯 HTTP 0.2s）：\n    `ul li a[href='https://book.zhulang.com/{bid}/{cid}.html']`，实测该书 **129 条**\n    （与 `<title>` 里的「更新至129」完全吻合）。\n    → 目录 URL 是**跨子域绝对地址**，故 `catalog.pages.url` 与 `url_template` 都写绝对 URL\n      （`{origin}` 会解析成 `www.zhulang.com`，用不得）。\n  · 章节页 `book.zhulang.com/{bid}/{cid}.html`：正文 `div#read-content`。\n\n【为什么用 `paragraph_selector`】\n  `div#read-content` 的直接子元素前面挂着 `<h2>章名</h2>` 与\n  `div.textinfo`（「小说：… 作者：… 更新时间：… 字数：…」）。\n  容器纯文本 4632 汉字，其中正文 4607。改 `div#read-content p` 逐段取即可自然排除头部。\n  章名单独用 `title_selector: div#read-content h2` 取（页面的 `h1` 同样是站头「逐浪小说」）。\n\n【免费/VIP】书籍页有「免费章节 | VIP章节」两个 `javascript:;` 标签（目录由 JS 载入那段），\n  但 `book.zhulang.com/{bid}/` 的静态 HTML 直接给出完整章节表且**无任何 `vip` 类名**；\n  实测第 4 章与末章（第129章）正文均完整可读。按项目六层约束处理：\n  若某章落到付费墙，第 4 层「正文付费墙特征」会拦下（不会静默当成正文）。\n  正文尾部有「打击盗版，支持正版，请到逐浪网 www.zhulang.com 阅读最新内容。」→ 已进 `ad_patterns`。\n\n⚠ 法律：正版平台的**免费章节**。",
+  "match": [
+    "zhulang.com"
+  ],
+  "book": {
+    "url_pattern": "^https?://[^/]+/(\\d+)/",
+    "info_url": "https://www.zhulang.com/{bid}/",
+    "title": [
+      "@title"
+    ],
+    "title_pattern": "^([^（(]+)",
+    "author": [
+      "@title"
+    ],
+    "author_pattern": "[（(]([^）)]+)[）)]",
+    "intro": [
+      "meta[name='description']"
+    ]
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single",
+      "url": "https://book.zhulang.com/{bid}/"
+    },
+    "item_selector": "ul li a[href$='.html']",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/(?P<cid>\\d+)\\.html$"
+    },
+    "url_template": "https://book.zhulang.com/{bid}/{cid}.html",
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first",
+    "item_deny_text": [
+      "查看全部章节",
+      "章节目录",
+      "免费章节",
+      "VIP章节",
+      "订阅全部",
+      "逐浪小说",
+      "首页",
+      "登录"
+    ]
+  },
+  "chapter": {
+    "title_selector": "div#read-content h2, h2",
+    "content_selector": "div#read-content",
+    "paragraph_selector": "div#read-content p",
+    "content_selectors": [
+      "div#read-content",
+      "div.read-main"
+    ],
+    "strip_selectors": [
+      "script",
+      "style",
+      "div.textinfo",
+      "h2"
+    ],
+    "ad_patterns": [
+      "打击盗版",
+      "支持正版",
+      "请到逐浪网",
+      "逐浪小说",
+      "手机版阅读",
+      "最新网址",
+      "本章未完",
+      "点击下一页",
+      "求收藏",
+      "求推荐"
+    ]
+  }
+}

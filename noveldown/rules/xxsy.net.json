@@ -1,0 +1,79 @@
+{
+  "id": "xxsy.net",
+  "name": "潇湘书院（阅文系·言情免费线）",
+  "pool": "正版",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://www.xxsy.net/book/36931095804318409",
+  "notes": "★ 潇湘书院（阅文系）。2026-09-21 实测接入，**纯 HTTP、零新代码**，全站不需要浏览器。\n\n【形态（都是实测）】\n  · 书籍页 `/book/{bid}`（bid 是雪花 ID，如 36931095804318409）。\n    `dl.bookprofile` 里：`h1` = 书名、`.title span` = 「文 / 作者」、\n    `div#book_intro` = 简介、`.sub-newest` = 「最新公共章节」。\n    ⚠ **书籍页不给完整目录**，只有「最新公共章节」一条 + 「开始阅读」。\n  · 目录在**独立页 `/chapterlist/{bid}`**（书籍页上的「作品目录」链接即指向它）：\n    实测 101955 字节 / 12335 汉字 / 0.4s，`ul li a[href='/chapter/{bid}/{cid}']`。\n    卷标记是非锚点 `<li>第一卷</li>`（`ul > li:not(:has(a))`）→ 交给 `volume_selector`\n    （soupsieve 支持 `:has()`，已在仓库里实测 3 卷命中）。\n  · 章节页 `/chapter/{bid}/{cid}`：正文 `div#reader-content`，0.2~0.4s。\n\n【为什么用 `paragraph_selector` 而不是容器整块】\n  `div#reader-content` 的**直接子元素**混了三块非正文：`div.relative.h-64px`（登录条）、\n  `div#menu`（底部菜单），而正文那个 `div.min-h-100vh` 的**开头还嵌了面包屑**\n  （「首页＋书名＋章名」）。实测容器纯文本 2400 汉字，其中只有 2164 是正文；\n  改用 `div#reader-content p` 逐段取，首段直接是正文第一句，导航自动被排除。\n\n【免费判定】书籍页 `.sub-cols` 显示「会员作品」，但**章节列表给出的就是未登录可见的部分**\n  （书里写「最新公共章节」而非「最新章节」）。实测该书 22 章全部可读、无任何 `vip` 类名、\n  `<title>` 明写「全文免费阅读」。仍按项目六层约束处理：万一有章落到付费墙，第 4 层会拦。\n\n⚠ 法律：正版平台的**免费章节**。",
+  "match": [
+    "xxsy.net"
+  ],
+  "book": {
+    "url_pattern": "/book/(\\d+)",
+    "info_url": "{origin}/book/{bid}",
+    "title": [
+      "dl.bookprofile h1",
+      "h1",
+      "@title"
+    ],
+    "title_pattern": "^《([^》]+)》",
+    "author": [
+      "dl.bookprofile .title span"
+    ],
+    "author_pattern": "文\\s*/\\s*(.+)$",
+    "intro": [
+      "div#book_intro"
+    ],
+    "cover": [
+      "dl.bookprofile .book-cover img@src"
+    ]
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single",
+      "url": "{origin}/chapterlist/{bid}"
+    },
+    "item_selector": "ul li a[href*='/chapter/']",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/chapter/\\d+/(?P<cid>\\d+)"
+    },
+    "url_template": "{origin}/chapter/{bid}/{cid}",
+    "volume_selector": "ul li:not(:has(a))",
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first",
+    "item_deny_text": [
+      "开始阅读",
+      "作品介绍",
+      "作品目录",
+      "手机阅读"
+    ]
+  },
+  "chapter": {
+    "title_selector": "h1",
+    "content_selector": "div#reader-content",
+    "paragraph_selector": "div#reader-content p",
+    "content_selectors": [
+      "div#reader-content",
+      "div#reader"
+    ],
+    "strip_selectors": [
+      "script",
+      "style",
+      "div#menu",
+      "div.relative.h-64px"
+    ],
+    "ad_patterns": [
+      "潇湘书院",
+      "手机阅读",
+      "请记住本站",
+      "最新网址",
+      "本章未完",
+      "点击下一页"
+    ]
+  }
+}

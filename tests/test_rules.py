@@ -389,7 +389,57 @@ class _Stub:
         self.rule = rule
 
 
-class TestWaitSelectorRoles(unittest.TestCase):
+class TestXxsyAndZhulangRules(unittest.TestCase):
+    """v0.8.14 接入的两个正版站：形状断言（防止后续改规则时踩回旧坑）。"""
+
+    def test_xxsy_rule_shape(self):
+        r = load_rules()["xxsy.net"]
+        self.assertTrue(r.enabled)
+        self.assertEqual(r.fetch_mode, "http")
+        self.assertFalse(r.requires_js, "纯 HTTP 可做，不该标需JS")
+        # 书籍页不给目录 → 目录必须走独立页 /chapterlist/{bid}
+        self.assertIn("/chapterlist/{bid}", r.catalog_cfg["pages"]["url"])
+        self.assertEqual(r.catalog_cfg["volume_selector"], "ul li:not(:has(a))")
+        # 正文容器混了导航 → 必须逐段取
+        self.assertEqual(r.chapter_cfg["paragraph_selector"],
+                         "div#reader-content p")
+        self.assertTrue(r.book_cfg["cover"][0].endswith("@src"))
+        self.assertIn("xxsy.net", r.match)
+
+    def test_xxsy_catalog_url_is_not_book_page(self):
+        """反面锚点：目录 URL 绝不能等于书籍页（否则只拿到 1~2 章）。"""
+        r = load_rules()["xxsy.net"]
+        self.assertNotEqual(r.catalog_cfg["pages"]["url"],
+                            r.book_cfg["info_url"])
+
+    def test_zhulang_rule_shape(self):
+        r = load_rules()["zhulang.com"]
+        self.assertTrue(r.enabled)
+        self.assertEqual(r.fetch_mode, "http")
+        # 目录在**阅读子域**，必须写绝对 URL（{origin} 会指向 www）
+        self.assertTrue(r.catalog_cfg["pages"]["url"].startswith(
+            "https://book.zhulang.com/"))
+        self.assertTrue(r.catalog_cfg["url_template"].startswith(
+            "https://book.zhulang.com/"))
+        self.assertEqual(r.chapter_cfg["paragraph_selector"],
+                         "div#read-content p")
+        # 两处 h1 都是站头「逐浪小说」→ 书名只能从 <title> 清洗
+        self.assertEqual(r.book_cfg["title"], ["@title"])
+        self.assertIn("zhulang.com", r.match)
+
+    def test_zhulang_bid_extraction_accepts_both_hosts(self):
+        r = load_rules()["zhulang.com"]
+        for url in ("https://www.zhulang.com/780254/",
+                    "https://book.zhulang.com/780254/"):
+            self.assertEqual(r.extract_bid(url), "780254", url)
+
+    def test_zhulang_book_url_is_www_domain(self):
+        """书籍页走 www（有 title/作者/简介），目录走 book 子域 —— 两者不可混。"""
+        r = load_rules()["zhulang.com"]
+        self.assertTrue(r.book_cfg["info_url"].startswith(
+            "https://www.zhulang.com/"))
+
+
     """浏览器等待条件的**角色化**解析（v0.8.1）。
 
     背景：`browser.wait_selector` 旧写法是**字符串**，会被所有角色继承 ——

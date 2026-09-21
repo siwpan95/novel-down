@@ -147,6 +147,115 @@ class TestCatalogFromFixtures(unittest.TestCase):
         self.assertIn("title", info)
 
 
+class TestXxsyFixtures(unittest.TestCase):
+    """潇湘书院（v0.8.14 接入）：书籍页不给目录，目录在独立页；正文要**逐段**取。
+
+    这一站的意义在于两条「形状」结论被 fixture 钉住：
+      · 书籍页只有「最新公共章节」+「开始阅读」，目录必须去 `/chapterlist/{bid}`；
+      · `div#reader-content` 里混着登录条 / 底部菜单 / 面包屑 →
+        必须用 `paragraph_selector` 逐段取，否则首段会变成导航文字。
+    """
+
+    BOOK = "https://www.xxsy.net/book/36931095804318409"
+    LIST = "https://www.xxsy.net/chapterlist/36931095804318409"
+
+    def test_book_info(self):
+        html = read_fixture("xxsy_book.html")
+        info = parse_book_info(RULES["xxsy.net"], html, self.BOOK, "36931095804318409")
+        self.assertEqual(info["title"], "禁欲霸总白天冷冰冰，夜里他超爱")
+        self.assertEqual(info["author"], "林舒浅", "作者取 dl.bookprofile .title span")
+        self.assertTrue(info["intro"].startswith("【先虐女后虐男"),
+                        f"简介必须来自 div#book_intro，实际 {info['intro'][:40]!r}")
+        self.assertTrue(info["cover"].startswith("//bookcover.yuewen.com"),
+                        "封面用 sel@attr 取 img@src")
+
+    def test_book_page_has_no_catalog(self):
+        """反面锚点：书籍页的章节链接**只有 1 条**（最新公共章节），不能当目录用。"""
+        html = read_fixture("xxsy_book.html")
+        items, _ = collect_catalog_items(RULES["xxsy.net"], html, self.BOOK,
+                                        "36931095804318409")
+        self.assertLessEqual(len(items), 2,
+                             "书籍页若被当成目录页，只会拿到 1~2 章（这正是必须走 "
+                             "/chapterlist/ 的原因）")
+
+    def test_catalog(self):
+        html = read_fixture("xxsy_catalog.html")
+        rule = RULES["xxsy.net"]
+        items, locked = collect_catalog_items(rule, html, self.LIST,
+                                              "36931095804318409")
+        self.assertEqual(locked, [], "该站目录无 VIP 标记")
+        self.assertEqual(len(items), 22)
+        self.assertEqual(items[0]["cid"], "99142876033772511")
+        self.assertEqual(items[0]["title"], "第1章 ：浅浅，这三年，你幸福吗？")
+        self.assertEqual(items[0]["url"],
+                         "https://www.xxsy.net/chapter/36931095804318409/99142876033772511")
+        self.assertEqual(items[0]["volume"], "第一卷", "卷标记是非锚点 li 的文本")
+        chs = normalize_catalog(items)
+        self.assertEqual([c.index for c in chs][:3], [1, 2, 3])
+        self.assertIn("第22章", chs[-1].title)
+
+    def test_chapter_paragraphs_exclude_nav(self):
+        html = read_fixture("xxsy_chapter.html")
+        info = parse_chapter_page(RULES["xxsy.net"], html,
+                                  "https://www.xxsy.net/chapter/36931095804318409/99142876033772511",
+                                  "99142876033772511", "第1章 ：浅浅，这三年，你幸福吗？")
+        text = "\n".join(info["paragraphs"])
+        self.assertGreater(len(text), 1500)
+        self.assertTrue(text.startswith("盛夏七月，夜间的风裹挟着燥热。"),
+                        f"首段必须是正文（实际 {text[:40]!r}）")
+        for nav in ("登录", "首页", "夜间模式", "目录书详情"):
+            self.assertNotIn(nav, text[:200],
+                             f"导航文字 {nav!r} 不得混进正文（须用 paragraph_selector）")
+
+
+class TestZhulangFixtures(unittest.TestCase):
+    """逐浪网（v0.8.14 接入）：书籍页与目录**在两个子域**，正文头部要剃掉。
+
+    钉住的三条：
+      · 目录在阅读域 `book.zhulang.com/{bid}/`（跨子域绝对 URL）；
+      · 两处 `h1` 都是**站头**「逐浪小说」，章名在 `div#read-content h2`；
+      · `div#read-content` 里挂着 `div.textinfo`（小说/作者/更新时间/字数）→
+        用 `paragraph_selector` 逐段取可自然排除。
+    """
+
+    BOOK = "https://www.zhulang.com/780254/"
+    CAT = "https://book.zhulang.com/780254/"
+
+    def test_book_info_from_title(self):
+        html = read_fixture("zhulang_book.html")
+        info = parse_book_info(RULES["zhulang.com"], html, self.BOOK, "780254")
+        self.assertEqual(info["title"], "我的西海雄鹰翱翔")
+        self.assertEqual(info["author"], "懿小茹")
+        self.assertIn("原子弹", info["intro"])
+
+    def test_catalog_is_cross_subdomain(self):
+        html = read_fixture("zhulang_catalog.html")
+        rule = RULES["zhulang.com"]
+        items, locked = collect_catalog_items(rule, html, self.CAT, "780254")
+        self.assertEqual(locked, [])
+        self.assertEqual(len(items), 129, "与站点自述「更新至129」一致")
+        self.assertEqual(items[0]["cid"], "319")
+        self.assertEqual(items[0]["title"], "001 秘密一世")
+        self.assertEqual(items[0]["url"], "https://book.zhulang.com/780254/319.html")
+        self.assertNotIn("h1", " ".join(str(item) for item in items[:1]),
+                        "站头 h1 不得混进目录项")
+        chs = normalize_catalog(items)
+        self.assertEqual(chs[-1].title, "129 盛世如愿")
+        cids = [int(c.cid) for c in chs]
+        self.assertEqual(cids, sorted(cids), "cid 升序即阅读顺序")
+
+    def test_chapter_strips_textinfo_header_and_anti_piracy_line(self):
+        html = read_fixture("zhulang_chapter.html")
+        info = parse_chapter_page(RULES["zhulang.com"], html,
+                                  "https://book.zhulang.com/780254/319.html",
+                                  "319", "001 秘密一世")
+        text = "\n".join(info["paragraphs"])
+        self.assertGreater(len(text), 1500)
+        self.assertNotIn("字数：", text[:300], "div.textinfo 头部不得进正文")
+        self.assertNotIn("打击盗版", text, "站尾反盗版行必须被 ad_patterns 过滤")
+        self.assertNotIn("小说：我的西海雄鹰翱翔", text[:300])
+
+
 class TestChapterExtract(unittest.TestCase):
 
     def test_shuquge_marker_div_is_stripped(self):
