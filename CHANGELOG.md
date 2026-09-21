@@ -5,6 +5,82 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.8.38] - 2026-09-22
+
+按全哥「以安装版 exe/msi、便携版/免安装版的形式制作发行版」执行；
+过程中全哥发现「项目似乎只有 CLI 版，没有 GUI 版」→ **本轮补上图形界面**。
+
+### Added（本轮主线 1）：Tkinter 图形界面 `noveldown/gui.py`
+
+**零第三方依赖**（标准库 Tkinter），覆盖主流程：
+**选站点（161 条规则，可搜索）→ 粘 URL → 抓取（实时日志 + 进度条）→ 勾选格式导出 → 打开输出目录**。
+
+设计上刻意**只做外壳、不复制核心逻辑**：抓取仍走 `engine.Downloader`、导出仍走
+`exporters.export_all`、校对仍走 `proofread`，GUI 只是把 CLI 的流程接到控件上。
+
+三个值得一提的实现点：
+
+1. **线程模型**：抓取跑在后台线程，否则界面全程卡死；
+   但后台线程**不能碰 Tk 控件** → 日志/进度全部塞进 `queue.Queue`，UI 线程用 `after(120ms)` 取。
+2. ⚠ **「停止」怎么实现**：`Downloader.run()` **不接受 stop 参数**（签名为 `run(limit, force)`）。
+   所以停止 = 在 **progress 回调里抛 `KeyboardInterrupt`** —— 因为 `run()` 对它有专门处理
+   （保存断点后重抛），这样停止不会丢进度。**不要去 set 一个没人看的标志位。**
+3. 选中站点会**自动把该站 `demo_url` 填进 URL 框**，省得用户去翻 README 抄地址。
+
+⚠ 需要 Python 带 **Tcl/Tk**；没有时启动会给**明确提示并建议改用命令行**，不静默失败。
+
+**测试**：`tests/test_gui.py` **5 个用例**，分两层 ——
+不依赖 Tk 的纯逻辑（`_Args` → config 映射、下拉标签解析）谁都能跑；
+需要 Tk 的启动自检用 `skipUnless` 守着（无 Tk 环境自动跳过而不是报错）。
+⚠ 为什么必须测：GUI 与 CLI **共用同一套引擎**，GUI 传参写错时**CLI 的测试发现不了**。
+
+### Added（主线 2）：发行版构建体系 `packaging/`
+
+| 文件 | 作用 |
+|---|---|
+| `entry_console.py` / `entry_gui.py` | 打包入口（⚠ 顶部**强制 stdout UTF-8**，见下） |
+| `build.py` | 一键构建：`--portable` / `--gui` / `--zip` / `--msi` / `--all` |
+| `setup_cx.py` | cx_Freeze 配置（MSI） |
+| `inno.iss` | Inno Setup 脚本（本机无 ISCC 且外网下载被拦，未编译） |
+| `README.md` | 构建方法 + 5 个踩坑清单 + 实测数据 |
+
+**实测产物**（本机 Windows / Python 3.14.7 / PyInstaller 6.22.2）：
+
+| 产物 | 体积 | 实测 |
+|---|---|---|
+| 便携版 onedir | **35 MB** | 启动 **1.4s**；端到端抓 3 章/12071 字，导出 TXT/MD/EPUB 全成功 |
+| 便携版 onefile | **18.6 MB** | ⚠ 启动 **47s**（每次解包 + 杀软实时扫描）→ 说明里建议日常用 onedir |
+| 便携版 zip | 18.0 MB | `noveldown-0.8.38-portable-win64.zip` |
+| 图形版 onedir | 见构建输出 | `noveldown-gui.exe`（windowed） |
+
+### ⚠⚠ Fixed / 踩坑（全部写进 packaging/README.md）
+
+1. **打包后 stdout 是 GBK，输出 `⚠` 直接崩** —
+   `UnicodeEncodeError: 'gbk' codec can't encode '\u26a0'`。
+   入口顶部 `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` 解决，**换入口必须保留**。
+2. **必须显式排除无关模块**：本机 site-packages 装了大量无关包，不排除会把
+   numpy / PIL / cryptography / curl_cffi / gevent / Cython / pygame 一起打进去 → **110MB**；
+   排除后 **35MB**。
+3. **`--add-data` 必须绝对路径**（相对会被解析到 `--specpath` 目录，报找不到 rules）。
+4. **规则是数据文件**：`noveldown/rules/*.json`（161 条）+ `identities.json` 必须显式带上。
+5. **cx_Freeze 的 `build_exe` 目录要显式指定**（否则报 `cannot be cleaned`）。
+
+### ⚠ 本轮未完成：MSI 安装版
+
+cx_Freeze 在本机**打不出 MSI**：它把 site-packages 里无关内容（含音频库）拉进来 →
+中间产物 **2.7GB** → CAB 打包阶段 `ValueError: FCI error 1` 直接失败。
+（`dist/` 里那个 72KB 的 msi 是**半成品，不可用**，已删。）
+
+另外 Inno Setup 的外网下载被拦（`files.jrsoftware.org` 只回 315 字节错误页）、
+cx_Freeze 的 `include_msvcr` 需要写 `%APPDATA%\cxfreeze` 也被沙箱拒绝。
+→ 按全哥决定：**接受现状**，交付便携版（zip + onefile）+ 保留 `inno.iss` 供有网机器编译。
+
+### 状态
+
+- 规则 **161**（启用 146）不变｜测试 **283 → 288**（+5，GUI）｜门禁 11 项 PASS
+- `.gitignore` 补 `dist/` `build/` `*.spec`（35MB+ 构建产物绝不入仓）
+- 新增：`noveldown/gui.py`｜`packaging/`（6 个文件）｜`tests/test_gui.py`
+
 ## [0.8.37] - 2026-09-21
 
 收尾最后一个待办：**ProxyError 那 70 个域**到底是不是「被代理误杀」。

@@ -42,6 +42,23 @@ onefile 每次运行都要把 18MB 解包到临时目录，本机**杀毒软件�
 
 → 建议：**日常用 onedir 版**；onefile 只适合「偶尔拿到别的机器上跑一下」的场景。
 
+### 图形界面版（noveldown-gui）
+
+```bat
+F:/Python314/python.exe packaging/build.py --gui
+```
+
+产物 `dist/noveldown-gui/noveldown-gui.exe`（**windowed**，双击即开、不弹控制台）。
+
+⚠ 两个与 CLI 版不同的处理：
+
+- **不能排除 `tkinter`**（CLI 版排除它是为了省 ~10MB，GUI 版必须留着）；
+- **只出 onedir、不出 onefile** —— onefile 每次启动要解包 + 被杀软扫描，实测 **47 秒**，
+  对「双击就要看到窗口」的 GUI 完全不可接受。
+
+⚠ GUI 版依赖打包用的 Python **自带 Tcl/Tk**（本机 `F://Python314` 自带 Tcl/Tk 9）。
+用托管 Python（无 tcl/tk）打包会报 `tkinter installation is broken`。
+
 ## 端到端验证（实测通过）
 
 用便携版真抓一本书（`dist/noveldown/noveldown.exe fetch ... --limit 3`）：

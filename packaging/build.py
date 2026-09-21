@@ -63,16 +63,30 @@ def _run(cmd, cwd=ROOT, env=None):
     return subprocess.run(cmd, cwd=cwd, env=env).returncode == 0
 
 
-def build_portable(py, onefile):
-    name = "noveldown-onefile" if onefile else "noveldown"
-    cmd = [py, "-m", "PyInstaller", os.path.join(HERE, "entry_console.py"),
+def build_portable(py, onefile, gui=False):
+    """打包一个入口。gui=True 时用 entry_gui.py + --windowed（不弹控制台）。
+
+    ⚠ GUI 版**不能**排除 tkinter（CLI 版要排除，能省 ~10MB）。
+    """
+    if gui:
+        entry = "entry_gui.py"
+        name = "noveldown-gui" + ("-onefile" if onefile else "")
+        mode = "--windowed"
+        excludes = [m for m in EXCLUDES if m != "tkinter"]
+    else:
+        entry = "entry_console.py"
+        name = "noveldown-onefile" if onefile else "noveldown"
+        mode = "--console"
+        excludes = EXCLUDES
+    cmd = [py, "-m", "PyInstaller", os.path.join(HERE, entry),
            f"--name={name}",
            "--onefile" if onefile else "--onedir",
-           "--console", "--noconfirm"]
-    cmd += [f"--exclude-module={m}" for m in EXCLUDES]
+           mode, "--noconfirm"]
+    cmd += [f"--exclude-module={m}" for m in excludes]
     cmd += DATA_ARGS
+    kind = ("gui-" if gui else "") + ("onefile" if onefile else "onedir")
     cmd += [f"--distpath={os.path.join(ROOT, 'dist')}",
-            f"--workpath={os.path.join(ROOT, 'build', 'onefile' if onefile else 'onedir')}",
+            f"--workpath={os.path.join(ROOT, 'build', kind)}",
             f"--specpath={os.path.join(ROOT, 'build')}"]
     ok = _run(cmd)
     print(("✓ " if ok else "✗ ") + name)
@@ -115,6 +129,7 @@ def main():
     ap.add_argument("--pkgs-dir", default=os.path.join(ROOT, ".deps", "pkgs"),
                     help="cx_Freeze 所在目录（pip --target 装），用于 MSI")
     ap.add_argument("--portable", action="store_true", help="便携版（onedir + onefile）")
+    ap.add_argument("--gui", action="store_true", help="图形界面版（windowed，不弹控制台）")
     ap.add_argument("--msi", action="store_true", help="MSI 安装版")
     ap.add_argument("--zip", action="store_true", help="把 onedir 压成 zip")
     ap.add_argument("--all", action="store_true", help="便携版 + zip + MSI")
@@ -122,9 +137,9 @@ def main():
     args = ap.parse_args()
 
     if args.all:
-        args.portable = args.msi = args.zip = True
-    if not (args.portable or args.msi or args.zip):
-        print("请指定 --portable / --msi / --zip / --all")
+        args.portable = args.msi = args.zip = args.gui = True
+    if not (args.portable or args.msi or args.zip or args.gui):
+        print("请指定 --portable / --gui / --msi / --zip / --all")
         return 1
 
     if args.clean:
@@ -138,6 +153,9 @@ def main():
     if args.portable:
         ok &= build_portable(args.py, onefile=False)
         ok &= build_portable(args.py, onefile=True)
+    if args.gui:
+        # GUI 只出 onedir：onefile 每次解包 + 杀软扫描要 47 秒，对双击启动的 GUI 不可接受
+        ok &= build_portable(args.py, onefile=False, gui=True)
     if args.zip:
         ok &= zip_portable()
     if args.msi:
