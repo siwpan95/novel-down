@@ -11,7 +11,7 @@ FictionDown 是 GPL-3.0、novel-downloader 是 AGPL-3.0-or-later，本项目是 
 但"不含"如果只写在文档里，迟早会有人手滑 `git add -A` 把它带进去。
 所以做成 <1 秒可跑的检查。
 
-六项检查
+九项检查
 --------
 1. 许可文件唯一且为本项目 LICENSE（不得混入第三方 LICENSE/COPYING）
 2. 不跟踪第三方源码目录（_ref/ vendor/ node_modules/ third_party/ …）
@@ -20,6 +20,8 @@ FictionDown 是 GPL-3.0、novel-downloader 是 AGPL-3.0-or-later，本项目是 
 5. 不跟踪凭据（复用 noveldown.freeguard.selfcheck）
 6. 文档一致性：docs/REFERENCE.md 必须为每个第三方来源同时给出**上游 URL**与**许可证**
 7. 生产代码（noveldown/ tools/ tests/）不得写死本机绝对路径（解释器安装目录/用户目录/开发盘）
+8. 无调试残留 / 草稿文件
+9. 镜像族规则 `notes` 里的「域数 N」必须等于 `match` 长度（同一事实写在两处必须相等）
 
 用法：
     python tools\\check_repo.py
@@ -28,6 +30,7 @@ FictionDown 是 GPL-3.0、novel-downloader 是 AGPL-3.0-or-later，本项目是 
 """
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -196,6 +199,31 @@ def check(root_dir=ROOT, tracked=None) -> list:
         if "不入仓" not in doc and "不放进仓库" not in doc:
             bad.append(("6 借鉴记账完整",
                         "未声明第三方源码「不入仓」及理由"))
+
+    # --- 9. 镜像族规则：notes 里的「域数 N」必须等于 match 长度 ---
+    # 「同一事实写在两处必须相等」的典型：`notes` 是给人看的散文，
+    # `match` 是机器读的真相。手工合并域名时最容易只改一处 ——
+    # 实测（v0.8.12 那批）就漏了 3 条，notes 少算、match 已多。
+    # 这条约束本来是散文（"记得同步更新"），做成 <1 秒的机械检查最省心。
+    mir_dir = os.path.join(root_dir, "noveldown", "rules", "mirrors")
+    if os.path.isdir(mir_dir):
+        for name in sorted(os.listdir(mir_dir)):
+            if not name.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(mir_dir, name), encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception as e:
+                bad.append(("9 镜像族域数一致", f"{name}: JSON 解析失败（{e}）"))
+                continue
+            m = re.search(r"域数 (\d+)", data.get("notes") or "")
+            if not m:
+                continue
+            n = len(data.get("match") or [])
+            if int(m.group(1)) != n:
+                bad.append(("9 镜像族域数一致",
+                            f"{name}: notes 写「域数 {m.group(1)}」，"
+                            f"但 match 里有 {n} 个域"))
     return bad
 
 
@@ -264,6 +292,7 @@ def main():
     print(f"  第三方来源清单见 {REFERENCE_DOC}（只记来源与许可，不含其源码）")
     print("  7 生产代码无硬编码本机路径（解释器 / 用户目录 / 开发盘）  ✓")
     print("  8 无调试残留 / 草稿文件                           ✓")
+    print("  9 镜像族规则 notes 的「域数 N」== match 长度       ✓")
     return 0
 
 

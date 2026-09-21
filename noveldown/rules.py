@@ -32,6 +32,9 @@ RULES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rules")
 
 REQUIRED_FIELDS = ("id", "name", "match", "free_only")
 
+# `book.info_api` 片段里允许覆盖的元数据字段（与 parse_book_info 的返回键一一对应）。
+INFO_API_FIELDS = ("title", "author", "intro", "cover", "status")
+
 
 class RuleError(ValueError):
     """规则文件非法。"""
@@ -92,9 +95,36 @@ class Rule:
                 raise RuleError(f"{self.id}: json_api 模式必须提供 catalog.json.url")
         if not self.raw["chapter"].get("content_selector"):
             raise RuleError(f"{self.id}: chapter.content_selector 不能为空")
-        if self.fetch_mode not in ("http", "browser"):
+        # `book.info_api`（v0.8.13）：书籍页是 SPA 外壳、简介/封面由 XHR
+        # 片段另发时的配置。`url` 必填，字段名必须是我们支持的元数据键 ——
+        # 打错字会让「片段里明明有简介」却静默落回主页面，属配置事故。
+        iapi = (self.raw.get("book") or {}).get("info_api")
+        if iapi is not None:
+            if not isinstance(iapi, dict):
+                raise RuleError(f"{self.id}: book.info_api 必须是对象")
+            if not (iapi.get("url") or "").strip():
+                raise RuleError(f"{self.id}: book.info_api.url 不能为空")
+            unknown = [k for k in iapi
+                       if k not in ("url",) + INFO_API_FIELDS]
+            if unknown:
+                raise RuleError(f"{self.id}: book.info_api 出现未知字段 {unknown}，"
+                                f"只允许 ['url'] + {list(INFO_API_FIELDS)}")
+        if self.fetch_mode not in self.FETCH_MODES:
             raise RuleError(f"{self.id}: fetch_mode 只能是 http 或 browser，"
                             f"当前为 {self.fetch_mode!r}")
+        # 段内路由覆盖：book / catalog / chapter 各自可以改走另一条路由
+        # （书山式「目录要浏览器、正文纯 HTTP」）。非法值**加载即报**。
+        for role, key in self.SECTION_BY_ROLE.items():
+            sec = self.raw.get(key) or {}
+            if not isinstance(sec, dict):
+                continue
+            mode = sec.get("fetch_mode")
+            if mode is None:
+                continue
+            if not isinstance(mode, str) or mode.strip().lower() not in self.FETCH_MODES:
+                raise RuleError(
+                    f"{self.id}: {key}.fetch_mode 只能是 http 或 browser，"
+                    f"当前为 {mode!r}")
         # 等待条件：字符串（全角色）或对象（逐角色）——错误类型要**加载即报**，
         # 不能等到真正抓取那一刻才炸。
         ws = self.browser_cfg.get("wait_selector")
@@ -123,6 +153,38 @@ class Rule:
 
     # ---------------- 便捷访问 ----------------
     WAIT_ROLES = ("book", "catalog", "chapter")
+    FETCH_MODES = ("http", "browser")
+    SECTION_BY_ROLE = {"book": "book", "catalog": "catalog", "chapter": "chapter"}
+
+    def fetch_mode_for(self, role: str) -> str:
+        """解析**某个页面角色**的取页路由：段内 `fetch_mode` > 顶层 `fetch_mode`。
+
+        为什么需要它（v0.8.13，实测踩到）：书山（shushan.zhangyue.net）这类站点的
+        **目录页**靠 JS 渲染（必须走浏览器），但**章节页**是服务端直出的静态 HTML ——
+        纯 HTTP 取一页只要 0.7s，走浏览器要 20s+。顶层只允许一个 `fetch_mode` 时
+        只能二选一：要么目录拿不到，要么正文慢 30 倍。
+
+        实测数据（书山 3 章 E2E）：
+        · 全浏览器路由 = 82.6s
+        · 目录 browser + 正文 http = 见 CHANGELOG 记录（并发还能恢复）
+
+        ⚠ 这条覆盖同时决定**并发是否可用**：只要正文不是浏览器路由，
+        `run()` 就不必把并发压成 1（Playwright 同步 API 不能跨线程共享）。
+        所以调用方必须用本方法判路由，**不要再直接读 `rule.fetch_mode`**。
+        """
+        if role not in self.SECTION_BY_ROLE:
+            raise RuleError(f"{self.id}: 未知页面角色 {role!r}，"
+                            f"只允许 {list(self.WAIT_ROLES)}")
+        sec = self.raw.get(self.SECTION_BY_ROLE[role]) or {}
+        if isinstance(sec, dict):
+            mode = sec.get("fetch_mode")
+            if isinstance(mode, str) and mode.strip():
+                mode = mode.strip().lower()
+                if mode not in self.FETCH_MODES:
+                    raise RuleError(f"{self.id}: {role}.fetch_mode 只能是 "
+                                    f"http 或 browser，当前为 {mode!r}")
+                return mode
+        return self.fetch_mode
 
     def wait_selector_for(self, role: str):
         """按**页面角色**解析浏览器等待选择器，返回 None 表示不等待。

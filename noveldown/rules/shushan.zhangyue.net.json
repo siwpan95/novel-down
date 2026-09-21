@@ -5,10 +5,10 @@
   "enabled": true,
   "free_only": true,
   "predecode": false,
-  "requires_js": true,
-  "fetch_mode": "browser",
+  "requires_js": false,
+  "fetch_mode": "http",
   "demo_url": "https://shushan.zhangyue.net/book/112812/",
-  "notes": "★ 掌阅系「书山中文网」，2026-09-21 实测。来源同 `m.zhangyue.com` ——\n  都是从「得间免费小说」的落地页顺藤摸到的（详见 idejian.com 存根）。\n\n【形态 + 为什么要浏览器路由】\n  · 书籍页 `/book/{bid}/`，章节页 `/book/{bid}/{cid}`（cid 是长 ID，递增）。\n  · ⚠ **目录不在静态 HTML 里**：纯 HTTP 取书籍页只有 **39 个 `<a>`**（而该书有 821 章）。\n    页面上目录是个**页内锚点** `#directory`（链接文字「目录（821章）」），\n    真 Chrome 里**点一下它之后**才渲染出章节列表 —— 实测渲染后 `a[href*='/book/']` = **821 条**，\n    与「目录（821章）」完全吻合。\n    → 故用 `browser.click_selectors` 点锚点 + `wait_selector` 等章节链接出现。\n  · 正文容器 **`div.art_con`**（实测 2820 汉字 / 58 段；外层 `.content-body` 2872）。\n\n【免费】该线与掌阅小说网移动站同为免费阅读线，实测未见锁标记；\n  仍按项目六层约束处理。\n\n⚠ 与 `www.zhangyue.com`（企业站）区分；本规则只匹配 `shushan.zhangyue.net`。\n\n⚠ 法律：正版平台的**免费章节**。",
+  "notes": "★ 掌阅系「书山中文网」。2026-09-21 **改正为全 HTTP**（原为浏览器路由）。\n\n【为什么原来会误判成「必须浏览器」】\n  · 书籍页 `/book/{bid}/`，章节页 `/book/{bid}/{cid}`（cid 是长 ID）。\n  · 纯 HTTP 取书籍页只有 **1 个** `a[href*='/book/']`，而该书有 821 章 ——\n    于是当初判定「目录靠 JS 渲染」，用 `browser.click_selectors` 点\n    页内锚点 `#directory` 才拿到列表。\n  · 但真浏览器实测（2026-09-21 复测）：点完 400ms 时 822 条，\n    同一份 DOM 在别的采样里 2s 后塌成 16 条 —— 它其实**不是靠点出来的**，\n    而是点了之后发了一个 XHR：\n\n        GET {origin}/book/directory?bid={bid}      → 200 · 205205 字节 · 0.5s\n\n    该片段里 `/book/112812/<cid>` 共 **821 条、去重后仍是 821**，\n    与页面上「目录（821章）」完全吻合。**纯 HTTP 直取即可**。\n  · 正文容器 `div.art_con`（HTTP 实测 3240 可见字 / 0.2s）。\n\n【结论：本规则不需要浏览器】\n  · 顶层 `fetch_mode: http`；目录走页面片段接口（`catalog.pages.url`）；\n    正文纯 HTTP。并发可用（浏览器路由才需强制单线程）。\n  · 元数据：书籍页静态 HTML 的 `<title>` = 「无暗英雄,洛城东作品-书山中文网,…」，\n    `title_pattern` / `author_pattern` 清洗即可。但**简介不在书籍页里**，\n    走 `book.info_api` 取 `/book/bookintro?bid=`；封面取 `a.book-face img@src`。\n  · ⚠ 反面教材：`meta[name=description]` 是**站点通用文案**（每本书一致），\n    早先拿它当简介 = 往 EPUB 里写错数据。已弃用。\n\n【免费】该线与掌阅小说网移动站同为免费阅读线，实测未见锁标记；\n  仍按项目六层约束处理。\n\n⚠ 与 `www.zhangyue.com`（企业站）区分；本规则只匹配 `shushan.zhangyue.net`。\n\n⚠ 法律：正版平台的**免费章节**。",
   "match": [
     "shushan.zhangyue.net"
   ],
@@ -16,24 +16,28 @@
     "url_pattern": "/book/(\\d+)/",
     "info_url": "{url}",
     "title": [
-      "@title",
-      "h1"
+      "@title"
     ],
     "title_pattern": "^([^,，]+)",
     "author": [
       "@title"
     ],
     "author_pattern": "[,，]\\s*([^,，]+?)作品",
-    "intro": [
-      "meta[name='description']"
-    ],
     "cover": [
-      "meta[property='og:image']"
-    ]
+      "a.book-face img@src"
+    ],
+    "info_api": {
+      "url": "{origin}/book/bookintro?bid={bid}",
+      "intro": [
+        "pre.intro-bookinfo",
+        "div.intro-content"
+      ]
+    }
   },
   "catalog": {
     "pages": {
-      "mode": "single"
+      "mode": "single",
+      "url": "{origin}/book/directory?bid={bid}"
     },
     "item_selector": "a[href*='/book/']",
     "id_from": {
@@ -71,16 +75,5 @@
       "加入书架",
       "手机版阅读"
     ]
-  },
-  "browser": {
-    "anti_detect": true,
-    "click_selectors": [
-      "a[href*='#directory']"
-    ],
-    "wait_selector": {
-      "catalog": "a[href*='/book/']",
-      "chapter": "div.art_con"
-    },
-    "wait_ms": 2000
   }
 }

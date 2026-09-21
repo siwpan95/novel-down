@@ -8,7 +8,7 @@
   "requires_js": false,
   "fetch_mode": "http",
   "demo_url": "https://bqg2.org/xuanhuan/",
-  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `ul a` + 正文 `div#content`；域数 8；书号形态 ['alnum', 'digits'] → url_pattern=^.*/([A-Za-z0-9_-]+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · bqg2.org — 24 章 / 1560 字\n  · 5165.org — 48 章 / 9463 字\n  · ksbaihe.com — 100 章 / 811 字\n  · liudatxt.net — 307 章 / 2160 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。",
+  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `ul a` + 正文 `div#content`；域数 9；书号形态 ['alnum', 'digits'] → url_pattern=^.*/([A-Za-z0-9_-]+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · bqg2.org — 24 章 / 1560 字\n  · 5165.org — 48 章 / 9463 字\n  · ksbaihe.com — 100 章 / 811 字\n  · liudatxt.net — 307 章 / 2160 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。\n\n【合并】追加域名 ['wujixsw.info']（曾被拒域复扫（467→38 存活→3 通过），同签名逐域实测通过）\n  · wujixsw.info — 30 章 / 3003 字",
   "match": [
     "123yqw.com",
     "5165.org",
@@ -17,7 +17,8 @@
     "ksbaihe.com",
     "liudatxt.com",
     "liudatxt.net",
-    "v114.net"
+    "v114.net",
+    "wujixsw.info"
   ],
   "book": {
     "url_pattern": "^.*/([A-Za-z0-9_-]+)(?:/|\\.html?)?$",

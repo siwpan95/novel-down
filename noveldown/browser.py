@@ -255,11 +255,70 @@ class BrowserFetcher:
         self._page = self._ctx.new_page()
         return self
 
-    def close(self):
-        for obj, meth in ((self._ctx, "close"), (self._browser, "close")):
+    # 本实例浏览器进程的识别特征 —— 只用来杀**我们自己拉起来的**进程：
+    #   · Chrome 每次启动都带专属临时 profile（playwright_chromiumdev_profile-XXXX）
+    #   · driver 是 Playwright 自带的 node 进程（cmdline 里含 run-driver）
+    _KILL_MARKERS = ("playwright_chromiumdev_profile", "run-driver")
+
+    def _kill_subprocess_tree(self) -> int:
+        """快速拆掉浏览器进程树，返回实际杀掉的进程数（0 = 没做成）。
+
+        为什么需要它（v0.8.13，**本机实测**）：Playwright 的优雅拆除在这台机器上极慢 ——
+        `browser.close()` **47.8~50.4s**、`pw.stop()` **33.6~36.0s**；
+        而直接杀掉进程树只要 **0.00s**，随后 `pw.stop()` 变成 **0.04s**、
+        残留 playwright 子进程 **0**。一次浏览器抓取的真实工作量往往只有几秒，
+        拆除却占掉 55s —— 实测豆瓣专栏 3 章：总 **61.9s**，其中 **58.5s** 是拆除。
+
+        ⚠ 慢的是**本机环境**（Chrome / node 的进程退出被拖住，与杀软实时扫描一致的症状），
+        别的机器上可能本来就快。所以这里是「**先杀再停**」而不是「用杀代替停」：
+        杀完照常调用 `pw.stop()`，Playwright 的状态依然干净（实测无残留）。
+
+        ⚠ **绝不动用户自己的浏览器**，靠两条同时成立的约束：
+          1. 只考虑**本进程的后代**（`children(recursive=True)`）—— 用户手开的 Chrome
+             不在这个树里，哪怕它也叫 chrome.exe；
+          2. cmdline 必须命中上面的本实例特征（专属临时 profile / run-driver）。
+        没有 psutil、或特征一条都不命中 → 返回 0，由调用方退回 Playwright 自己的拆除。
+
+        可用环境变量 `NOVELDOWN_NO_FAST_CLOSE=1` 关掉（例如排查浏览器相关问题时）。
+        """
+        try:
+            import psutil
+        except ImportError:
+            return 0                    # 软依赖：没装就退回优雅拆除
+        try:
+            procs = psutil.Process(os.getpid()).children(recursive=True)
+        except Exception:
+            return 0
+        n = 0
+        for p in procs:
             try:
-                if obj:
-                    getattr(obj, meth)()
+                cl = " ".join(p.cmdline())
+            except Exception:
+                continue
+            if any(m in cl for m in self._KILL_MARKERS):
+                try:
+                    p.kill()
+                    n += 1
+                except Exception:
+                    pass
+        return n
+
+    def close(self):
+        # 1) 关上下文：纯协议调用，实测 0.0s（不影响后面的进程清理）
+        try:
+            if self._ctx:
+                self._ctx.close()
+        except Exception:
+            pass
+        # 2) 快速拆除（见 _kill_subprocess_tree 的长注释）
+        killed = 0
+        if not os.environ.get("NOVELDOWN_NO_FAST_CLOSE"):
+            killed = self._kill_subprocess_tree()
+        if not killed:
+            # 3) 没做成 → 退回 Playwright 自己的优雅拆除
+            try:
+                if self._browser:
+                    self._browser.close()
             except Exception:
                 pass
         try:

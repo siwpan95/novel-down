@@ -8,7 +8,7 @@
   "requires_js": true,
   "fetch_mode": "browser",
   "demo_url": "https://read.douban.com/column/76273556/",
-  "notes": "★ 豆瓣阅读的**专栏（原创连载）**，2026-09-21 实测。\n  ⭐ **这条修正了上一轮的错误结论**：我曾把豆瓣阅读整站判成「登录墙」并记了停用存根 ——\n  那是因为**只试了「电子书」的 reader**（`/reader/ebook/{id}/toc/` → 302 到手机号登录），\n  而没有区分**专栏**。全哥给出免登录可读的专栏 URL 后复测确认：\n  **专栏单章正文免登录可读**（`/reader/column/{cid}/chapter/{chid}/` 返回 200、696 汉字正文）。\n  → 教训：判「整站是登录墙」之前，**要把站内的内容类别分清楚**（豆瓣阅读至少有两类：\n    电子书=出版授权（需登录）、专栏=原创连载（部分免登录可读））。\n\n【形态】\n  · 作品页 `/column/{cid}/`（书籍页）。\n  · ⚠ **章列表需要浏览器渲染**：纯 HTTP 取作品页只有 **13 个链接、0 个章链接**；\n    真 Chrome 渲染后章列表出现在 **`ul.chapter-list`** 里。\n    ⚠ 两条实测细节：① **等待要给够**（`wait_ms: 4000`；给 2000 时列表还没渲染完，\n    只取到 4 章）；② 列表首项是 **「最新」置顶回显**（文字被拼成\n    「最新53.陈述1.5版本2026-09-20」）→ 用 `item_deny_text: [\"最新\"]` 剔掉，\n    真正的第 53 章在后面还有一条。\n  · 章节页 `/column/{cid}/chapter/{chid}/`（会 302 到 `/reader/column/{cid}/chapter/{chid}/`，\n    两者都返回正文）；正文容器 **`div#article-static-content`**（实测 696 汉字）。\n  · ⚠ 目录页 `/reader/column/{cid}/toc/` **要登录**（跳「豆瓣阅读登录」）——\n    所以章列表只能从作品页拿，不能走 toc。\n\n【只覆盖专栏，不含电子书】出版电子书（`/ebook/{id}/`）的 reader 仍需登录，**不做**。\n  本规则按 URL 形态区分：只匹配 `/column/{cid}/…`。\n\n⚠ 法律：正版平台的**免费可读部分**。",
+  "notes": "★ 豆瓣阅读的**专栏（原创连载）**，2026-09-21 实测。\n  ⭐ **这条修正了上一轮的错误结论**：我曾把豆瓣阅读整站判成「登录墙」并记了停用存根 ——\n  那是因为**只试了「电子书」的 reader**（`/reader/ebook/{id}/toc/` → 302 到手机号登录），\n  而没有区分**专栏**。全哥给出免登录可读的专栏 URL 后复测确认：\n  **专栏单章正文免登录可读**（`/reader/column/{cid}/chapter/{chid}/` 返回 200、696 汉字正文）。\n  → 教训：判「整站是登录墙」之前，**要把站内的内容类别分清楚**（豆瓣阅读至少有两类：\n    电子书=出版授权（需登录）、专栏=原创连载（部分免登录可读））。\n\n【形态】\n  · 作品页 `/column/{cid}/`（书籍页）。\n  · ⚠ **章列表需要浏览器渲染**：纯 HTTP 取作品页只有 **13 个链接、0 个章链接**；\n    真 Chrome 渲染后章列表出现在 **`ul.chapter-list`** 里。\n    ⚠ 两条实测细节：① **等待要给够**（`wait_ms: 4000`；给 2000 时列表还没渲染完，\n    只取到 4 章）；② 列表首项是 **「最新」置顶回显**（文字被拼成\n    「最新53.陈述1.5版本2026-09-20」）→ 用 `item_deny_text: [\"最新\"]` 剔掉，\n    真正的第 53 章在后面还有一条。\n  · 章节页 `/column/{cid}/chapter/{chid}/`（会 302 到 `/reader/column/{cid}/chapter/{chid}/`，\n    两者都返回正文）；正文容器 **`div#article-static-content`**（实测 696 汉字）。\n  · ⚠ 目录页 `/reader/column/{cid}/toc/` **要登录**（跳「豆瓣阅读登录」）——\n    所以章列表只能从作品页拿，不能走 toc。\n\n【只覆盖专栏，不含电子书】出版电子书（`/ebook/{id}/`）的 reader 仍需登录，**不做**。\n  本规则按 URL 形态区分：只匹配 `/column/{cid}/…`。\n\n⚠ 法律：正版平台的**免费可读部分**。\n\n【v0.8.13 分段路由】`chapter.fetch_mode = http`。\n  实测（2026-09-21）：章节页纯 HTTP **0.5s**、`#article-static-content` 696 汉字**已可直接取**，\n  而浏览器路由每次导航要等 `wait_ms=4000` 且**并发被压成 1** ——\n  同一专栏 3 章：改前 **75.8s**，改后见本轮记录。\n  目录仍需浏览器（书籍页是 JS 外壳，`wait_selector.catalog`），故只覆盖正文段。\n  其余 5 个 browser 站（17K / 次元姬 / 七猫 / 速读谷 / 搜书网族）已逐个实测：**正文纯 HTTP 取不到**，保持原样。",
   "match": [
     "read.douban.com"
   ],
@@ -51,6 +51,7 @@
     ]
   },
   "chapter": {
+    "fetch_mode": "http",
     "title_selector": "h1, .article-title, article h1",
     "content_selector": "#article-static-content",
     "content_selectors": [

@@ -47,12 +47,53 @@ class TestProofread(unittest.TestCase):
         self.assertEqual(rep["counts"]["verdict"], "WARN")
 
     def test_duplicate_title_and_body_detected(self):
+        """同名**且同文** = 真重复（回显块/重复抓取）。"""
         book = make_book(n=3)
         book.chapters[1].title = book.chapters[0].title
-        book.chapters[2].paragraphs = list(book.chapters[0].paragraphs)
+        book.chapters[1].paragraphs = list(book.chapters[0].paragraphs)
         rep = proofread(book)
         self.assertEqual(rep["counts"]["duplicate_title"], 1)
         self.assertEqual(rep["counts"]["duplicate_body"], 1)
+        self.assertEqual(rep["counts"]["title_clash"], 0)
+        self.assertEqual(rep["duplicate_title"][0]["body_same"], True)
+
+    def test_same_title_different_body_is_clash_not_duplicate(self):
+        """同名但**不同文** = 站点命名撞车（红袖「番外：归家」实测形态）。
+
+        这类**不是**抓取缺陷，也不能当重复去删 —— 否则会丢掉一章真内容。
+        """
+        book = make_book(n=3)
+        book.chapters[1].title = book.chapters[0].title
+        # 正文保持不同（make_book 每章内容各异）
+        self.assertNotEqual(book.chapters[0].text, book.chapters[1].text)
+        rep = proofread(book)
+        self.assertEqual(rep["counts"]["duplicate_title"], 0)
+        self.assertEqual(rep["counts"]["title_clash"], 1)
+        self.assertEqual(rep["duplicate_title"], [])
+        self.assertIs(rep["title_clash"][0]["body_same"], False)
+        # 不构成阻断项
+        self.assertEqual(rep["counts"]["blocking_issues"], 0)
+        self.assertEqual(rep["counts"]["verdict"], "PASS")
+
+    def test_title_clash_with_unfetched_body_is_undetermined(self):
+        """--limit 限流时同名两章可能只抓到一章 → 判「未定」，别硬说站点撞车。"""
+        book = make_book(n=2)
+        book.chapters[1].title = book.chapters[0].title
+        book.chapters[1].paragraphs = []
+        book.chapters[1].status = STATUS_PENDING
+        rep = proofread(book)
+        self.assertEqual(rep["counts"]["duplicate_title"], 0)
+        self.assertEqual(rep["counts"]["title_clash"], 1)
+        self.assertIsNone(rep["title_clash"][0]["body_same"])
+
+    def test_report_text_separates_the_two_cases(self):
+        from noveldown.proofread import format_report
+        book = make_book(n=3)
+        book.chapters[1].title = book.chapters[0].title
+        txt = format_report(proofread(book))
+        self.assertIn("标题重复", txt)
+        self.assertIn("标题同名", txt)
+        self.assertIn("站点命名", txt)
 
     def test_ad_residue_and_mojibake_detected(self):
         book = make_book(n=2)

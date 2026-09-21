@@ -165,8 +165,13 @@ def cmd_probe(args):
         return 2
 
     d.log(f"[规则] {d.rule.id} · {d.rule.name}")
-    if d.rule.fetch_mode == "browser":
+    _bm, _dm, _cm = (d.rule.fetch_mode_for(r)
+                     for r in ("book", "catalog", "chapter"))
+    if _bm == _cm == "browser":
         d.log("[路由] browser —— 用真实 Chromium 渲染后取 DOM（单线程）")
+    elif "browser" in (_bm, _dm, _cm):
+        d.log(f"[路由] 混合 —— 书籍 {_bm} / 目录 {_dm} / 正文 {_cm}"
+              + ("（正文走 HTTP，并发可用）" if _cm != "browser" else ""))
     t0 = time.time()
     try:
         book = d.discover()

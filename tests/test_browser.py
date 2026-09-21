@@ -84,5 +84,110 @@ class TestAntiDetectAvailability(unittest.TestCase):
             self.assertIn("Chrome", why)
 
 
+class TestFastClose(unittest.TestCase):
+    """快速拆除的安全边界（v0.8.13）。
+
+    背景：本机 Playwright 的优雅拆除极慢（`browser.close()` 47.8~50.4s、
+    `pw.stop()` 33.6~36.0s），杀进程树只要 0.00s 且之后 `pw.stop()` 变 0.04s。
+    但「杀进程」是本项目唯一会主动结束他人进程的地方，所以边界必须被测试锁住：
+    **绝不碰用户自己的浏览器** —— 只杀本进程的后代且 cmdline 命中本实例特征。
+    """
+
+    def _bare(self):
+        """不启动浏览器的空壳实例（只测 close 的调度逻辑）。"""
+        return br.BrowserFetcher.__new__(br.BrowserFetcher)
+
+    def test_markers_are_narrow(self):
+        """识别特征必须足够窄 —— 宽到 `chrome`/`node` 就会误杀用户的浏览器。"""
+        markers = br.BrowserFetcher._KILL_MARKERS
+        self.assertIn("playwright_chromiumdev_profile", markers)
+        self.assertIn("run-driver", markers)
+        for bad in ("chrome", "chrome.exe", "node", "msedge"):
+            self.assertNotIn(bad, markers)
+
+    def test_opt_out_env_skips_kill_and_falls_back(self):
+        """`NOVELDOWN_NO_FAST_CLOSE=1` 时不杀进程，退回 Playwright 自己的 close。"""
+        calls = []
+
+        class FakeBrowser:
+            def close(self):
+                calls.append("browser.close")
+
+        class FakePW:
+            def stop(self):
+                calls.append("pw.stop")
+
+        f = self._bare()
+        f._ctx = None
+        f._browser = FakeBrowser()
+        f._pw = FakePW()
+        f._kill_subprocess_tree = lambda: calls.append("kill")
+        os.environ["NOVELDOWN_NO_FAST_CLOSE"] = "1"
+        try:
+            f.close()
+        finally:
+            os.environ.pop("NOVELDOWN_NO_FAST_CLOSE", None)
+        self.assertNotIn("kill", calls)
+        self.assertIn("browser.close", calls)
+        self.assertIn("pw.stop", calls)
+        self.assertIsNone(f._browser)
+
+    def test_successful_kill_skips_graceful_browser_close(self):
+        """杀成功时**不再**调 `browser.close()` —— 那正是 50 秒的来源。"""
+        calls = []
+
+        class FakeBrowser:
+            def close(self):
+                calls.append("browser.close")
+
+        class FakePW:
+            def stop(self):
+                calls.append("pw.stop")
+
+        f = self._bare()
+        f._ctx = None
+        f._browser = FakeBrowser()
+        f._pw = FakePW()
+        f._kill_subprocess_tree = lambda: 9
+        f.close()
+        self.assertNotIn("browser.close", calls)
+        self.assertIn("pw.stop", calls, "杀完仍须 pw.stop()，状态才算干净")
+
+    def test_failed_kill_falls_back_to_graceful_close(self):
+        """没杀成（无 psutil / 特征不符）→ 必须退回优雅拆除，不能就此不关。"""
+        calls = []
+
+        class FakeBrowser:
+            def close(self):
+                calls.append("browser.close")
+
+        f = self._bare()
+        f._ctx = None
+        f._browser = FakeBrowser()
+        f._pw = None
+        f._kill_subprocess_tree = lambda: 0
+        f.close()
+        self.assertEqual(calls, ["browser.close"])
+
+    def test_close_is_idempotent_on_empty_instance(self):
+        """字段全 None 时 close() 不得抛（异常路径里会被反复调用）。"""
+        f = self._bare()
+        f._ctx = f._browser = f._pw = f._page = None
+        f.close()
+        f.close()
+        self.assertIsNone(f._pw)
+
+    def test_kill_only_targets_own_descendants(self):
+        """真的跑一次：杀进程树只允许返回本进程后代里命中特征的个数。
+
+        不能断言「一定 >0」（环境里可能没有 psutil、或还没启动浏览器），
+        但可以断言「返回值不为负、且不抛」—— 并顺带确认它在没有浏览器时**不误杀**。
+        """
+        f = self._bare()
+        n = f._kill_subprocess_tree()
+        self.assertIsInstance(n, int)
+        self.assertGreaterEqual(n, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

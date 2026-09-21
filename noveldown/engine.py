@@ -92,7 +92,9 @@ class Downloader:
     def _fetch(self, url: str, referer=None, wait_selector=_UNSET,
                role: str = "chapter") -> str:
         # 浏览器路由：目录/正文靠 JS 渲染的站点（见 browser.py）
-        if self.rule.fetch_mode == "browser":
+        # ⚠ 判路由必须走 fetch_mode_for(role) —— 站点可以「目录走浏览器、
+        #   正文纯 HTTP」（书山/得间），顶层 fetch_mode 只是默认值。
+        if self.rule.fetch_mode_for(role) == "browser":
             if wait_selector is _UNSET:
                 wait_selector = self.rule.wait_selector_for(role)
             return self._fetch_browser(url, wait_selector)
@@ -123,17 +125,17 @@ class Downloader:
     # --------------------------------------------------------
     #  浏览器路由（可选依赖 playwright）
     # --------------------------------------------------------
-    def _fetch_raw(self, url: str, referer=None) -> str:
+    def _fetch_raw(self, url: str, referer=None, role: str = "chapter") -> str:
         """取**原始文本**（JSON 接口用）。
 
         浏览器路由下不能用 `pg.goto` —— Chrome 会把 JSON 包成
         `<pre>` 的 HTML 文档，破坏解析。改用页面内 `fetch` 取原始响应体，
         同源请求会自动带上 WAF 下发的匿名 cookie。
         """
-        if self.rule.fetch_mode == "browser":
+        if self.rule.fetch_mode_for(role) == "browser":
             self.limiter.wait()
             return self._browser().fetch_text(url, referer=referer)
-        return self._fetch(url, referer=referer)
+        return self._fetch(url, referer=referer, role=role)
 
     def _collect_json_catalog(self, rule, bid, origin, book_url):
         """按 catalog.mode=json_api 从接口取目录。"""
@@ -142,7 +144,7 @@ class Downloader:
         url = (tpl.replace("{origin}", origin).replace("{bid}", bid)
                   .replace("{url}", book_url))
         self.log(f"[目录] JSON 接口 {url}")
-        text = self._fetch_raw(url, referer=book_url)
+        text = self._fetch_raw(url, referer=book_url, role="catalog")
         items, locked = collect_json_catalog(rule, text, bid, origin)
         self.log(f"[目录] 接口返回：章节 {len(items)}，受保护 {len(locked)}")
         return items, locked
@@ -200,9 +202,9 @@ class Downloader:
             finally:
                 self._browser_fetcher = None
 
-    def _fetch_bytes(self, url: str, referer=None) -> bytes:
+    def _fetch_bytes(self, url: str, referer=None, role: str = "chapter") -> bytes:
         """抓二进制资源（字体文件用）。"""
-        if self.rule.fetch_mode == "browser":
+        if self.rule.fetch_mode_for(role) == "browser":
             self.limiter.wait()
             return self._browser().fetch_bytes(url)
         with self._lock:
@@ -234,7 +236,8 @@ class Downloader:
         self.log(f"[发现] 书籍页 {book_url}")
         book_html = self._fetch(book_url, role="book")
 
-        info = parse_book_info(rule, book_html, book_url, bid)
+        info = parse_book_info(rule, book_html, book_url, bid,
+                               info_html=self._book_info_fragment(rule, book_url, bid))
         book = Book(site=rule.id, book_id=bid, url=book_url, **info)
 
         # ---- 目录收集：JSON 接口 或 HTML ----
@@ -279,6 +282,30 @@ class Downloader:
         if save_state:
             self.store.save_state(book)
         return book
+
+    def _book_info_fragment(self, rule, book_url, bid):
+        """`book.info_api`：书籍页是 SPA 外壳、简介/封面另由 XHR 片段下发时取该片段。
+
+        书山（shushan.zhangyue.net）实测：纯 HTTP 取书籍页 30627 字节里
+        **没有简介**（`class="intro*"` 零命中），`meta[name=description]` 是
+        **站点通用文案**（每本书都一样）—— 直接用它当简介等于往 EPUB 里写错数据。
+        真简介在 `/book/bookintro?bid=`（19796 字节片段，纯 HTTP 0.5s）。
+
+        与其他片段一致：取不到就返回 None，由调用方回落主页面选择器，
+        **不让元数据缺失升级成整本书失败**。
+        """
+        cfg = rule.book_cfg.get("info_api") or {}
+        tpl = cfg.get("url")
+        if not tpl:
+            return None
+        url = (tpl.replace("{origin}", origin_of(book_url))
+                  .replace("{bid}", bid).replace("{url}", book_url))
+        self.log(f"[发现] 元数据片段 {url}")
+        try:
+            return self._fetch_raw(url, referer=book_url, role="book")
+        except Exception as e:
+            self.log(f"[发现] 元数据片段抓取失败（{e}）——改用书籍页取值", "warn")
+            return None
 
     def _discover_catalog_pages(self, rule, book_url, book_html, bid, origin):
         """迭代发现目录页，返回 [(url, html 或 None), ...]。
@@ -605,17 +632,24 @@ class Downloader:
         self._total = len(pending)
         self._done = 0
         concurrency = max(1, int(self.config["concurrency"]))
-        if self.rule.fetch_mode == "browser" and concurrency > 1:
+        # 正文的**实际**路由（可被 chapter.fetch_mode 覆盖）——决定能否并发。
+        chapter_mode = self.rule.fetch_mode_for("chapter")
+        if chapter_mode == "browser" and concurrency > 1:
             # Playwright 同步 API 不能跨线程共享 → 浏览器路由强制单线程
-            self.log(f"[抓取] 该站点用浏览器路由，并发强制为 1（配置的 {concurrency} 已忽略）")
+            self.log(f"[抓取] 正文走浏览器路由，并发强制为 1（配置的 {concurrency} 已忽略）")
             concurrency = 1
+        route_note = ""
+        if chapter_mode != self.rule.fetch_mode:
+            route_note = f"，路由=chapter:{chapter_mode}（顶层 {self.rule.fetch_mode}）"
+        elif self.rule.fetch_mode == "browser":
+            route_note = "，路由=browser"
         self.log(f"[抓取] 待抓 {self._total} 章，并发 {concurrency}，"
                  f"基础间隔 {self.config['delay']}s±{self.config['jitter']}s"
-                 + ("，路由=browser" if self.rule.fetch_mode == "browser" else ""))
+                 + route_note)
 
         t0 = time.time()
         try:
-            if self.rule.fetch_mode == "browser":
+            if chapter_mode == "browser":
                 # 浏览器路由**完全不进线程池**：Playwright 同步对象绑定创建它的线程，
                 # 线程池会新建线程 → 报 "Cannot switch to a different thread"。
                 # 主线程里顺序抓，语义也更清晰。

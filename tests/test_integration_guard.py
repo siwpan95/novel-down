@@ -67,18 +67,19 @@ CH3 = """<html><head><meta charset="utf-8"></head><body>
 </body></html>"""
 
 
+PAGES = {
+    "/book/1/": CATALOG,
+    "/chap/1.html": CH1,
+    "/chap/2.html": CH2,
+    "/chap/3.html": CH3,
+}
+
+
 class Handler(BaseHTTPRequestHandler):
     hits = []          # 所有被请求的路径
-
     def do_GET(self):
         Handler.hits.append(self.path)
-        pages = {
-            "/book/1/": CATALOG,
-            "/chap/1.html": CH1,
-            "/chap/2.html": CH2,
-            "/chap/3.html": CH3,
-        }
-        body = pages.get(self.path)
+        body = PAGES.get(self.path)
         if body is None:
             self.send_response(404)
             self.end_headers()
@@ -225,6 +226,121 @@ class TestEndToEndFreeGuard(unittest.TestCase):
                 blob = open(path, encoding="utf-8").read()
             for marker in ("本章为VIP章节", "订阅后可阅读", "余额不足", "会员专享"):
                 self.assertNotIn(marker, blob, f"{fmt} 产物里出现了受保护内容标记")
+
+
+class TestSectionFetchModeRouting(unittest.TestCase):
+    """段内 `fetch_mode` 覆盖（v0.8.13）：**目录走浏览器、正文走 HTTP**。
+
+    为什么要专门测路由（书山实测）：顶层只有一个 `fetch_mode` 时，遇到
+    「目录靠 JS 渲染、章节页是静态 HTML」的站点只能二选一 ——
+    走浏览器能拿到目录但正文 20s+/页（实测 3 章 82.6s）；
+    走 HTTP 正文 0.7s/页但目录是空壳。
+    段内覆盖把两者分开，同时**恢复并发**（Playwright 同步 API 不能跨线程共享，
+    正文不再是浏览器路由就不必压成单线程）。
+
+    这里用真实本地 HTTP 服务跑正文，浏览器那一侧用桩函数接管 ——
+    要证明的正是**路由决策**本身（哪条路由拿哪个页面），而不是 Chromium 渲染。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        cls.port = cls.httpd.server_address[1]
+        cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
+        cls.thread.start()
+        cls.base = f"http://127.0.0.1:{cls.port}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+
+    def _rule(self, chapter_mode=None):
+        raw = json.loads(json.dumps(RULE_RAW))
+        raw["fetch_mode"] = "browser"
+        raw["browser"] = {"wait_selector": {"book": "div.listmain"}}
+        if chapter_mode:
+            raw["chapter"]["fetch_mode"] = chapter_mode
+        return Rule(raw).validate()
+
+    def _run(self, rule, concurrency=2):
+        """跑一遍并返回 (book, 浏览器路由命中的 URL, 日志行列表)。"""
+        browser_hits = []
+        logs = []
+
+        def fake_browser(url, wait_selector=None):
+            browser_hits.append(url)
+            path = url[len(self.base):] if url.startswith(self.base) else url
+            body = PAGES.get(path)
+            if body is None:
+                raise RuntimeError(f"浏览器桩没有 {path} 的页面")
+            return body
+
+        url = f"{self.base}/book/1/"
+        d = Downloader(url, config={
+            "save_dir": temp_subdir("route"), "concurrency": concurrency,
+            "delay": 0.05, "jitter": 0.0, "timeout": 10, "retries": 1,
+        }, rules={rule.id: rule}, log=lambda m, *a, **k: logs.append(str(m)))
+        d._fetch_browser = fake_browser        # 只接管浏览器一侧
+        book = d.run(limit=0)
+        return book, browser_hits, logs
+
+    def test_catalog_browser_chapter_http(self):
+        """目录/书籍页走浏览器，正文走 HTTP，且并发**不被压成 1**。"""
+        Handler.hits = []
+        rule = self._rule(chapter_mode="http")
+        self.assertEqual(rule.fetch_mode_for("book"), "browser")
+        self.assertEqual(rule.fetch_mode_for("catalog"), "browser")
+        self.assertEqual(rule.fetch_mode_for("chapter"), "http")
+
+        book, browser_hits, logs = self._run(rule, concurrency=2)
+
+        # 书籍页（=目录页）确实由浏览器路由取得
+        self.assertIn("/book/1/", [u[len(self.base):] for u in browser_hits])
+        # 章节页**不得**出现在浏览器路由里（否则优化毫无意义）
+        self.assertEqual([u for u in browser_hits if "/chap/" in u], [],
+                         "正文不该走浏览器路由")
+        # 正文确实走了真实 HTTP
+        self.assertIn("/chap/1.html", Handler.hits)
+
+        # 并发未被钳制
+        self.assertTrue(any("并发 2" in m for m in logs),
+                        f"正文走 HTTP 时应保留并发 2；实际日志：{logs}")
+        self.assertFalse(any("并发强制为 1" in m for m in logs))
+
+        by_index = {c.index: c for c in book.chapters}
+        self.assertEqual(by_index[1].status, STATUS_OK)
+        self.assertGreater(by_index[1].char_count, 0)
+
+    def test_without_override_everything_goes_browser(self):
+        """对照组：不写段内覆盖时，三处页面全走浏览器，并发被压成 1。"""
+        rule = self._rule(chapter_mode=None)
+        for role in ("book", "catalog", "chapter"):
+            self.assertEqual(rule.fetch_mode_for(role), "browser")
+
+        _, browser_hits, logs = self._run(rule, concurrency=2)
+
+        paths = [u[len(self.base):] for u in browser_hits]
+        self.assertIn("/book/1/", paths)
+        self.assertIn("/chap/1.html", paths, "无覆盖时正文也必须走浏览器")
+        self.assertTrue(any("并发强制为 1" in m for m in logs), logs)
+
+    def test_http_rule_with_browser_chapter(self):
+        """反向覆盖：顶层 http 也可把某一节改成 browser（路由解析双向对称）。"""
+        raw = json.loads(json.dumps(RULE_RAW))
+        raw["fetch_mode"] = "http"
+        raw["browser"] = {"wait_selector": {"chapter": "div#content"}}
+        raw["chapter"]["fetch_mode"] = "browser"
+        rule = Rule(raw).validate()
+        self.assertEqual(rule.fetch_mode_for("book"), "http")
+        self.assertEqual(rule.fetch_mode_for("catalog"), "http")
+        self.assertEqual(rule.fetch_mode_for("chapter"), "browser")
+
+        _, browser_hits, logs = self._run(rule, concurrency=2)
+        paths = [u[len(self.base):] for u in browser_hits]
+        self.assertIn("/chap/1.html", paths)
+        self.assertNotIn("/book/1/", paths)
+        self.assertTrue(any("并发强制为 1" in m for m in logs), logs)
 
 
 if __name__ == "__main__":

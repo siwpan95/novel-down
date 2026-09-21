@@ -492,5 +492,98 @@ class TestWaitSelectorRoles(unittest.TestCase):
             Downloader._wait_for(_Stub(r), r.book_cfg, "book"), "#bookName")
 
 
+class TestFetchModeRoles(unittest.TestCase):
+    """取页路由的**角色化**解析（v0.8.13）。
+
+    背景：`fetch_mode` 原本只有顶层一个值。书山（shushan.zhangyue.net）这类站点
+    **目录页靠 JS 渲染**（必须走浏览器），**章节页是服务端直出的静态 HTML**
+    （纯 HTTP 0.7s/页，浏览器 20s+/页）。顶层单值时只能二选一。
+
+    段内 `book/catalog/chapter.fetch_mode` 覆盖顶层；未声明的角色继承顶层。
+    """
+
+    def _rule(self, top="browser", **sections):
+        raw = {
+            "id": "x.site", "name": "X", "match": ["x.site"],
+            "free_only": True, "enabled": True, "fetch_mode": top,
+            "book": {"url_pattern": "/b/(\\d+)", "info_url": "{origin}/b/{bid}/"},
+            "catalog": {"item_selector": "a",
+                        "id_from": {"mode": "href", "pattern": "(?P<cid>\\d+)"}},
+            "chapter": {"content_selector": "div#c"},
+        }
+        for key, mode in sections.items():
+            raw[key]["fetch_mode"] = mode
+        return Rule(raw)
+
+    def test_default_inherits_top_level(self):
+        for top in ("http", "browser"):
+            r = self._rule(top=top)
+            for role in ("book", "catalog", "chapter"):
+                self.assertEqual(r.fetch_mode_for(role), top, f"{top}/{role}")
+
+    def test_chapter_override_beats_top_level(self):
+        """书山形态：顶层 browser，正文改 http（其余角色保持 browser）。"""
+        r = self._rule("browser", chapter="http")
+        self.assertEqual(r.fetch_mode_for("book"), "browser")
+        self.assertEqual(r.fetch_mode_for("catalog"), "browser")
+        self.assertEqual(r.fetch_mode_for("chapter"), "http")
+
+    def test_reverse_direction_is_symmetric(self):
+        """顶层 http、某一节改 browser（塔读式：正文接口需带 WAF cookie）。"""
+        r = self._rule("http", chapter="browser")
+        self.assertEqual(r.fetch_mode_for("book"), "http")
+        self.assertEqual(r.fetch_mode_for("chapter"), "browser")
+
+    def test_value_is_lowercased_and_stripped(self):
+        r = self._rule("http", catalog="BROWSER", chapter=" Browser ")
+        self.assertEqual(r.fetch_mode_for("catalog"), "browser")
+        self.assertEqual(r.fetch_mode_for("chapter"), "browser")
+
+    def test_unknown_role_rejected(self):
+        with self.assertRaises(RuleError) as ctx:
+            self._rule().fetch_mode_for("body")
+        self.assertIn("未知页面角色", str(ctx.exception))
+
+    def test_bad_value_rejected_at_load(self):
+        """非法路由值必须**加载即报**，不能等到抓取那一刻才炸。"""
+        for bad in ("curl", "", "fetch"):
+            r = self._rule("http", chapter=bad)
+            with self.assertRaises(RuleError) as ctx:
+                r.validate()
+            self.assertIn("fetch_mode", str(ctx.exception))
+
+    def test_explicit_none_means_inherit(self):
+        r = self._rule("browser", chapter=None)
+        r.validate()
+        self.assertEqual(r.fetch_mode_for("chapter"), "browser")
+
+    def test_shipped_shushan_is_now_pure_http(self):
+        """回归守卫：书山**不该**再用浏览器（改前 3 章 82.6s、且只拿到 1 章）。
+
+        修正的事实依据（2026-09-21 复测）：
+          · 目录来自 XHR 片段 `/book/directory?bid=`（纯 HTTP 0.5s，821 条 cid），
+            不是「点一下锚点渲染出来」的虚拟滚动；
+          · 章节页静态 HTML 直接有 `div.art_con`（0.2s / 3240 字）。
+        """
+        r = load_rules()["shushan.zhangyue.net"]
+        self.assertEqual(r.fetch_mode, "http")
+        self.assertFalse(r.requires_js)
+        for role in ("book", "catalog", "chapter"):
+            self.assertEqual(r.fetch_mode_for(role), "http", role)
+        # 目录必须指向片段接口，否则又退回「书籍页里没有目录 → 只 1 章」
+        self.assertIn("/book/directory", r.catalog_cfg["pages"]["url"])
+        self.assertIn("{bid}", r.catalog_cfg["pages"]["url"])
+
+    def test_shipped_shushan_metadata_comes_from_fragment(self):
+        """简介不得再用 `meta[name=description]`（那是站点通用文案，非本书简介）。"""
+        r = load_rules()["shushan.zhangyue.net"]
+        iapi = r.book_cfg["info_api"]
+        self.assertIn("/book/bookintro", iapi["url"])
+        self.assertTrue(iapi["intro"])
+        self.assertNotIn("meta[name='description']", r.book_cfg.get("intro") or [])
+        # 封面是 img 元素 → 必须用 `sel@attr` 取 src，否则只会取到空文本
+        self.assertTrue(any("@" in s for s in r.book_cfg["cover"]))
+
+
 if __name__ == "__main__":
     unittest.main()

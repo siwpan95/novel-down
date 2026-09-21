@@ -55,7 +55,8 @@ noveldown/rules/mirrors/         **批量铺开的镜像池**（自动聚类生�
 | `enabled` | | 默认 `true`；`false` 则停用。停用规则只要求写 `disabled_reason`，不必写全选择器——它是「调研记录存根」 |
 | `disabled_reason` | | 停用原因。**必须是技术原因**（WAF / 目录靠 JS / 需浏览器会话），不要写「因为含 VIP」——含 VIP 不构成拒绝理由，见 [FREE_ONLY.md](./FREE_ONLY.md) 第 1 层 |
 | `predecode` | | 默认 `true`。是否启用 JS 内联 base64 预解码 |
-| `fetch_mode` | | `http`（默认，纯 HTTP）\| `browser`（真实浏览器渲染后再取 DOM）。目录靠 JS 异步加载的站点用 browser |
+| `fetch_mode` | | `http`（默认，纯 HTTP）\| `browser`（真实浏览器渲染后再取 DOM）。目录靠 JS 异步加载的站点用 browser。**可被段内覆盖**，见下 |
+| `book.fetch_mode` / `catalog.fetch_mode` / `chapter.fetch_mode` | | 可选。**逐段覆盖**顶层 `fetch_mode`（非法值加载即报错）。让「书籍页/目录必须浏览器、正文纯 HTTP」这类站点拿到该有的速度与并发——见下面「分段路由」一节 |
 | `browser` | | `fetch_mode=browser` 时的渲染参数：**`wait_selector`**（等待条件，见下）、`wait_ms`（额外固定等待）、**`nav_retries`**（导航瞬时失败的重试总次数，1~8，默认 4，带 `1.2s×n` 退避）、`click_selectors`（先点这些元素，如「目录」标签）、`scroll`（滚到底触发懒加载）、**`anti_detect`**（反检测模式，见「浏览器路由」一节）、`channel`（默认 `chrome`）、`args`（追加启动参数）、`stealth_js`（可选自备 stealth 脚本路径） |
 | `browser.wait_selector` | | 等待条件，两种写法：**字符串** = 所有页面角色共用（历史行为）；**对象** = `{"book": …, "catalog": …, "chapter": …}` 逐角色指定，未出现的角色 / 值为 `null`·`false`·`""` = **不等待**。⚠ 强烈建议用对象写法——字符串是全角色广播，把**章节容器**写成字符串会让**书籍页**也去等它，白等满超时才继续（实测速读谷目录耗时 37s，其中 30s 纯浪费） |
 | `font_decode` | | 字体反爬解码开关：`{"enable": true}`（默认 `true`）。解码途径由字体自身决定（glyph 名优先，否则随仓轮廓索引）。见下文「字体反爬」 |
@@ -69,7 +70,8 @@ noveldown/rules/mirrors/         **批量铺开的镜像池**（自动聚类生�
 |---|---|
 | `url_pattern` | 从书籍 URL 提取 `bid` 的正则，**捕获组 1 即 bid** |
 | `info_url` | 书籍页 URL 模板，支持 `{origin}` `{bid}` `{url}` |
-| `title` / `author` / `intro` / `cover` / `status` | 候选 CSS 选择器**数组**，按序取第一个命中；`meta[...]` 取 `content` 属性，其余取文本。特殊值 **`@title`** = 文档 `<title>` 文本 |
+| `title` / `author` / `intro` / `cover` / `status` | 候选 CSS 选择器**数组**，按序取第一个命中；`meta[...]` 取 `content` 属性，其余取文本。特殊值 **`@title`** = 文档 `<title>` 文本，**`sel@attr`** = 取元素属性（`a.book-face img@src`）。⚠ `@` 只认**末尾**的 `@名字` 形式，`a[href*='@']` 这类属性选择器里的 `@` 不会被拆 |
+| `info_api` | 可选。书籍页是 SPA 外壳、简介/封面另由 **XHR 片段**下发时用它：`{"url": "{origin}/book/bookintro?bid={bid}", "intro": [...], "cover": [...]}`。`url` 必填；可覆盖 `title`/`author`/`intro`/`cover`/`status`。**片段里声明的字段优先**，取不到（或整条请求失败）就回落主页面选择器 —— 元数据缺失不该升级成整本书失败。⚠ 反面教材：书山书籍页的 `meta[name=description]` 是**站点通用文案**（每本书一模一样），拿它当简介等于往 EPUB 里写错数据 |
 | `title_pattern` | 可选正则，对 `title` 结果做清洗（如 `^(.*?)(?:免费阅读|最新章节)` 去掉站点后缀） |
 | `@json:<path>` | `book.title`/`author`/`intro`… 的**特殊取值**：从页面的 SSR 数据块（默认 `script#__NEXT_DATA__`，可用 `book.json_source` 改）按 `a.b.c` 路径取字段。Next.js/Nuxt 站的书名/作者常只在数据块里（次元姬） |
 | `author_pattern` | 可选正则，对 `author` 结果做清洗/抽取（书海书名与作者同格：`神农医婿 作者: 方长` → `作者[:：]\s*(.+?)\s*$`） |
@@ -790,6 +792,7 @@ Next.js 把数据序列化进 `<script id="__NEXT_DATA__">`，里面有
   没装只影响这类站点，其它规则照常工作，并会给出带安装命令的提示。
 - **强制单线程**：Playwright 同步 API 不能跨线程共享，故 browser 模式下并发自动降为 1
   （引擎会打印说明）。速度会明显慢于 HTTP 路由。
+  ⚠ 钳制看的是**正文的实际路由**（`chapter.fetch_mode`），不是顶层值 —— 见下节。
 - **不参与任何凭据环节**：不注入 Cookie、不登录、不接管你的浏览器会话。
   若站点要求完成人机验证（captcha），本路由同样会失败——那是需要人参与的步骤，
   代码里不做绕过。
@@ -815,6 +818,14 @@ Next.js 把数据序列化进 `<script id="__NEXT_DATA__">`，里面有
   打开只看到 2 个章节链接（JS 版是懒加载的），而**纯 HTTP 取到的静态 HTML 里有完整
   700 章**。所以不要默认"JS 站就得用浏览器"，先用 `probe_site.py` 与
   `python -m noveldown probe` 各试一次，用实测证据决定。
+- **拆除耗时可能比抓取本身还大**（v0.8.13，本机实测）：Playwright 的优雅拆除在这台机器上
+  `browser.close()` **47.8~50.4s**、`pw.stop()` **33.6~36.0s**，而一次浏览器抓取的真实
+  工作量常常只有几秒 —— 豆瓣专栏 3 章总 **61.9s**，其中 **58.5s** 是拆除。
+  现改为「**先杀本实例的进程树，再 `pw.stop()`**」：实测 **0.00s + 0.04s**，
+  残留子进程 **0**（总耗时 → **13.3s**）。
+  · 需要 `psutil`（软依赖，没装自动退回优雅拆除，只是慢）。
+  · 只杀**本进程的后代**且 cmdline 命中本实例特征（专属临时 profile / `run-driver`），
+    **不会碰你自己开的浏览器**；可用 `NOVELDOWN_NO_FAST_CLOSE=1` 关掉。
 - ⚠ **`wait_selector` 是 OR 语义，别塞宽松分支**（v0.5.1 实测踩到）：
   `wait_for_selector("A, B")` **任一分支命中就返回**。若其中一支在**骨架期**就存在，
   等待会**提前放行**，随后取到的 DOM 里正文是空的。
@@ -825,6 +836,45 @@ Next.js 把数据序列化进 `<script id="__NEXT_DATA__">`，里面有
   旧 OR → **0 段**。
   → **只放"真正代表内容就绪"的那一支**；宁可等超时（引擎会警告并继续），也不要在骨架上放行。
   变体兼容交给**抽取阶段**的候选列表（`content_selectors` / `paragraph_selector` 回退）。
+
+### 分段路由（`book`/`catalog`/`chapter` 各自的 `fetch_mode`）
+
+三处页面的形态**天然不同**，顶层一个 `fetch_mode` 经常只能二选一。
+段内覆盖让每一段各走各的路由：
+
+```json
+{
+  "fetch_mode": "browser",
+  "browser": { "wait_selector": {"chapter": "div.read-con"} },
+  "chapter": { "fetch_mode": "http", "content_selector": "div.art_con" }
+}
+```
+
+解析规则：**段内 > 顶层**；未声明的角色继承顶层；非法值（不是 `http`/`browser`）
+**加载即报错**，不留到抓取那一刻才炸。
+
+**书山（shushan.zhangyue.net）的教训**（v0.8.13）：
+一开始判定它「目录靠 JS 渲染」→ 顶层 `browser`，实测 3 章 **82.6 秒**，
+而且**只拿到 1 章**。复测后真相是：
+
+| 页面 | 真相 | 手段 |
+|---|---|---|
+| 书籍页 `/book/{bid}/` | 静态 HTML 里**只有 1 个** `/book/` 链接 | 目录不在这里 |
+| 目录 | 点 `#directory` 后发出的 **XHR 片段** `/book/directory?bid=` | 纯 HTTP **0.5s** → 821 条 cid，与页面「目录（821章）」吻合 |
+| 章节页 `/book/{bid}/{cid}` | 服务端直出，`div.art_con` | 纯 HTTP **0.2s** / 3240 字 |
+| 简介 | 书籍页里**没有**；`meta[name=description]` 是站点通用文案 | `book.info_api` → `/book/bookintro?bid=` |
+
+改完后：**全 HTTP**（`fetch_mode: http`）、821 章全部可枚举、
+`--limit 30 --concurrency 4` 用 **23.2 秒**（0.77s/章）、校对 PASS。
+
+> **可复用的判据**：看到「点了某个元素才出现的内容」，先**别急着上 `click_selectors`** ——
+> 用 `tools/hunt_api.py` 监听一次网络，看点击到底触发了哪个 XHR。
+> 能直取的片段接口，比让浏览器点一下稳定得多，也把并发还给了正文。
+
+⚠ **另一个坑**：DOM 采样时机。同一份页面在点击后 400ms 有 822 条链接、2s 后塌成 16 条
+（虚拟滚动/二次渲染），`wait_ms` 填大了反而读到**塌缩后**的 DOM。
+判断「目录到底有多少章」时，用**页面上写的章数**（「目录（821章）」）交叉验证，
+不要只信某一时刻的 DOM 计数。
 
 ### 反检测模式（`browser.anti_detect`）—— 过 WAF/机器人挑战
 

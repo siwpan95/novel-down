@@ -16,6 +16,13 @@ lxml>=5.0
 # 装完还需下载内核：python -m playwright install chromium
 # playwright>=1.40
 
+# 可选但**强烈建议**（配浏览器路由用）：快速拆除浏览器进程树。
+# 本机实测 Playwright 的优雅拆除极慢（browser.close() 47.8~50.4s / pw.stop() 33.6~36.0s），
+# 装上 psutil 后改为「先杀自己拉起的进程树再 pw.stop()」，实测 0.00s + 0.04s，
+# 残留 playwright 子进程 0（豆瓣专栏 3 章：61.9s → 13.3s）。
+# 没装则自动退回优雅拆除，只是慢。识别边界见 noveldown/browser.py 的 _kill_subprocess_tree。
+# psutil>=5.9
+
 # 可选：TLS 指纹伪装（--curl-cffi）
 # curl_cffi>=0.7
 

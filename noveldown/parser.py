@@ -149,7 +149,8 @@ def _from_json_block(soup, book_cfg, path: str):
     return _dig(data, path)
 
 
-def parse_book_info(rule, html: str, url: str, bid: str) -> dict:
+def parse_book_info(rule, html: str, url: str, bid: str,
+                    info_html: str = None) -> dict:
     """解析书籍元信息（标题/作者/简介/封面/状态）。
 
     选择器特殊值：
@@ -159,11 +160,39 @@ def parse_book_info(rule, html: str, url: str, bid: str) -> dict:
       `@json:<path>` —— 从页面里的 **SSR 数据块**（默认 `script#__NEXT_DATA__`，
       可用 `book.json_source` 改）按 `a.b.c` 路径取字段。Next.js/Nuxt 站的书名、
       作者往往只在数据块里、页面上没有稳定选择器（实测次元姬）。
+      `sel@attr`（v0.8.13）—— 取元素属性，如 `a.book-face img@src`。
+      `meta[...]` 无 `@` 时仍取 `content`（历史行为，不变）。
+
+    `info_html`（v0.8.13）：`book.info_api` 取回的**片段 HTML**。
+    书籍页是 SPA 外壳、简介/封面由 XHR 另发时（书山
+    `/book/bookintro?bid=`，纯 HTTP 19796 字节片段），主页面里根本没有简介 ——
+    `meta[name=description]` 是**站点通用文案**，每个书都一样，写进 EPUB 是错数据。
+    片段里声明的字段优先于主页面取值。
     """
     soup = make_soup(html)
+    info_soup = make_soup(info_html) if info_html else None
     cfg = rule.book_cfg
+    iapi = cfg.get("info_api") or {}
 
-    def _pick(selectors):
+    # `sel@attr` 属性选择器：只认末尾 `@名字` 形式，避免误伤属性选择器
+    # 里出现的 `@`（如 `a[href*='@']` 不会被拆）。
+    _ATTR_RE = re.compile(r"^(?P<sel>.+)@(?P<attr>[A-Za-z_][\w-]*)$")
+
+    def _extract(src_soup, sel):
+        attr = None
+        m = _ATTR_RE.match(sel)
+        if m:
+            sel, attr = m.group("sel"), m.group("attr")
+        el = select_one_safe(src_soup, sel)
+        if el is None:
+            return ""
+        if attr:
+            val = el.get(attr)
+            return _norm_space(val) if val else ""
+        return el_value(el)
+
+    def _pick(selectors, src=None):
+        src = soup if src is None else src
         if isinstance(selectors, str):
             selectors = [selectors]
         for sel in selectors or []:
@@ -176,21 +205,27 @@ def parse_book_info(rule, html: str, url: str, bid: str) -> dict:
                 if val not in (None, ""):
                     return str(val)
                 continue
-            el = select_one_safe(soup, sel)
-            if el is not None:
-                v = el_value(el)
-                if v:
-                    return v
+            el = _extract(src, sel)
+            if el:
+                return el
         return ""
 
-    title = _pick(cfg.get("title"))
+    def _field(name):
+        """`book.info_api` 里声明的字段优先，未命中再落回主页面选择器。"""
+        if info_soup is not None and iapi.get(name):
+            v = _pick(iapi[name], info_soup)
+            if v:
+                return v
+        return _pick(cfg.get(name))
+
+    title = _field("title")
     pat = cfg.get("title_pattern")
     if pat and title:
         m = re.search(pat, title, re.S)
         if m:
             title = (m.group(1) if m.groups() else m.group(0)).strip()
 
-    author = _pick(cfg.get("author"))
+    author = _field("author")
     # `author_pattern`：作者常与书名挤在同一行（书海 `.book-info-bookname` =
     # 「神农医婿 作者: 方长」），用正则取出作者，避免把书名一起带出来。
     apat = cfg.get("author_pattern")
@@ -202,9 +237,9 @@ def parse_book_info(rule, html: str, url: str, bid: str) -> dict:
     return {
         "title": title,
         "author": author,
-        "intro": _pick(cfg.get("intro")),
-        "cover": _pick(cfg.get("cover")),
-        "status": _pick(cfg.get("status")),
+        "intro": _field("intro"),
+        "cover": _field("cover"),
+        "status": _field("status"),
     }
 
 

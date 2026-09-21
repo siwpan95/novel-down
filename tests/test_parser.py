@@ -406,6 +406,120 @@ class TestTitlePattern(unittest.TestCase):
         self.assertEqual(info["title"], "备用书名")
 
 
+class TestBookInfoFragment(unittest.TestCase):
+    """`book.info_api` + `sel@attr`（v0.8.13，书山形态）。
+
+    背景：书籍页是 SPA 外壳 —— 静态 HTML 里**没有简介**，而
+    `meta[name=description]` 是**站点通用文案**（每本书一模一样）。
+    真简介在 XHR 片段 `/book/bookintro?bid=` 里。
+    直接把通用文案当简介 = 往导出的 EPUB 里写错数据。
+
+    封面同理：`<img src>` 的文本为空，必须用 `sel@attr` 取 `src`。
+    """
+
+    def _rule(self, **book_over):
+        from noveldown.rules import Rule
+        book = {
+            "url_pattern": "/book/(\\d+)/",
+            "title": ["@title"],
+            "title_pattern": "^([^,，]+)",
+            "author": ["@title"],
+            "author_pattern": "[,，]\\s*([^,，]+?)作品",
+            "cover": ["a.book-face img@src"],
+            "info_api": {"url": "{origin}/book/bookintro?bid={bid}",
+                         "intro": ["pre.intro-bookinfo", "div.intro-content"]},
+        }
+        book.update(book_over)
+        return Rule({"id": "t.x", "name": "T", "match": ["x.com"], "free_only": True,
+                     "book": book,
+                     "catalog": {"item_selector": "a",
+                                 "id_from": {"mode": "href",
+                                             "pattern": "(?P<cid>\\d+)"}},
+                     "chapter": {"content_selector": "div.c"}}).validate()
+
+    MAIN = ("<html><head><title>无暗英雄,洛城东作品-书山中文网</title>"
+            "<meta name=\"description\" content=\"本站最新最热小说网\"></head>"
+            "<body><a class='book-face'><img src='//img.x/bookCover/11/112812_large.jpg'>"
+            "</a></body></html>")
+    FRAG = ("<div class='introduction'><div class='intro-content'>"
+            "<pre class='intro-bookinfo'>真简介：神罚大陆的天空永远都是暗淡昏黄。</pre>"
+            "</div></div>")
+
+    def test_fragment_intro_wins_over_generic_meta(self):
+        info = parse_book_info(self._rule(), self.MAIN, "https://x/book/1/", "1",
+                               info_html=self.FRAG)
+        self.assertIn("真简介", info["intro"])
+        self.assertNotIn("最新最热", info["intro"])
+        self.assertEqual(info["title"], "无暗英雄")
+        self.assertEqual(info["author"], "洛城东")
+
+    def test_cover_uses_attr_syntax(self):
+        info = parse_book_info(self._rule(), self.MAIN, "https://x/book/1/", "1")
+        self.assertEqual(info["cover"], "//img.x/bookCover/11/112812_large.jpg")
+
+    def test_missing_fragment_falls_back_to_main_page(self):
+        """片段取不到时不能报错、也不能丢元数据 —— 落回主页面选择器。"""
+        for frag in (None, "", "<div>空片段</div>"):
+            info = parse_book_info(self._rule(), self.MAIN, "https://x/book/1/", "1",
+                                   info_html=frag)
+            self.assertEqual(info["title"], "无暗英雄")
+            self.assertEqual(info["cover"], "//img.x/bookCover/11/112812_large.jpg")
+
+    def test_meta_still_takes_content_without_attr(self):
+        """历史行为：`meta[...]` 不带 `@` 时取 `content`（不能被 @ 语法破坏）。"""
+        from noveldown.parser import parse_book_info
+        r = self._rule(intro=["meta[name='description']"], info_api=None)
+        info = parse_book_info(r, self.MAIN, "https://x/book/1/", "1")
+        self.assertEqual(info["intro"], "本站最新最热小说网")
+
+    def test_at_in_attribute_selector_is_not_split(self):
+        """`a[href*='@']` 这类属性选择器里的 `@` 不能被当成取值语法。"""
+        from noveldown.parser import parse_book_info
+        html = "<html><body><a href='mailto:x@y.com'>联系</a></body></html>"
+        r = self._rule(cover=["a[href*='@']"], info_api=None)
+        info = parse_book_info(r, html, "https://x/book/1/", "1")
+        self.assertEqual(info["cover"], "联系")
+
+
+class TestBookInfoApiValidation(unittest.TestCase):
+    """`book.info_api` 的配置事故要**加载即报**（字段打错会静默落回主页面）。"""
+
+    def _load(self, iapi):
+        import json
+        import os
+        from noveldown.rules import load_rules
+        from tests._base import temp_subdir
+        td = temp_subdir("rules")
+        os.makedirs(td, exist_ok=True)
+        raw = {
+            "id": "x.site", "name": "X", "match": ["x.site"], "free_only": True,
+            "book": {"url_pattern": "/b/(\\d+)", "info_url": "{origin}/b/{bid}/",
+                     "info_api": iapi},
+            "catalog": {"item_selector": "a",
+                        "id_from": {"mode": "href", "pattern": "(?P<cid>\\d+)"}},
+            "chapter": {"content_selector": "div#c"},
+        }
+        with open(os.path.join(td, "a.json"), "w", encoding="utf-8") as f:
+            json.dump(raw, f, ensure_ascii=False)
+        return load_rules(td)
+
+    def test_unknown_field_rejected(self):
+        from noveldown.rules import RuleError
+        with self.assertRaises(RuleError) as ctx:
+            self._load({"url": "{origin}/i?bid={bid}", "Introduction": ["p"]})
+        self.assertIn("未知字段", str(ctx.exception))
+
+    def test_missing_url_rejected(self):
+        from noveldown.rules import RuleError
+        with self.assertRaises(RuleError) as ctx:
+            self._load({"intro": ["p"]})
+        self.assertIn("url 不能为空", str(ctx.exception))
+
+    def test_valid_config_loads(self):
+        rules = self._load({"url": "{origin}/i?bid={bid}", "intro": ["p"]})
+        self.assertIn("x.site", rules)
+
+
 class TestContainerItemAndVipChild(unittest.TestCase):
     """目录项是**容器**时的抽取与 VIP 判定（书海形态）。
 

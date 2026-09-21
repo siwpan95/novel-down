@@ -11,12 +11,19 @@
 ------
 missing          抓取失败或正文过短的章节
 out_of_order     章节号非单调递增（目录归一化失效的信号）
-duplicate_title  标题重复（目录页混入回显块的信号）
+duplicate_title  标题同名**且正文也相同**（目录页混入回显块 / 重复抓取 —— 真问题）
+title_clash      标题同名但**正文不同**（多为站点自身命名撞车，非抓取缺陷，见下）
 duplicate_body   正文文本完全重复（重复抓取/串页）
 ad_residue       正文中疑似仍残留的站点广告行
 short_chapter    字数显著低于全书中位数的章节（常见于站点未同步完的章节）
 mojibake         编码异常（替换字符过多或汉字占比过低）
 protected        受保护章节（预期被拦截，列出以便核对拦截是否生效）
+
+⚠ 为什么「标题同名」要再判一次正文（v0.8.13，红袖实测）：
+  《重生换宗…》里 #313 与 #315 都叫「番外：归家」，但两个 cid 不同、
+  正文 169 / 182 字、重合度 **1%** —— 是站点自己有两个番外撞了名。
+  若只比标题就报「标题重复」，最坏后果是让人去**去重**，
+  从而删掉一章真内容。所以定性必须带上正文：只有"同名 + 同文"才算真重复。
 """
 
 import hashlib
@@ -45,6 +52,19 @@ def _mojibake_ratio(text: str) -> float:
     return len(CJK_RE.findall(body)) / len(body)
 
 
+def _same_body(a, b) -> bool:
+    """两章正文是否一致；任一侧取不到正文（未抓/受保护/空）时返回 None。
+
+    `None` 不等于「不同」—— `--limit` 限流抓取时同名的两章可能只有一章抓了，
+    这时说「站点命名撞车」是无依据的，报告里按「未定」呈现。
+    """
+    if a is None or b is None:
+        return None
+    if not (a.paragraphs and b.paragraphs):
+        return None
+    return _body_hash(a.text) == _body_hash(b.text)
+
+
 def proofread(book) -> dict:
     """产出校对报告。"""
     ok = [c for c in book.chapters if c.status == STATUS_OK]
@@ -52,6 +72,7 @@ def proofread(book) -> dict:
     med = median(chars) if chars else 0
 
     missing, out_of_order, dup_title, dup_body = [], [], [], []
+    title_clash = []
     ad_residue, short_chapter, mojibake = [], [], []
 
     # 乱序检查：cid 数值应单调递增。
@@ -84,15 +105,25 @@ def proofread(book) -> dict:
             missing.append({"index": c.index, "title": c.title,
                             "status": c.status, "note": c.note})
 
-    # 标题重复
+    # 标题同名：**必须再判「正文是否也相同」才能定性**。
+    #
+    # 实测（红袖《重生换宗…》v0.8.13）：两个不同 cid 的章节都叫「番外：归家」，
+    # 但正文 169 / 182 字、重合度只有 1% —— 是**站点自己的命名**（同一本书里
+    # 两个番外撞名），不是抓取缺陷。早先只比标题，会把它报成「标题重复」，
+    # 让人以为抓错了、甚至去「去重」而**误删一章真内容**。
+    #
+    # 故按正文再分两类：正文也相同 = 真重复（回显块/重复抓取）；
+    # 正文不同 = 站点命名撞车，单列 `title_clash`，不计入阻断项。
+    by_index = {c.index: c for c in book.chapters}
     seen_title = {}
     for c in book.chapters:
         key = (c.title or "").strip()
         if not key:
             continue
         if key in seen_title:
-            dup_title.append({"index": c.index, "title": key,
-                              "same_as": seen_title[key]})
+            rec = {"index": c.index, "title": key, "same_as": seen_title[key]}
+            rec["body_same"] = _same_body(by_index.get(seen_title[key]), c)
+            (dup_title if rec["body_same"] is True else title_clash).append(rec)
         else:
             seen_title[key] = c.index
 
@@ -132,6 +163,7 @@ def proofread(book) -> dict:
         "missing": len(missing),
         "out_of_order": len(out_of_order),
         "duplicate_title": len(dup_title),
+        "title_clash": len(title_clash),
         "duplicate_body": len(dup_body),
         "ad_residue": len(ad_residue),
         "short_chapter": len(short_chapter),
@@ -153,6 +185,7 @@ def proofread(book) -> dict:
         "missing": missing,
         "out_of_order": out_of_order,
         "duplicate_title": dup_title,
+        "title_clash": title_clash,
         "duplicate_body": dup_body,
         "ad_residue": ad_residue,
         "short_chapter": short_chapter,
@@ -178,7 +211,8 @@ def format_report(report: dict, max_items: int = 8) -> str:
         f"受保护拦截   : {c['protected']}",
         f"缺失/失败    : {c['missing']}",
         f"乱序         : {c['out_of_order']}",
-        f"标题重复     : {c['duplicate_title']}",
+        f"标题重复     : {c['duplicate_title']}（同名**且**正文相同）",
+        f"标题同名     : {c['title_clash']}（同名但正文不同 → 多为站点命名，非抓取缺陷）",
         f"正文重复     : {c['duplicate_body']}",
         f"广告残留     : {c['ad_residue']}",
         f"异常短章     : {c['short_chapter']}（中位字数 {c['median_chars']}）",
@@ -202,8 +236,14 @@ def format_report(report: dict, max_items: int = 8) -> str:
              lambda x: f"#{x['index']} {x['title']} [{x['status']}] {x['note']}")
     _section("乱序", report["out_of_order"],
              lambda x: f"#{x['index']} cid={x['cid']} < 前章 cid={x['prev_cid']}")
-    _section("标题重复", report["duplicate_title"],
+    _section("标题重复（同名 + 正文相同 → 需查回显块/重复抓取）",
+             report["duplicate_title"],
              lambda x: f"#{x['index']} 「{x['title']}」与 #{x['same_as']} 相同")
+    _section("标题同名但正文不同（站点命名，**不是**抓取缺陷，不清除）",
+             report["title_clash"],
+             lambda x: f"#{x['index']} 「{x['title']}」与 #{x['same_as']} 同名，"
+                       + ("正文已确认不同" if x.get("body_same") is False
+                          else "正文未取到，无法判定"))
     _section("正文重复", report["duplicate_body"],
              lambda x: f"#{x['index']} 与 #{x['same_as']} 正文完全一致")
     _section("广告残留", report["ad_residue"],
