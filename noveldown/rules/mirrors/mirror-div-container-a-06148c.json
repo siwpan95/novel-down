@@ -8,10 +8,12 @@
   "requires_js": false,
   "fetch_mode": "http",
   "demo_url": "https://www.po18r.com/book/253/",
-  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `div.container a` + 正文 `div.content`；域数 2；书号形态 ['digits'] → url_pattern=^.*/(\\d+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · po18r.com — 47 章 / 2226 字\n  · huabenge.com — 205 章 / 2094 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。",
+  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `div.container a` + 正文 `div.content`；域数 4；书号形态 ['digits'] → url_pattern=^.*/(\\d+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · po18r.com — 47 章 / 2226 字\n  · huabenge.com — 205 章 / 2094 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。\n\n【合并】追加域名 ['m.yuzhaiwx.com', 'win10city.com']（2026-09-21 P0 复扫救回，同签名逐域实测通过）\n  · m.yuzhaiwx.com — 205 章 / 2094 字\n  · win10city.com — 47 章 / 2226 字",
   "match": [
     "huabenge.com",
-    "po18r.com"
+    "m.yuzhaiwx.com",
+    "po18r.com",
+    "win10city.com"
   ],
   "book": {
     "url_pattern": "^.*/(\\d+)(?:/|\\.html?)?$",

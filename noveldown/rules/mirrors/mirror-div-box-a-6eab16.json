@@ -8,7 +8,7 @@
   "requires_js": false,
   "fetch_mode": "http",
   "demo_url": "https://xiaoshuo5.com/107_107152/",
-  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `div.box a` + 正文 `article`；域数 11；书号形态 ['alnum', 'digits'] → url_pattern=^.*/([A-Za-z0-9_-]+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · xiaoshuo5.com — 102 章 / 1509 字\n  · itxtbook.net — 103 章 / 1148 字\n  · kuuai.com — 96 章 / 1290 字\n  · sfwx.com — 82 章 / 1231 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。\n\n【v0.8.13 合并】追加域名：['7cxs.com']（来自知乎名单候选实探，同签名实测通过）",
+  "notes": "★ 批量铺开镜像池 · 自动聚类（详见 docs/NEW_SITES_PLAN.md §11.3）\n签名：目录 `div.box a` + 正文 `article`；域数 12；书号形态 ['alnum', 'digits'] → url_pattern=^.*/([A-Za-z0-9_-]+)(?:/|\\.html?)?$\n收录理由：盗版站抽风是通病，**源越多越抗抽风**——同一份内容有多个可替换的域名才算可用。\n验证方式：每域均由 `tools/scan_mirrors.py --phase deep` 逐候选实测通过（目录 ≥20 章、正文 ≥300 汉字），**非按模板猜测**。样例：\n  · xiaoshuo5.com — 102 章 / 1509 字\n  · itxtbook.net — 103 章 / 1148 字\n  · kuuai.com — 96 章 / 1290 字\n  · sfwx.com — 82 章 / 1231 字\n⚠ 法律：内容来源未授权，规则仅供**个人离线阅读**，勿再分发或商用。\n\n【v0.8.13 合并】追加域名：['7cxs.com']（来自知乎名单候选实探，同签名实测通过）\n\n【合并】追加域名 ['zwydw.com']（2026-09-21 P0 复扫救回，同签名逐域实测通过）\n  · zwydw.com — 103 章 / 1148 字",
   "match": [
     "7cxs.com",
     "baquge.org",
@@ -20,7 +20,8 @@
     "qb5200.org",
     "s81zw.com",
     "sfwx.com",
-    "xiaoshuo5.com"
+    "xiaoshuo5.com",
+    "zwydw.com"
   ],
   "book": {
     "url_pattern": "^.*/([A-Za-z0-9_-]+)(?:/|\\.html?)?$",

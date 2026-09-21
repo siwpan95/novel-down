@@ -162,6 +162,29 @@ def _get_ex(url, timeout, retries=None):
         return None, f"{tag}: {str(e)[:60]}"
 
 
+def _get_first_ok(urls, timeout):
+    """依次试多个 URL，返回第一个取到的 (resp, "", url)；全失败返回 (None, 最后错误, None)。
+
+    ⚠ **为什么需要它**（2026-09-21 实测的教训）：
+    `live` 段本来就是**双 scheme 兜底**（`for scheme in ("https", "http")`），
+    而 `deep` 段原来只试 `rec["base"]` **一个 URL** —— 于是 https 一抖动/证书有问题，
+    deep 就直接记「首页取不到」，**把 live 刚救回来的站又「判死」一次**。
+    实测 229 个存活域里 **191 个**栽在这（109 SSLError + 57 ReadTimeout + 23 ProxyError
+    + 2 ConnectionError，**全是网络层，不是站点不可做**）。
+    → 这是典型的「**同一名词两个口径**」：`alive`（live 段结论，含 http 兜底）
+      与 deep 的「首页取不到」（只试 https）**不是一回事**。
+    """
+    last = ""
+    for u in urls:
+        if not u:
+            continue
+        r, err = _get_ex(u, timeout)
+        if r is not None:
+            return r, "", u
+        last = err or last
+    return None, last, None
+
+
 def _classes(el) -> str:
     if el is None:
         return ""
@@ -509,10 +532,13 @@ def scan_deep(rec: dict, timeout: float):
            "content_selector": "", "content_cjk": 0,
            "book_path": "", "chapter_path": "", "verdict": ""}
     try:
-        r, err = _get_ex(base, timeout)
+        # ⚠ 与 live 段对齐：live 是双 scheme 兜底，deep 原来只试一个 URL
+        #   → https 一失败就判「取不到」（实测 229 域里 191 个栽在这，全是网络层）。
+        r, err, base = _get_first_ok([base, f"https://{dom}/", f"http://{dom}/"], timeout)
         if r is None:
             out["verdict"] = f"首页取不到（{err}）"
             return out
+        out["base"] = base
         # 优先用「最新章节链接反推」（命中率高），再补上路径形态匹配
         # ⚠ 顺序很重要：**先把「按链接形态找到的书籍页」放最前**。
         # `derive_book_urls` 是从最新章节反推、覆盖面广但**会产出 404**

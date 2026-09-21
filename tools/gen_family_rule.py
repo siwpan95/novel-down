@@ -66,6 +66,21 @@ def load_raw(path):
     return out
 
 
+def _find_existing(rid: str):
+    """在规则目录（**含 mirrors/ 等子目录**）里找同名规则文件，返回相对路径或 None。
+
+    ⚠ 存在的理由见 main() 里的 id 冲突检查：id 由签名哈希决定，
+    **同一签名的不同批次必然生成同一个 id**，必须防止静默冲突。
+    """
+    root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "noveldown", "rules")
+    target = rid + ".json"
+    for dirpath, _dirs, files in os.walk(root):
+        if target in files:
+            return os.path.relpath(os.path.join(dirpath, target), os.path.dirname(root))
+    return None
+
+
 def passed(rec) -> bool:
     return bool(rec.get("catalog_selector") and rec.get("content_selector"))
 
@@ -227,7 +242,20 @@ def main():
         if len(rs) >= args.min_domains:
             rule = build_rule(doms, cat, con, rs)
             if rule is None:
-                skipped.append(f"{cat} + {con}")
+                skipped.append(f"{cat} + {con}（无可验证 demo）")
+                continue
+            # ⚠⚠ id 冲突检查（2026-09-21 实测踩到，必须防）：
+            # 规则 id = `mirror-{slug}-{sha1(签名)[:6]}` → **同一签名的不同批次必然同 id**。
+            # 若仓库里已有同名规则（多在 `noveldown/rules/mirrors/`），草稿一旦拷过去就
+            # **静默 id 冲突**（加载时后者覆盖前者）。实测症状：拷入的草稿 match 是
+            # `['m.yuzhaiwx.com','win10city.com']`，但 `load_rules()` 读到的却是既有规则的 match。
+            # → **正确做法是把新域「并入」既有规则**（`tools/merge_family_domains.py`，
+            #  它还会校验签名一致 + 同步 notes 域数），而不是新建一条同 id 的规则。
+            existing = _find_existing(rule["id"])
+            if existing:
+                skipped.append(
+                    f"{cat} + {con} → id「{rule['id']}」**已存在**于 {existing}；"
+                    f"应改用 tools/merge_family_domains.py 把新域并入（域：{', '.join(doms)}）")
                 continue
             p = os.path.join(args.out_dir, rule["id"] + ".json")
             with open(p, "w", encoding="utf-8") as f:
@@ -236,7 +264,7 @@ def main():
     with open(args.report, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     if skipped:
-        print(f"⚠ 跳过 {len(skipped)} 组（无可验证 demo：书页跳到了本组域名之外）：")
+        print(f"⚠ 跳过 {len(skipped)} 组：")
         for x in skipped:
             print(f"    {x}")
     print(f"\n聚类 {len(groups)} 组 · 生成 {made} 条规则草稿 → {args.out_dir}")

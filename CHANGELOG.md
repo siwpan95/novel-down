@@ -5,6 +5,74 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.8.33] - 2026-09-21
+
+按全哥「继续完成任务」—— 把「复扫 229 域 → 过滤 → deep 深探 → 聚族 → 批量生成规则」全链路走完，
+并修掉过程中暴露的**三个工具缺陷**。
+
+### Fixed（工具缺陷 1）：`gen_family_rule` 的 **id 静默冲突**
+
+规则 id = `mirror-{slug}-{sha1(签名)[:6]}` → **同一签名的不同批次必然生成同一个 id**。
+本轮实测踩到：把草稿拷进 `noveldown/rules/` 后，`load_rules()` 读到的却是**镜像池里同名规则**的
+match —— **静默覆盖，没有任何报错**。
+症状：拷入的草稿 `match` 是 `['m.yuzhaiwx.com','win10city.com']`，实际加载到的是
+`['huabenge.com','po18r.com']`。
+
+→ 已加防护：生成草稿前用 `_find_existing()`（**递归含 `mirrors/`**）检查 id 是否存在，
+存在则**跳过并给出正确指引**（「应改用 `tools/merge_family_domains.py` 把新域并入」）。
+**实测反证**：重跑正确报出 5 组冲突，并准确区分了 `rules\` 与 `rules\mirrors\`。
+
+### Fixed（工具缺陷 2）：`proofread.AD_HINTS` 把「作者的话」当广告
+
+原表含 `推荐票` / `求收藏` / `求订阅`，但实测它们在**作者的话**里高频出现 ——
+例（ibiquge.vip《斗罗大陆》55 章）**5 章命中 `推荐票`**，原文是
+「看了之后，别忘记投票。新书急需大家的推荐票和收藏支持。」「第四更！点击、收藏、推荐票，有木有！！！」
+→ **那是正文内容**；若据此去补 `ad_patterns` 就会**删掉真内容**。
+→ 已移除这三个词（**判据：只收「站点指纹」，不收「作者用语」**）。
+
+### Fixed（工具缺陷 3）：`scan_mirrors` 的 `deep` 段**缺双协议兜底**
+
+`live` 段是双 scheme 兜底（`for scheme in ("https","http")`），而 `deep` 段只用 `rec["base"]`
+→ **https 一抖动就判「取不到」，把 live 刚救回来的站又判死一次**。
+实测 229 域里 **191 个**栽在这（109 SSLError + 57 ReadTimeout + 23 ProxyError + 2 ConnectionError，
+**全是网络层，不是站点不可做**）→ 新增 `_get_first_ok()` 与 live 段对齐。
+
+### 批量处理结果
+
+**① 同签名 → 并入既有族规则（4 条规则 / +5 域，工具自动校验签名一致）**
+
+| 规则 | 新增域 |
+|---|---|
+| `mirror-body-a-0651ba` | `m.xyuzhaiwu4.com` |
+| `mirror-div-box-a-6eab16` | `zwydw.com` |
+| `mirror-div-container-a-06148c` | `m.yuzhaiwx.com`、`win10city.com` |
+| `mirror-div-l-a-893633` | `wujixsw.info` |
+
+**② 全新签名 → 新建规则 3 条（均过 `probe` + 全量 E2E + 校对）**
+
+| 规则 | 站点 | E2E 实测 |
+|---|---|---|
+| `mirror-body-a-97c7d4` | `ibiquge.vip` | 55 章 / 65621 字 / **PASS** |
+| `mirror-div-main-a-5d92e1` | `leduzw.com` | 20 章 / 32989 字 / **PASS** |
+| `mirror-div-main-a-d0f42a` | `51eshu.com` | 29 章 / 34786 字 / **PASS**；补 `ad_patterns` 后**广告残留 10 → 0** |
+
+**③ 验证失败 2 条（已删，不将就）**
+
+- `mirror-list-a-023fb9`（`m.jdzfx.com`）：**demo_url 指向分类页** `/cate1/` → 目录 0 章；
+- `mirror-ul-chapter-list-a-0a3d0d`（`kaixinman.com`）：路径是 **`/comic/` → 漫画站**（漏网）。
+  ⚠ 这说明 `_reject_reason` 的**中文关键词表对英文域名/路径无效**，待改进（已记入文档）。
+
+### Changed
+
+- 咪咕存根按**全哥实测**更正：**不是「需要登录态」，而是「仅支持移动端 —— PC 端没有阅读入口」**
+  （试读需扫码）。**我原先基于 bundle `isLogin` 的推测只是次要线索**。
+  结论仍是「不做」，但理由从「接口没找到」升级为「**超本项目能力边界**」。
+
+### 状态
+
+- 规则 157 → **160**（启用 142 → **145**；顶层 44 → **47**，启用 29 → **32**）
+  ｜免费镜像 120 → **123**｜测试 **274** 全绿｜门禁 **11 项 PASS**
+
 ## [0.8.32] - 2026-09-21
 
 按全哥指示执行三件事：① 咪咕按已定位入口继续；② 复扫 229 域 → 过滤 → deep 深探 → 聚族；
