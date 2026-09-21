@@ -9,6 +9,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from noveldown.parser import (body_api_fragment, catalog_links_from_page,  # noqa: E402
                               clean_page_title, collect_catalog_items,
+                              collect_json_catalog,
                               extract_paragraphs, make_soup,
                               normalize_catalog, parse_book_info,
                               parse_chapter_page)
@@ -145,6 +146,238 @@ class TestCatalogFromFixtures(unittest.TestCase):
         info = parse_book_info(rule, html, "https://www.biqu520.net/books_9484/", "9484")
         self.assertIsInstance(info, dict)
         self.assertIn("title", info)
+
+
+class TestNestedJsonFields(unittest.TestCase):
+    """`_dig` 穿透**字符串化的 JSON** + `@json:` 路径支持 `{bid}`（v0.8.15）。
+
+    背景：360 系接口不嵌套对象，而是把子对象**序列化成字符串**塞进字段 ——
+    仙人掌小说的 `op_ext` 就是 `'{"money_topic":{...}}'`（一个 str），
+    而章节标题 / 付费标记 / 全局序号**全在里面**。不穿透就一个都取不到。
+    """
+
+    def test_dig_penetrates_json_string(self):
+        from noveldown.parser import _dig
+        item = {"op_ext": '{"money_topic": {"index": "11", "title": "第十一章", "paid": "2"}}'}
+        self.assertEqual(_dig(item, "op_ext.money_topic.index"), "11")
+        self.assertEqual(_dig(item, "op_ext.money_topic.title"), "第十一章")
+        self.assertEqual(_dig(item, "op_ext.money_topic.paid"), "2")
+
+    def test_dig_plain_string_is_not_parsed(self):
+        """普通字符串**不能**当对象继续走 —— 否则等于把无意义的值当数据。"""
+        from noveldown.parser import _dig
+        self.assertIsNone(_dig({"a": "hello"}, "a.b"))
+        self.assertIsNone(_dig({"a": "{坏 JSON"}, "a.b"))
+        self.assertIsNone(_dig({"a": "[1,2"}, "a.b"))
+
+    def test_dig_still_handles_index_and_missing(self):
+        from noveldown.parser import _dig
+        self.assertEqual(_dig({"a": [{"b": 1}]}, "a.0.b"), 1)
+        self.assertIsNone(_dig({}, "x.y"))
+        self.assertIsNone(_dig({"a": 1}, "a.b"))
+
+    def test_parse_jsonish_accepts_jsonp_and_plain(self):
+        from noveldown.parser import _parse_jsonish
+        self.assertEqual(_parse_jsonish('{"a":1}'), {"a": 1})
+        self.assertEqual(_parse_jsonish('cb({"a":1})'), {"a": 1})
+        self.assertEqual(_parse_jsonish('cb({"a":1});'), {"a": 1})
+        self.assertIsNone(_parse_jsonish("<html>"))
+        self.assertIsNone(_parse_jsonish(""))
+        self.assertIsNone(_parse_jsonish("123"))       # 标量不算
+
+    def test_book_info_from_json_api_with_bid_placeholder(self):
+        """`book.info_api` 回 JSONP 时用 `@json:data.{bid}.xxx` 取值（仙人掌形态）。"""
+        from noveldown.rules import Rule
+        rule = Rule({
+            "id": "t.x", "name": "T", "match": ["x.com"], "free_only": True,
+            "book": {"url_pattern": "c=(\\w+)", "info_url": "{origin}/r?c={bid}",
+                     "info_api": {"url": "{origin}/info?c={bid}",
+                                  "title": ["@json:data.{bid}.name"],
+                                  "author": ["@json:data.{bid}.source"],
+                                  "intro": ["@json:data.{bid}.data_describe"],
+                                  "status": ["@json:data.{bid}.status_name"]}},
+            "catalog": {"mode": "json_api", "json": {"url": "{origin}/l?c={bid}"}},
+            "chapter": {"content_selector": "div.c"},
+        }).validate()
+        frag = ('cb({"errno":0,"data":{"CH1":{"name":"书名X","source":"作者Y",'
+                '"data_describe":"简介Z","status_name":"已完结"}}})')
+        info = parse_book_info(rule, "<html></html>", "https://x.com/r?c=CH1", "CH1",
+                               info_html=frag)
+        self.assertEqual(info["title"], "书名X")
+        self.assertEqual(info["author"], "作者Y")
+        self.assertEqual(info["intro"], "简介Z")
+        self.assertEqual(info["status"], "已完结")
+
+
+class TestJsonCatalogNestedAndApiUrl(unittest.TestCase):
+    """JSON 目录：字段走**嵌套路径**、逐章正文地址带在条目上、VIP 字段分栏。"""
+
+    def _rule(self):
+        from noveldown.rules import Rule
+        return Rule({
+            "id": "t.x", "name": "T", "match": ["x.com"], "free_only": True,
+            "book": {"url_pattern": "c=(\\w+)", "info_url": "{origin}/r?c={bid}"},
+            "catalog": {
+                "mode": "json_api",
+                "json": {"url": "{origin}/mlist?c={bid}&page={page}",
+                         "items_path": "data.res",
+                         "max_pages": 9,
+                         "cid_field": "op_ext.money_topic.index",
+                         "title_field": "op_ext.money_topic.title",
+                         "vip_field": "op_ext.money_topic.paid",
+                         "vip_truthy": ["1", "2"],
+                         "api_url_field": "rawurl"},
+                "url_template": "{origin}/read?c={bid}&u={api_url}"},
+            "chapter": {"content_selector": "div.c"},
+        }).validate()
+
+    def test_catalog_from_fixture(self):
+        html = read_fixture("xrz_catalog_p1.json")
+        items, locked = collect_json_catalog(self._rule(), html, "ch1", "https://x.com")
+        # 前 10 章免费、后 10 章付费
+        self.assertEqual(len(items), 10)
+        self.assertEqual(len(locked), 10)
+        self.assertEqual(items[0]["cid"], "1")
+        self.assertEqual(items[0]["title"], "第一章、要不我们凑一下")
+        self.assertEqual(locked[0]["cid"], "11")
+        self.assertIn("paid=2", locked[0]["reason"])
+        # 逐章正文地址被带下来
+        self.assertTrue(items[0]["api_url"].startswith("http://zm.news.so.com/"))
+        # url_template 里的 {api_url} 生效
+        self.assertIn("zm.news.so.com", items[0]["url"])
+        chs = normalize_catalog(items)
+        self.assertEqual([c.index for c in chs], list(range(1, 11)))
+        self.assertTrue(chs[0].api_url)
+
+    def test_cid_must_be_global_index_not_page_local_idx(self):
+        """反面锚点：`idx` 是**页内序号**，用它当 cid 会让第 2 页起全被去重掉。"""
+        from noveldown.rules import Rule
+        rule = Rule({
+            "id": "t.y", "name": "T", "match": ["y.com"], "free_only": True,
+            "book": {"url_pattern": "c=(\\w+)", "info_url": "{origin}/r?c={bid}"},
+            "catalog": {"mode": "json_api",
+                        "json": {"url": "{origin}/l?c={bid}", "items_path": "data.res",
+                                 "cid_field": "idx", "title_field": "op_ext.money_topic.title"}},
+            "chapter": {"content_selector": "div.c"},
+        }).validate()
+        html = read_fixture("xrz_catalog_p1.json")
+        items, _ = collect_json_catalog(rule, html, "ch1", "https://y.com")
+        # 用 idx 当 cid → 只剩 20 个唯一值里的 1..20，但**全是页内序号**
+        self.assertEqual(items[0]["cid"], "1")
+        self.assertEqual(items[-1]["cid"], "20")    # 而真实全局序号应是 1..20 之外的第 20 页
+        # 换言之：这样的配置在第 2 页会产出与第 1 页重复的 cid → 被去重掉
+        self.assertEqual(len({i["cid"] for i in items}), 20)
+
+
+class TestBodyApiFreeGuard(unittest.TestCase):
+    """`chapter.body_api.require` —— 在**数据源**上判免费（v0.8.15）。
+
+    为什么必须有这道防线（实测仙人掌小说 / 360）：
+    付费章走正文接口**既不报错、也不带任何付费提示**，只返回一段**戛然截断的
+    试读片段**（实测第 11 章 642 字符 / 434 汉字；第 1 章完整是 2392 字符）。
+    正文里连一个「付费/VIP」字样都没有 → **第 4 层「付费墙特征词」完全失效**，
+    只靠它会把试读片段当正文**静默导出**。
+    而同一个响应里有 `data.unlock: false` 这种**权威状态字段**，直接拿它判。
+    """
+
+    def _dl(self, rule):
+        from noveldown.engine import Downloader
+        d = Downloader.__new__(Downloader)
+        d.rule = rule
+        d.book = type("B", (), {"book_id": "ch1", "url": "https://x.com/r?c=ch1"})()
+        d.log = lambda *a, **k: None
+        return d
+
+    def _rule(self, require=None):
+        from noveldown.rules import Rule
+        ba = {"url": "https://api.x.com/d?u={api_url}&c={bid}",
+              "content_field": "data.content"}
+        if require is not None:
+            ba["require"] = require
+        return Rule({
+            "id": "t.x", "name": "T", "match": ["x.com"], "free_only": True,
+            "book": {"url_pattern": "c=(\\w+)", "info_url": "{origin}/r?c={bid}"},
+            "catalog": {"mode": "json_api", "json": {"url": "{origin}/l?c={bid}"}},
+            "chapter": {"content_selector": "div.nd-api-body", "body_api": ba},
+        }).validate()
+
+    def _ch(self, api_url="http://zm.news.so.com/aaa"):
+        return type("C", (), {"cid": "11", "index": 11, "api_url": api_url})()
+
+    def test_paid_chapter_is_judged_protected(self):
+        """付费章响应（fixture 实录）→ 判受保护，且**不产出任何片段**。"""
+        d = self._dl(self._rule({"field": "data.unlock"}))
+        raw = read_fixture("xrz_detail_paid.json")
+        d._fetch_raw = lambda *a, **k: raw
+        frag, reason = d._body_api_html(self._ch(), "https://x.com/r?c=ch1")
+        self.assertEqual(frag, "", "受保护章绝不能给出正文片段")
+        self.assertIn("data.unlock", reason)
+        self.assertIn("False", reason)
+
+    def test_free_chapter_passes_and_yields_fragment(self):
+        d = self._dl(self._rule({"field": "data.unlock"}))
+        raw = read_fixture("xrz_detail_free.json")
+        d._fetch_raw = lambda *a, **k: raw
+        frag, reason = d._body_api_html(self._ch(), "https://x.com/r?c=ch1")
+        self.assertEqual(reason, "")
+        self.assertIn("nd-api-body", frag)
+        self.assertIn("谁经历过", frag)
+
+    def test_missing_or_null_field_is_protected(self):
+        """JSON 里**字段缺失 / 为 null / 为假值**一律判受保护。
+
+        宁可漏抓一章（可重试、可见），也不能把试读片段当正文**静默**导出。
+        """
+        from noveldown.engine import _require_violation
+        req = {"field": "data.unlock"}
+        for bad in ('{"data":{}}', '{"data":{"unlock":null}}',
+                    '{"data":{"unlock":0}}', '{"data":{"unlock":"false"}}'):
+            self.assertTrue(_require_violation(bad, req), bad)
+
+    def test_unparseable_response_is_not_judged(self):
+        """**完全不是 JSON** 时不判受保护 —— 交给下游兜底。
+
+        理由：这类响应 `body_api_fragment` 也取不到 → 该章回落到页面 HTML，
+        而仙人掌的阅读页纯 HTTP 只是个空壳 → 该章会以「空/过短」暴露出来
+        （校对报告 + 产物终检都会报），**不是静默错**。
+        若在这里武断判受保护，反而会把**免费章误标成 locked**（丢内容）。
+        """
+        from noveldown.engine import _require_violation
+        for other in ("not json at all", "<html>机器人验证</html>", ""):
+            self.assertEqual(_require_violation(other, {"field": "data.unlock"}), "")
+
+    def test_truthy_field_passes(self):
+        from noveldown.engine import _require_violation
+        req = {"field": "data.unlock"}
+        for good in ('{"data":{"unlock":true}}', '{"data":{"unlock":"1"}}',
+                     '{"data":{"unlock":"True"}}'):
+            self.assertEqual(_require_violation(good, req), "")
+
+    def test_no_require_configured_is_noop(self):
+        """不配 `require` 时行为与历史一致（不得凭空拦截）。"""
+        from noveldown.engine import _require_violation
+        self.assertEqual(_require_violation('{"data":{"unlock":false}}', {}), "")
+        self.assertEqual(_require_violation("raw text", {"field": ""}), "")
+
+    def test_nested_require_path(self):
+        """`require.field` 也支持嵌套路径，且能穿透**字符串化 JSON**。"""
+        from noveldown.engine import _require_violation
+        raw = '{"data":{"op_ext":"{\\"paid\\":\\"2\\"}"}}'
+        # paid=2 落在 truthy 里 → 通过（证明路径穿透到了字符串化 JSON 内部）
+        self.assertEqual(_require_violation(raw, {"field": "data.op_ext.paid",
+                                                 "truthy": ["2"]}), "")
+        # 同一字段不在 truthy 里 → 判受保护
+        self.assertTrue(_require_violation(raw, {"field": "data.op_ext.paid",
+                                                 "truthy": ["0"]}))
+
+    def test_missing_api_url_skips_call(self):
+        """`{api_url}` 占位但条目没带地址 → 直接返回，不发出请求。"""
+        d = self._dl(self._rule({"field": "data.unlock"}))
+        called = []
+        d._fetch_raw = lambda *a, **k: called.append(1) or "{}"
+        frag, reason = d._body_api_html(self._ch(api_url=""), "https://x.com/r?c=ch1")
+        self.assertEqual((frag, reason), ("", ""))
+        self.assertEqual(called, [], "缺 api_url 时不该发请求")
 
 
 class TestXxsyFixtures(unittest.TestCase):

@@ -17,6 +17,7 @@
 """
 
 import copy
+import json
 import re
 from urllib.parse import urljoin, urlparse
 
@@ -149,6 +150,28 @@ def _from_json_block(soup, book_cfg, path: str):
     return _dig(data, path)
 
 
+def _parse_jsonish(text):
+    """尽量把一段文本当 JSON 解析（吃 JSONP 包装）；不是 JSON 返回 None。
+
+    为什么需要它：接口层面的「片段」并不总是 HTML —— 有的是纯 JSON，
+    有的是 `cb({...})` 这种 JSONP 包装（360 系接口 `f=jsonp` 但有时回纯 JSON，
+    两种都得吃）。判断宽松但**安全**：只有解析成功且结果是 dict/list 才算数。
+    """
+    if not text:
+        return None
+    s = text.strip()
+    m = re.match(r"^[^(]*\((.*)\)\s*;?\s*$", s, re.S)   # JSONP 包装
+    if m:
+        s = m.group(1).strip()
+    if s[:1] not in ("{", "["):
+        return None
+    try:
+        data = json.loads(s)
+    except (ValueError, TypeError):
+        return None
+    return data if isinstance(data, (dict, list)) else None
+
+
 def parse_book_info(rule, html: str, url: str, bid: str,
                     info_html: str = None) -> dict:
     """解析书籍元信息（标题/作者/简介/封面/状态）。
@@ -170,7 +193,13 @@ def parse_book_info(rule, html: str, url: str, bid: str,
     片段里声明的字段优先于主页面取值。
     """
     soup = make_soup(html)
+    # `book.info_api` 取回的片段**可能是 JSON/JSONP**（v0.8.15）：
+    # 实测仙人掌小说（360）的书籍页是纯 SPA 外壳（纯 HTTP 里没有书名/简介），
+    # 元数据只在 `growth.kuaichuan.360kuai.com/info?c={bid}` 这个 JSONP 接口里。
+    # 此时 `info_api.<字段>` 用 `@json:<path>` 写路径（与 `book.*` 的 `@json:` 同义），
+    # 由这里解析 JSON 后 `_dig` 取值。是 JSON 就用 JSON 分支，不是则照旧走 CSS。
     info_soup = make_soup(info_html) if info_html else None
+    info_json = _parse_jsonish(info_html)
     cfg = rule.book_cfg
     iapi = cfg.get("info_api") or {}
 
@@ -212,10 +241,20 @@ def parse_book_info(rule, html: str, url: str, bid: str,
 
     def _field(name):
         """`book.info_api` 里声明的字段优先，未命中再落回主页面选择器。"""
-        if info_soup is not None and iapi.get(name):
-            v = _pick(iapi[name], info_soup)
-            if v:
-                return v
+        if iapi.get(name):
+            if info_json is not None:
+                for sel in (iapi[name] if isinstance(iapi[name], list) else [iapi[name]]):
+                    if isinstance(sel, str) and sel.startswith("@json:"):
+                        # 路径里允许 `{bid}`：有些接口把书按 ID 当键
+                        # （仙人掌小说：`data.<channel>.name`），无法预先写死。
+                        p = sel[len("@json:"):].replace("{bid}", bid)
+                        v = _dig(info_json, p)
+                        if v not in (None, ""):
+                            return str(v).strip()
+            if info_soup is not None:
+                v = _pick(iapi[name], info_soup)
+                if v:
+                    return v
         return _pick(cfg.get(name))
 
     title = _field("title")
@@ -350,7 +389,8 @@ def _extract_cid(rule, el, href: str, bid: str, origin: str, page_url: str):
     if tpl:
         url = (tpl.replace("{origin}", origin)
                   .replace("{bid}", bid)
-                  .replace("{cid}", cid))
+                  .replace("{cid}", cid)
+                  .replace("{api_url}", str(el.get("api_url") or "")))
     else:
         url = urljoin(page_url, href) if href else ""
     return cid, url
@@ -575,6 +615,7 @@ def normalize_catalog(items, sort_mode: str = "cid_numeric_asc",
         chapters.append(Chapter(
             index=i, title=it["title"], url=it["url"], cid=it["cid"],
             volume=it.get("volume", ""),
+            api_url=it.get("api_url", ""),
             status=it.get("status", STATUS_PENDING),
             note=it.get("note", "")))
     return chapters
@@ -585,11 +626,29 @@ def normalize_catalog(items, sort_mode: str = "cid_numeric_asc",
 # ------------------------------------------------------------
 
 def _dig(obj, path: str):
-    """按 `a.b.c` 或 `a.0.b` 取嵌套值，缺失返回 None。"""
+    """按 `a.b.c` 或 `a.0.b` 取嵌套值，缺失返回 None。
+
+    **会自动穿透「字符串化的 JSON」**（v0.8.15 新增）：有些接口把子对象**序列化成
+    字符串**再塞进字段里，而不是嵌套对象 —— 实测仙人掌小说（360）的 `op_ext` 就是
+    `'{"money_topic":{"index":"1","title":"第一章…","paid":"0"}}'`（一个 str）。
+    路径写 `op_ext.money_topic.title` 时中间那一层是字符串，不穿透就永远取不到，
+    而这类字段往往正是标题/VIP 标记所在。
+
+    穿透是**安全的宽松增强**：只有值以 `{`/`[` 开头且能 `json.loads` 成功才继续，
+    否则按原语义返回 None（不会把普通字符串误当对象）。
+    """
     cur = obj
     for part in (path or "").split("."):
         if part == "":
             continue
+        if isinstance(cur, str):
+            s = cur.strip()
+            if s[:1] not in ("{", "["):
+                return None
+            try:
+                cur = json.loads(s)
+            except (ValueError, TypeError):
+                return None
         if isinstance(cur, list):
             try:
                 cur = cur[int(part)]
@@ -661,6 +720,7 @@ def collect_json_catalog(rule, text: str, bid: str, origin: str):
     cid_f = cfg.get("cid_field", "id")
     title_f = cfg.get("title_field", "title")
     vip_f = cfg.get("vip_field")
+    api_url_f = cfg.get("api_url_field")
     truthy = {str(x).lower() for x in (cfg.get("vip_truthy") or ["1", "true", "yes"])}
     tpl = rule.catalog_cfg.get("url_template") or ""
 
@@ -668,14 +728,31 @@ def collect_json_catalog(rule, text: str, bid: str, origin: str):
     for it in items:
         if not isinstance(it, dict):
             continue
-        cid = str(it.get(cid_f, "")).strip()
+        # ⚠ 字段一律走 `_dig`（而不是 `it.get(f)`）：接口常把数据藏在**嵌套路径**里，
+        #   甚至藏在**字符串化的 JSON** 里（仙人掌小说的 `op_ext.money_topic.title`）。
+        cid = _dig(it, cid_f)
+        cid = "" if cid is None else str(cid).strip()
         if not cid:
             continue
-        title = _norm_space(str(it.get(title_f, "")))
-        url = (tpl.replace("{origin}", origin).replace("{bid}", bid).replace("{cid}", cid))
+        t_val = _dig(it, title_f)
+        title = _norm_space(str(t_val)) if t_val is not None else ""
+        # ⚠ 顺序要紧：`{api_url}` 是**逐条**的，必须先从条目里取出来，
+        #   再拿去展开 `url_template`（否则模板里留着未替换的占位符）。
+        api_url = ""
+        if api_url_f:
+            au = _dig(it, api_url_f)
+            if au:
+                api_url = str(au).strip()
+        url = (tpl.replace("{origin}", origin).replace("{bid}", bid)
+                  .replace("{cid}", cid).replace("{api_url}", api_url))
         rec = {"cid": cid, "title": title, "url": url, "volume": ""}
+        # 逐章正文接口的 URL：正文不在章节页、而要按**每条自己的**地址去取时
+        # （仙人掌小说每章一个 zm.news.so.com/<hash>），把它带在条目上，
+        # 由 `chapter.body_api.url` 的 `{api_url}` 占位符消费。
+        if api_url:
+            rec["api_url"] = api_url
         if vip_f:
-            val = it.get(vip_f)
+            val = _dig(it, vip_f)
             if val is not None and str(val).lower() in truthy:
                 locked.append({**rec, "status": STATUS_LOCKED,
                                "note": f"目录接口字段 {vip_f}={val} 标记为受保护",

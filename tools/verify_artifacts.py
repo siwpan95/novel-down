@@ -40,6 +40,11 @@ from noveldown.constants import PAYWALL_MARKERS  # noqa: E402
 
 PUA = re.compile(r"[\ue000-\uf8ff]")
 
+# 「受保护章节标题泄漏」判据的**最小标题长度**。
+# 短标题（尤其单字）在正常正文里会自然出现，拿它当判据必然误报 ——
+# 实测仙人掌小说第 490 章标题就是一个字「番」。4 是经验下限。
+MIN_LEAK_NEEDLE = 4
+
 
 def pua_count(s: str) -> int:
     return len(PUA.findall(s or ""))
@@ -152,10 +157,18 @@ def main():
             if body_anchor and body_anchor in text:
                 body = text[text.find(body_anchor):]
         leaked = [c["title"] for c in protected
-                  if c.get("title") and c["title"] in body]
+                  if c.get("title") and len(c["title"].strip()) >= MIN_LEAK_NEEDLE
+                  and c["title"] in body]
         # 同名去重：若该标题同时属于某个 ok 章节，则不算泄漏
         ok_titles = {c["title"] for c in ok}
         leaked = [t for t in leaked if t not in ok_titles]
+        # ⚠ 太短的标题**不能当泄漏判据**（v0.8.15，实测仙人掌小说踩到）：
+        #   该书第 490 章的标题就是**一个字**「番」，而「番」在正常正文里
+        #   到处都可能出现（番外/一番/番茄…）→ 拿它去正文里搜是**必然误报**。
+        #   同一条道理此前在校对报告里也踩过：**短串不是可靠判据**。
+        #   这里显式**列出被跳过的短标题**，不静默忽略（否则等于悄悄放宽了判据）。
+        skipped = [c["title"] for c in protected
+                   if c.get("title") and 0 < len(c["title"].strip()) < MIN_LEAK_NEEDLE]
 
         status = "OK"
         if hits or leaked or n_pua:
@@ -165,6 +178,9 @@ def main():
             if leaked:
                 fails.append(f"{name}: 正文区出现受保护章节标题 {leaked[:3]}")
         print(f"[2] {name:44} PUA={n_pua:5d} 付费墙={len(hits)} 泄漏={len(leaked)}  {status}")
+        if skipped:
+            print(f"    注：{len(skipped)} 个受保护章节标题短于 {MIN_LEAK_NEEDLE} 字，"
+                  f"不作泄漏判据（短串必然误报）：{skipped[:5]}")
 
     # ---- 5. 章节数自洽 ----
     txt = next((p for p in artifacts if p.lower().endswith(".txt")), None)

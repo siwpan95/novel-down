@@ -389,6 +389,86 @@ class _Stub:
         self.rule = rule
 
 
+class TestXrzRuleAndNewJsonKeys(unittest.TestCase):
+    """仙人掌小说（360）规则形状 + v0.8.15 新增的 JSON 分页/逐章地址键的校验。"""
+
+    def test_shipped_xrz_rule_shape(self):
+        r = load_rules()["360kuai-xrz.com"]
+        self.assertTrue(r.enabled)
+        self.assertEqual(r.fetch_mode, "http")
+        self.assertFalse(r.requires_js)
+        j = r.catalog_cfg["json"]
+        self.assertEqual(r.catalog_cfg["mode"], "json_api")
+        # 目录必须分页：单页上限 20 章而书有 490 章
+        self.assertIn("{page}", j["url"])
+        self.assertGreater(j["max_pages"], 1)
+        # 标题/付费标记/全局序号都在**字符串化 JSON** 里
+        self.assertEqual(j["cid_field"], "op_ext.money_topic.index")
+        self.assertEqual(j["title_field"], "op_ext.money_topic.title")
+        self.assertEqual(j["vip_field"], "op_ext.money_topic.paid")
+        self.assertIn("2", j["vip_truthy"], "该站 paid=2 即付费章")
+        self.assertEqual(j["api_url_field"], "rawurl")
+        # 正文走接口 + 数据源级免费校验
+        ba = r.chapter_cfg["body_api"]
+        self.assertIn("{api_url}", ba["url"])
+        self.assertEqual(ba["require"]["field"], "data.unlock")
+        self.assertEqual(r.chapter_cfg["paragraph_selector"], "div.nd-api-body p")
+        # 元数据来自 JSONP 接口
+        self.assertEqual(r.book_cfg["info_api"]["title"], ["@json:data.{bid}.name"])
+
+    def _load(self, catalog=None, chapter=None):
+        import json as _json
+        import os as _os
+        from tests._base import temp_subdir
+        td = temp_subdir("rules")
+        _os.makedirs(td, exist_ok=True)
+        raw = {
+            "id": "x.site", "name": "X", "match": ["x.site"], "free_only": True,
+            "book": {"url_pattern": "c=(\\w+)", "info_url": "{origin}/r?c={bid}"},
+            "catalog": catalog or {"mode": "json_api",
+                                   "json": {"url": "{origin}/l?c={bid}"}},
+            "chapter": chapter or {"content_selector": "div#c"},
+        }
+        with open(_os.path.join(td, "a.json"), "w", encoding="utf-8") as f:
+            _json.dump(raw, f, ensure_ascii=False)
+        return load_rules(td)
+
+    def test_page_placeholder_without_max_pages_is_rejected(self):
+        """`{page}` 却没配 max_pages>1 → **加载即报错**。
+
+        这是本仓最容易静默出错的配置：不分页不会报错，只会**少抓章节**。
+        """
+        for bad in ({"url": "{origin}/l?c={bid}&page={page}"},
+                    {"url": "{origin}/l?c={bid}&page={page}", "max_pages": 1}):
+            with self.assertRaises(RuleError) as ctx:
+                self._load({"mode": "json_api", "json": bad})
+            self.assertIn("max_pages", str(ctx.exception))
+
+    def test_bad_max_pages_rejected(self):
+        with self.assertRaises(RuleError):
+            self._load({"mode": "json_api",
+                        "json": {"url": "{origin}/l?page={page}", "max_pages": 999}})
+
+    def test_empty_api_url_field_rejected(self):
+        with self.assertRaises(RuleError):
+            self._load({"mode": "json_api",
+                        "json": {"url": "{origin}/l", "api_url_field": "  "}})
+
+    def test_require_needs_nonempty_field(self):
+        for bad in ({}, {"field": "  "}, "data.unlock", {"field": "x", "truthy": []}):
+            with self.assertRaises(RuleError) as ctx:
+                self._load(chapter={"content_selector": "div#c",
+                                    "body_api": {"url": "{origin}/d", "require": bad}})
+            self.assertIn("require", str(ctx.exception))
+
+    def test_valid_new_keys_load(self):
+        rules = self._load({"mode": "json_api",
+                            "json": {"url": "{origin}/l?c={bid}&page={page}",
+                                     "max_pages": 30, "page_from": 1,
+                                     "api_url_field": "rawurl"}})
+        self.assertIn("x.site", rules)
+
+
 class TestXxsyAndZhulangRules(unittest.TestCase):
     """v0.8.14 接入的两个正版站：形状断言（防止后续改规则时踩回旧坑）。"""
 

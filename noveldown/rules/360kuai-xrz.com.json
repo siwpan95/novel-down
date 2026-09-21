@@ -1,0 +1,96 @@
+{
+  "id": "360kuai-xrz.com",
+  "name": "仙人掌小说（360 集团·南瓜屋阅读线）",
+  "pool": "正版",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://www.360kuai.com/pc/payread?type=story&channel=minzjqwjlywzcllz",
+  "notes": "★ 仙人掌小说（360 集团旗下免费阅读品牌，阅读端在自己的壳里叫「南瓜屋」）。\n  2026-09-21 立项实探 + 接入，**纯 HTTP、零浏览器**（目录与正文都走接口）。\n\n【为什么这一站值得记下来：全部靠接口，且 URL 全是不透明的】\n  入口 `https://www.360kuai.com/pc/novelgalery` 是**纯 JS SPA**\n  （纯 HTTP 只有 29038 字节 / **0 个链接** / 116 汉字；书卡是**非锚点元素**）。\n  逆向路线（可复用）：**读 JS bundle 里的路由表** → 找到 `papi.look.360.cn`，\n  再**在真浏览器里抓真实请求**拿到必需参数。用到的两个接口：\n  · 目录：`GET papi.look.360.cn/mlist?...&c=haixiao_res&clsclass={channel}\n          &n=20&page={page}&uid=&u=&sign=look&where=novelcolumn_ngw&f=jsonp`\n  · 正文：`GET user.360kuai.com/pay/detail?url={每章自己的 zm.news.so.com 地址}\n          &direct=data&c={channel}&otype=2&uid=&sign=look`\n            → `data.content`（HTML `<p>` 段落）\n  书 ID 叫 `channel`（如 `minzjqwjlywzcllz`，13 位小写字母数字）。\n\n【三个必须踩对的地方（都写成通用能力了）】\n  ① **目录接口单页上限 20 章，且 `n>20` 会静默降级成 10**，而书可能 490 章 →\n     必须分页（`json.max_pages`）。实测 `page` 参数**只有当带上 `u=` 时才生效**，\n     只给 `uid=` 时第 2 页会返回第 1 页的内容 —— 这是个**不会报错**的坑。\n  ② **每章的正文地址逐章不同、且无法由 bid/cid 推导**（`rawurl` =\n     `http://zm.news.so.com/<32 位 hash>`）→ 用 `json.api_url_field` 把地址带在目录条目上，\n     正文段用 `body_api.url` 的 `{api_url}` 占位符消费。\n  ③ **章节标题、付费标记、全局序号都藏在「字符串化的 JSON」里** ——\n     接口把子对象序列化后塞进 `op_ext` 字段（一个 str）。\n     故路径写 `op_ext.money_topic.title`，由 `_dig` 自动穿透。\n  ④ ⚠⚠ **`idx` 字段是「页内序号」，不是全局章节号**（每页都是 1..20）！\n     拿它当 cid 会让第 2 页起的章节全部被去重掉。真正能用的全局序号是\n     `op_ext.money_topic.index`（实测 1..490 单调递增）。\n\n【免费判定 —— 这一站最需要注意的地方】\n  ⚠ 它是**试读制**，不是全站免费：实测抽样，单本免费章只有 3~12 章\n  （《民政局前，我捡了亿万总裁来领证》490 章里只有前 **10 章**免费）。\n  全书 `paid` 分布：`0`=免费，`2`=付费（同一响应里 `unlock` 也标 `true/false`）。\n\n  ⚠⚠ **最危险的一点：付费章走正文接口既不报错、也不给任何付费提示** ——\n  它返回的是一段**戛然截断的试读片段**（实测第 11 章 642 字符 / 434 汉字，\n  第 1 章完整是 2392 字符 / 1658 汉字），正文里**连一个「付费/VIP」字样都没有**。\n  也就是说**第 4 层「正文付费墙特征」在这一站完全失效** —— 光靠它会把试读片段\n  当正文导出，而且是静默的。故本规则用了两道独立防线：\n    · 第 3 层：`catalog.json.vip_field = op_ext.money_topic.paid` +\n      `vip_truthy = [\"1\",\"2\"]` → 付费章在**目录层**就判 locked，**零请求**；\n    · 第 4 层加强：`chapter.body_api.require = {\"field\": \"data.unlock\"}` →\n      正文接口若回 `unlock: false`，直接判受保护（`blocked`）**不导出**。\n      这道是**数据源级**判定，不依赖正文里有没有特征词。\n\n【免费强度说明（务必看清）】单本免费章少（试读），价值主要在「能拿到试读部分 + 支持自备书 ID」。\n  之所以仍按项目既有标准接入：这与起点（153/1418）、纵横（50/700）、飞卢（49/12139）\n  的「含 VIP 但取免费段」是同一类处理，VIP 章一律零请求。\n\n⚠ 法律：正版平台的**免费章节**。",
+  "match": [
+    "360kuai.com",
+    "look.360.cn",
+    "kuaichuan.360.cn"
+  ],
+  "book": {
+    "url_pattern": "channel=([a-z0-9_]{6,40})",
+    "info_url": "https://www.360kuai.com/pc/payread?type=story&channel={bid}",
+    "title": [
+      "h1",
+      "@title"
+    ],
+    "info_api": {
+      "url": "https://growth.kuaichuan.360kuai.com/info?c={bid}&f=jsonp&scheme=https",
+      "title": [
+        "@json:data.{bid}.name"
+      ],
+      "author": [
+        "@json:data.{bid}.source"
+      ],
+      "intro": [
+        "@json:data.{bid}.data_describe"
+      ],
+      "status": [
+        "@json:data.{bid}.status_name"
+      ],
+      "cover": [
+        "@json:data.{bid}.image"
+      ]
+    }
+  },
+  "catalog": {
+    "mode": "json_api",
+    "json": {
+      "url": "https://papi.look.360.cn/mlist?scheme=https&c=haixiao_res&clsclass={bid}&n=20&page={page}&uid=noveldown000000000000000000000000000000&u=noveldown000000000000000000000000000000&sign=look&where=novelcolumn_ngw&f=jsonp",
+      "items_path": "data.res",
+      "max_pages": 200,
+      "page_from": 1,
+      "cid_field": "op_ext.money_topic.index",
+      "title_field": "op_ext.money_topic.title",
+      "vip_field": "op_ext.money_topic.paid",
+      "vip_truthy": [
+        "1",
+        "2",
+        "3",
+        "true",
+        "yes"
+      ],
+      "api_url_field": "rawurl"
+    },
+    "url_template": "https://www.360kuai.com/pc/payread?type=story&channel={bid}",
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first"
+  },
+  "chapter": {
+    "content_selector": "div.nd-api-body",
+    "content_selectors": [
+      "div.nd-api-body"
+    ],
+    "paragraph_selector": "div.nd-api-body p",
+    "body_api": {
+      "url": "https://user.360kuai.com/pay/detail?url={api_url}&direct=data&c={bid}&otype=2&uid=noveldown000000000000000000000000000000&sign=look",
+      "content_field": "data.content",
+      "require": {
+        "field": "data.unlock",
+        "truthy": [
+          "1",
+          "true",
+          "yes"
+        ]
+      }
+    },
+    "strip_selectors": [
+      "script",
+      "style"
+    ],
+    "ad_patterns": [
+      "仙人掌小说",
+      "南瓜屋",
+      "360kuai",
+      "请记住本站",
+      "最新网址"
+    ]
+  }
+}

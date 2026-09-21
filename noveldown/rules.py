@@ -93,6 +93,33 @@ class Rule:
                                 f"（或改用 catalog.mode=json_api 并配 catalog.json）")
             if not (cat.get("json") or {}).get("url"):
                 raise RuleError(f"{self.id}: json_api 模式必须提供 catalog.json.url")
+            j = cat.get("json") or {}
+            # 分页（v0.8.15）：url 里出现 {page} 才会迭代，故 max_pages > 1 才是有效配置
+            mp = j.get("max_pages")
+            if mp is not None and not (isinstance(mp, int) and 1 <= mp <= 200):
+                raise RuleError(f"{self.id}: catalog.json.max_pages 必须是 1~200 的整数，"
+                                f"当前为 {mp!r}")
+            pf = j.get("page_from")
+            if pf is not None and not (isinstance(pf, int) and 0 <= pf <= 100):
+                raise RuleError(f"{self.id}: catalog.json.page_from 必须是 0~100 的整数，"
+                                f"当前为 {pf!r}")
+            if ("{page}" in (j.get("url") or "")) and not (mp and mp > 1):
+                raise RuleError(
+                    f"{self.id}: catalog.json.url 用了 {{page}} 分页，"
+                    f"但 max_pages 未设置或 <= 1 —— 那样只会抓第一页，"
+                    f"且**不会报错**（实测仙人掌小说：单页上限 20 章，书有 490 章）")
+            auf = j.get("api_url_field")
+            if auf is not None and not (isinstance(auf, str) and auf.strip()):
+                raise RuleError(f"{self.id}: catalog.json.api_url_field 不能为空串")
+        # `chapter.body_api.require`：在数据源上判免费的字段（见 engine._require_violation）
+        req = (self.raw["chapter"].get("body_api") or {}).get("require")
+        if req is not None:
+            if not isinstance(req, dict) or not (req.get("field") or "").strip():
+                raise RuleError(f"{self.id}: chapter.body_api.require 必须是含非空 "
+                                f"field 的对象，如 {{\"field\": \"data.unlock\"}}")
+            tr = req.get("truthy")
+            if tr is not None and not (isinstance(tr, list) and tr):
+                raise RuleError(f"{self.id}: chapter.body_api.require.truthy 必须是非空数组")
         if not self.raw["chapter"].get("content_selector"):
             raise RuleError(f"{self.id}: chapter.content_selector 不能为空")
         # `book.info_api`（v0.8.13）：书籍页是 SPA 外壳、简介/封面由 XHR

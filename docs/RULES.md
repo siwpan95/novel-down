@@ -71,7 +71,7 @@ noveldown/rules/mirrors/         **批量铺开的镜像池**（自动聚类生�
 | `url_pattern` | 从书籍 URL 提取 `bid` 的正则，**捕获组 1 即 bid** |
 | `info_url` | 书籍页 URL 模板，支持 `{origin}` `{bid}` `{url}` |
 | `title` / `author` / `intro` / `cover` / `status` | 候选 CSS 选择器**数组**，按序取第一个命中；`meta[...]` 取 `content` 属性，其余取文本。特殊值 **`@title`** = 文档 `<title>` 文本，**`sel@attr`** = 取元素属性（`a.book-face img@src`）。⚠ `@` 只认**末尾**的 `@名字` 形式，`a[href*='@']` 这类属性选择器里的 `@` 不会被拆 |
-| `info_api` | 可选。书籍页是 SPA 外壳、简介/封面另由 **XHR 片段**下发时用它：`{"url": "{origin}/book/bookintro?bid={bid}", "intro": [...], "cover": [...]}`。`url` 必填；可覆盖 `title`/`author`/`intro`/`cover`/`status`。**片段里声明的字段优先**，取不到（或整条请求失败）就回落主页面选择器 —— 元数据缺失不该升级成整本书失败。⚠ 反面教材：书山书籍页的 `meta[name=description]` 是**站点通用文案**（每本书一模一样），拿它当简介等于往 EPUB 里写错数据 |
+| `info_api` | 可选。书籍页是 SPA 外壳、简介/封面另由 **XHR 片段**下发时用它：`{"url": "{origin}/book/bookintro?bid={bid}", "intro": [...], "cover": [...]}`。`url` 必填；可覆盖 `title`/`author`/`intro`/`cover`/`status`。**片段里声明的字段优先**，取不到（或整条请求失败）就回落主页面选择器 —— 元数据缺失不该升级成整本书失败。⚠ 反面教材：书山书籍页的 `meta[name=description]` 是**站点通用文案**（每本书一模一样），拿它当简介等于往 EPUB 里写错数据。<br>**片段也可以是 JSON/JSONP**（v0.8.15）：此时字段用 `"@json:data.{bid}.name"` 写路径（`{bid}` 会被替换，因为有些接口把书 ID 当键），JSONP 包装 `cb({...})` 与纯 JSON 两种都吃 |
 | `title_pattern` | 可选正则，对 `title` 结果做清洗（如 `^(.*?)(?:免费阅读|最新章节)` 去掉站点后缀） |
 | `@json:<path>` | `book.title`/`author`/`intro`… 的**特殊取值**：从页面的 SSR 数据块（默认 `script#__NEXT_DATA__`，可用 `book.json_source` 改）按 `a.b.c` 路径取字段。Next.js/Nuxt 站的书名/作者常只在数据块里（次元姬） |
 | `author_pattern` | 可选正则，对 `author` 结果做清洗/抽取（书海书名与作者同格：`神农医婿 作者: 方长` → `作者[:：]\s*(.+?)\s*$`） |
@@ -90,6 +90,9 @@ noveldown/rules/mirrors/         **批量铺开的镜像池**（自动聚类生�
 | `mode` | `html`（默认）\| `json_api`（目录来自 JSON 接口，见下） |
 | `json.json_source` | 可选。**JSON 嵌在 HTML 里**时的容器 CSS（Next.js `<script id="__NEXT_DATA__">`、Nuxt `__NUXT__`）：先取出那段 JSON，再照常按 `items_path` 取值 → 一条规则吃下整类 SSR 站 |
 | `json` | `json_api` 模式的配置：`url`（模板，支持 `{origin}/{bid}` 与 `{cookie:NAME}` 占位符）、`items_path`（如 `data.chapters`）、**`flatten_field`**（卷→章嵌套展开，如 `cs`）、`cid_field`、`title_field`、**`vip_field`**、`vip_truthy` |
+| `json.max_pages` / `page_from` | **JSON 目录分页**（v0.8.15）。`url` 里写 `{page}` 即在多页之间迭代（`page_from` 默认 1），某页返回空即停。⚠ `{page}` 却不配 `max_pages>1` → **加载即报错** —— 因为这种配置**不会报错、只会少抓章节**（实测仙人掌小说：单页上限 20 章，而书有 490 章） |
+| `json.api_url_field` | 可选。逐章**正文地址**（不透明、无法由 bid/cid 推导）所在的字段路径。取到的地址会带在目录条目上，供 `chapter.body_api.url` 的 **`{api_url}`** 与 `catalog.url_template` 消费（实测仙人掌小说每章一个 `zm.news.so.com/<hash>`） |
+| 字段路径可**嵌套**，且自动穿透**字符串化的 JSON** | `cid_field`/`title_field`/`vip_field`/`api_url_field` 一律按 `a.b.c` 取值。有些接口把子对象**序列化成字符串**塞进字段（`op_ext` = `'{"money_topic":{...}}'`）—— 写成 `op_ext.money_topic.title` 会**自动穿透**。⚠ 反过来要小心：这类接口的**页内序号**（`idx`）不是全局章节号，别拿它当 cid |
 | `item_selector` | 章节项选择器（`html` 模式必需）。**也可选中容器**：此时 href 从内嵌 `<a>` 取、**标题取容器文本**（书海 33% 的 `<a>` 文本为空，只选 `<a>` 会丢标题） |
 | `id_from.mode` | `href`（从链接取）\| `onclick`（从 onclick 取） |
 | `id_from.pattern` | 必须含 **命名捕获组 `(?P<cid>...)`** |
@@ -112,7 +115,8 @@ noveldown/rules/mirrors/         **批量铺开的镜像池**（自动聚类生�
 |---|---|
 | `title_selector` | 可选。正文页标题（会自动剥离「（第N页）」后缀） |
 | `browser_wait_selector` | 可选。**章节页**专用的浏览器等待条件。优先级**高于**顶层 `browser.wait_selector` 的角色值；写 `false` / `""` 表示明确不等待。⚠ **只放"内容就绪"那一支**：`wait_for_selector` 是 OR 语义，塞入骨架期即命中的宽松选择器会导致提前放行 |
-| `body_api` | 正文来自 **JSON 接口**时的配置（塔读：章节页是空壳）。`url` 支持 `{origin}/{bid}/{cid}/{seq}`（seq = 章节序号，从 1 起）；`content_field` 取字段；`drop` 按 `equals_base64_of: cid` 剔除站点水印段。取到的 HTML 会被包成 `div.nd-api-body`，后续选择器照常用 |
+| `body_api` | 正文来自 **JSON 接口**时的配置（塔读：章节页是空壳）。`url` 支持 `{origin}/{bid}/{cid}/{seq}`（seq = 章节序号，从 1 起）与 **`{api_url}`**（逐章地址由 `catalog.json.api_url_field` 带下来）；`content_field` 取字段；`drop` 按 `equals_base64_of: cid` 剔除站点水印段。取到的 HTML 会被包成 `div.nd-api-body`，后续选择器照常用 |
+| `body_api.require` | 可选。**在数据源上判免费**（v0.8.15，本仓最关键的红线防线之一）。`{"field": "data.unlock"}`：响应里该字段**取到且落在 `truthy`（默认 1/true/yes）里**才算通过，否则该章判 **blocked、不导出**。<br>⚠ 为什么必须有它：实测仙人掌小说（360）的付费章走正文接口**既不报错、也不给任何付费提示**，只返回一段**戛然截断的试读片段**（642 字符 vs 完整 2392 字符），正文里连一个「付费/VIP」字样都没有 → **第 4 层「付费墙特征词」完全失效**，会把试读**静默**当正文导出。而同一响应里有 `unlock: false` 这种权威状态字段，直接拿它判最可靠。<br>语义：字段缺失/null/假值 → 判受保护（宁可漏抓一章，可见可重试）；**完全不是 JSON → 不判**，交下游兜底（否则会把免费章误标 locked 而丢内容） |
 | `content_selector` | ✓ 正文容器 CSS（用 `body_api` 时填 `div.nd-api-body`） |
 | `content_selectors` | 可选**候选列表**（同一站不同请求可能给不同容器；按序取第一个命中） |
 | `drop_leading_title_paragraph` | 可选布尔。正文首段**就是标题行**、且该元素无 class 可剔时（飞卢 `div.noveContent > p:first`）开启；**仅当首段与目录标题完全相同**时才删除 —— 宁可不删，也不吃掉真正的首段 |

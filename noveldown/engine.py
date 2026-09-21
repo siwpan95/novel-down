@@ -17,6 +17,7 @@
 导出前：终检（见 freeguard.assert_no_protected）。
 """
 
+import json
 import os
 import threading
 import time
@@ -31,7 +32,7 @@ from .http_client import build_headers, http_get, parse_proxy
 from .identity_manager import get_identity_manager
 from .models import (Book, STATUS_BLOCKED, STATUS_EMPTY, STATUS_FAILED,
                      STATUS_LOCKED, STATUS_OK, STATUS_PENDING)
-from .parser import (body_api_fragment, catalog_links_from_page,
+from .parser import (_dig, body_api_fragment, catalog_links_from_page,
                      catalog_page_urls, collect_catalog_items,
                      collect_json_catalog, normalize_catalog, origin_of,
                      parse_book_info, parse_chapter_page)
@@ -46,6 +47,37 @@ STATE_SAVE_INTERVAL = 20         # 每抓 N 章落一次状态
 # 因为 `wait_selector or 顶层默认` 这种写法无法表达「本角色就是不要等待」，
 # 于是章节/目录的等待条件会漏到书籍页上白等超时（见 Rule.wait_selector_for）。
 _UNSET = object()
+
+
+def _require_violation(raw_text: str, req: dict) -> str:
+    """按 `chapter.body_api.require` 判定响应是否**说明该章受保护**。
+
+    返回 `""` = 通过（可继续抽取正文）；非空 = 受保护的原因（调用方据此判 blocked）。
+
+    为什么需要它（v0.8.15，实测仙人掌小说 360）：
+    付费章走正文接口**不报错、也不带任何付费提示**，只返回一段**截断的试读片段**
+    （实测 642~714 字符，正文里连一个"付费/VIP"字样都没有）。
+    第 4 层「正文付费墙特征」对这种响应**完全失效** —— 会静默导出不完整章节。
+    而同一个响应里有 `data.unlock: false` 这种**权威状态字段**，直接用它判最可靠：
+    `require: {"field": "data.unlock", "truthy": ["1","true","yes"]}`。
+
+    ⚠ 判定语义是「**取到且落在 truthy 里**才算通过」：字段缺失/为 null/为 false
+    都判受保护 —— 宁可漏抓一章，也不能把试读片段当正文导出。
+    """
+    if not req:
+        return ""
+    field = req.get("field")
+    if not field:
+        return ""
+    try:
+        data = json.loads(raw_text)
+    except (ValueError, TypeError):
+        return ""
+    val = _dig(data, field)
+    truthy = {str(x).lower() for x in (req.get("truthy") or ["1", "true", "yes"])}
+    if val is not None and str(val).lower() in truthy:
+        return ""
+    return f"{field}={val!r} 未通过免费校验"
 
 
 class Downloader:
@@ -138,16 +170,42 @@ class Downloader:
         return self._fetch(url, referer=referer, role=role)
 
     def _collect_json_catalog(self, rule, bid, origin, book_url):
-        """按 catalog.mode=json_api 从接口取目录。"""
+        """按 catalog.mode=json_api 从接口取目录。
+
+        **分页**（v0.8.15）：`catalog.json.url` 里出现 `{page}` 即在多页之间迭代
+        （`page_from` 默认 1，`max_pages` 默认 1 = 不分页）。为什么必须有它：
+        实测仙人掌小说（360）的目录接口**单次最多只给 20 章**
+        （`n` 参数超过 20 会被静默降级成 10），而书有 490 章 ——
+        不分页就只能拿到 20 章，且**它不会报错**（表现为"这本书只有 20 章"）。
+
+        停止条件：某页返回 `data.res` 为空；或达到 `max_pages`。
+        ⚠ 页内序号（`idx`）**不随分页变化**（每页都是 1..20），
+        所以规则里要取**全局序号字段**（`op_ext.money_topic.index`）当 cid。
+        """
         cfg = rule.catalog_cfg.get("json") or {}
         tpl = cfg.get("url") or ""
-        url = (tpl.replace("{origin}", origin).replace("{bid}", bid)
-                  .replace("{url}", book_url))
-        self.log(f"[目录] JSON 接口 {url}")
-        text = self._fetch_raw(url, referer=book_url, role="catalog")
-        items, locked = collect_json_catalog(rule, text, bid, origin)
-        self.log(f"[目录] 接口返回：章节 {len(items)}，受保护 {len(locked)}")
-        return items, locked
+        paged = "{page}" in tpl
+        page_from = int(cfg.get("page_from", 1)) if paged else 1
+        max_pages = int(cfg.get("max_pages", 1)) if paged else 1
+        max_pages = max(1, min(max_pages, 200))
+
+        base = tpl.replace("{origin}", origin).replace("{bid}", bid).replace("{url}", book_url)
+        all_items, all_locked = [], []
+        for page in range(page_from, page_from + max_pages):
+            url = base.replace("{page}", str(page)) if paged else base
+            if page == page_from or paged:
+                self.log(f"[目录] JSON 接口 第 {page - page_from + 1}/{max_pages} 页 {url}")
+            text = self._fetch_raw(url, referer=book_url, role="catalog")
+            items, locked = collect_json_catalog(rule, text, bid, origin)
+            all_items.extend(items)
+            all_locked.extend(locked)
+            if not paged:
+                break
+            if not items and not locked:
+                self.log(f"[目录] 第 {page - page_from + 1} 页为空，停止分页")
+                break
+        self.log(f"[目录] 接口返回：章节 {len(all_items)}，受保护 {len(all_locked)}")
+        return all_items, all_locked
 
     def _browser(self):
         """惰性创建并复用唯一的 BrowserFetcher（只在主线程里用）。"""
@@ -459,29 +517,51 @@ class Downloader:
         if n % STATE_SAVE_INTERVAL == 0:
             store.save_state(book)
 
-    def _body_api_html(self, ch, page_url: str) -> str:
-        """按 `chapter.body_api` 取正文片段（未配置或取不到则返回 ""）。
+    def _body_api_html(self, ch, page_url: str):
+        """按 `chapter.body_api` 取正文片段。返回 `(片段, 受保护原因)`。
 
-        URL 模板支持 `{origin}` / `{bid}` / `{cid}` / `{seq}`（seq = 章节序号，从 1 起）。
+        未配置 / 取不到 → `("", "")`；**命中「数据源级免费校验」→ `("", 原因)`**，
+        调用方据此把该章判为受保护（blocked）且**不导出**。
+
+        URL 模板支持 `{origin}` / `{bid}` / `{cid}` / `{seq}`（seq = 章节序号，从 1 起），
+        以及 **`{api_url}`**：正文地址**逐章不同、且无法由 bid/cid 推导**时，
+        用 `catalog.json.api_url_field` 从目录接口把每章自己的地址带下来
+        （实测仙人掌小说：每章一个 `http://zm.news.so.com/<hash>`）。
+
+        **`require`（v0.8.15 新增）—— 在数据源上判免费，而不是在正文里找特征词**：
+        实测仙人掌小说（360）的付费章**不会报错、也不会给付费提示**，
+        而是返回一段**戛然截断的试读片段**（642~714 字符，正文里一个付费字样都没有）。
+        靠第 4 层「付费墙特征词」**抓不到**，会静默产出不完整章节。
+        但同一个响应里带了 `unlock: false` —— 那就直接拿它判：
+        配 `require: {"field": "data.unlock"}`（真值判定，见 `require_truthy`），
+        `false` 即判受保护。**零请求、零泄漏、且不依赖正文里有没有标记。**
         """
         cfg = self.rule.chapter_cfg.get("body_api") or {}
         tpl = cfg.get("url")
         if not tpl:
-            return ""
+            return "", ""
+        if "{api_url}" in tpl and not (ch.api_url or ""):
+            return "", ""
         target = (tpl.replace("{origin}", origin_of(page_url))
                      .replace("{bid}", self.book.book_id)
                      .replace("{cid}", ch.cid)
-                     .replace("{seq}", str(ch.index)))
+                     .replace("{seq}", str(ch.index))
+                     .replace("{api_url}", ch.api_url or ""))
         try:
             raw = self._fetch_raw(target, referer=page_url)
         except Exception as e:
             self.log(f"  正文接口请求失败（{e}）——该章按页面 HTML 抽取", "warn")
-            return ""
+            return "", ""
+        req = cfg.get("require") or {}
+        reason = _require_violation(raw, req)
+        if reason:
+            self.log(f"  正文接口判定该章受保护：{reason}")
+            return "", reason
         frag = body_api_fragment(self.rule, raw, self.book.book_id,
                                  ch.index, ch.cid)
         if not frag:
             self.log("  正文接口返回空（字段名或接口可能已变）", "warn")
-            return ""
+            return "", ""
         # 降级响应告警（实测塔读）：站点用 base64(cid) 标记「本次应隐藏」的段落；
         # 正常首次响应只有少量水印段（如 7/77），但**同一章高频重复直连**时站点会把
         # 越来越多段落标记为隐藏 → 抽取结果变短。占比过高时明确提示。
@@ -497,7 +577,7 @@ class Downloader:
             if total and hidden / total > 0.4:
                 self.log(f"  正文接口隐藏段占比 {hidden}/{total}（偏高，疑站点降级响应）"
                          f"—— 建议稍后重抓该章；勿用 --force 反复请求同一章", "warn")
-        return frag
+        return frag, ""
 
     def _fetch_one_chapter(self, ch) -> None:
         """抓取单章（含分页拼装）+ 免费章节校验。"""
@@ -525,7 +605,12 @@ class Downloader:
             # 把接口片段并进 html 再走同一套选择器抽取。
             # ⚠ 必须插到 `</body>` **之前**：解析器优先用 lxml，
             #   而 lxml 会**丢弃 `</html>` 之后的内容**（实测踩过：片段整块消失）。
-            api_html = self._body_api_html(ch, url)
+            api_html, api_protected = self._body_api_html(ch, url)
+            if api_protected:
+                # 数据源层就判明是受保护内容 → 判 blocked，**绝不导出**
+                ch.status = STATUS_BLOCKED
+                ch.note = f"正文接口判定受保护（{api_protected}）"
+                return
             if api_html:
                 if "</body>" in html:
                     html = html.replace("</body>", api_html + "\n</body>", 1)
