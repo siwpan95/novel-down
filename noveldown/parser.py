@@ -840,6 +840,10 @@ def extract_paragraphs(container, ad_patterns):
 
 _CJK_PUNCT = "，。！？、；：…—～·「」『』“”‘’（）《》〈〉,.!?;:"
 
+# Unicode 私用区（PUA）—— 供 `chapter.pua_fallback` 使用：把站点用**自己的私有编码**
+# 表示的缺字/生僻字统一替换成可见的缺字符号（如「□」）。
+_PUA_RE = re.compile(r"[\ue000-\uf8ff]")
+
 
 def guess_content_container(soup, min_cjk: int = 200):
     """**自动识别**正文容器（规则里的选择器全部失配时的兜底）。
@@ -952,6 +956,15 @@ def parse_chapter_page(rule, html: str, url: str, current_cid: str,
             ps, ad = extract_paragraphs(work, cfg.get("ad_patterns"))
             if para_sel:
                 note = f"段落选择器「{para_sel}」未命中，已回退为容器整体切分"
+        # PUA 规范化（**显式开关 `chapter.pua_fallback`，默认不处理**）。
+        # 判据：只有站点**没有配套自定义字体**（页面无 @font-face）时，PUA 码位才等价于
+        # 「站点自己的缺字编码」—— 古籍库常见（GB18030 的 PUA 区装生僻字），
+        # 浏览器同样渲染不出，替换成「□」**不损失任何可见信息**，还让产物可读。
+        # ⚠⚠ 若站点是**真·字体反爬**（番茄小说那类：PUA 表常用字 + 自定义字体可还原），
+        #   **绝不能开**——那会把本来能还原的信息直接抹掉。故默认 None。
+        fb = cfg.get("pua_fallback")
+        if fb and ps:
+            ps = [_PUA_RE.sub(fb, x) for x in ps]
         return ps, ad, note
 
     container = select_first(soup,

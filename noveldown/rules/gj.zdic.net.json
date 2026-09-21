@@ -1,0 +1,71 @@
+{
+  "id": "gj.zdic.net",
+  "name": "汉典古籍网（经史子集四部·文库型）",
+  "pool": "正版",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://gj.zdic.net/jibu/1252/",
+  "notes": "★ 汉典古籍网（`gj.zdic.net`）—— 本仓第二条「**文库型**」规则（第一条是虚阁网 §13.4），\n也是**出版读物线 P3「文库站铺开」的第一个新成员**。2026-09-21 实测接入，**纯 HTTP、零浏览器、零新代码**。\n\n【为什么它值得单独记一笔】\n  它是「**经史子集**」四部结构的古籍文库：`/jingbu/`（经）`/shibu/`（史）`/zibu/`（子）`/jibu/`（集），\n  每部一页书单（如 `/jibu/` 实测 73 本书），书页 `/jibu/{bid}/` 里直接给出**卷列表**。\n  与虚阁网同属「无 VIP 概念、天然满足免费约束」的形态 ✓\n\n【⚠ 探测时踩到的坑（务必记住）】\n  用 `curl` 探本站返回 **000**，差点判成「不可达」—— 换本项目 `http_client`（requests）**立刻 200**。\n  ⚠ 这是本仓**第三次**踩同一个坑（见技能 §1.18「别用一个 HTTP 客户端给站点判死刑」）：\n  本机 curl 与 requests 的 **TLS 栈不同**（OpenSSL/cipher/ALPN），对部分站点 curl 直接失败。\n  → **规矩：判 000 前必须换客户端复测。**\n\n【形态（全部实测）】\n  · 栏目页 `/jibu/`：200 / 44493 字符，73 个书页链接；列表分页形如 `/jibu/index_{N}.html`。\n  · 书页 `/jibu/{bid}/`：200 / 28512 字符，`<h1>` = 书名（《唐文续拾》），\n    `<title>` = 「陆心源 《唐文续拾》- 集部 - 總集 - 漢典古籍」→ 作者与书名都从 title 取。\n    ⭐ **目录就在书页内**：`div.article-bookdata` 是一张 `<table>`，\n    `th` 是分组名（「正文」），`td > ul > li > a[href='/jibu/{bid}/{cid}.html']` 是卷列表。\n    ⚠ **两列布局**：左右两个 `td width=\"50%\"` 交替排卷（左列卷一/三/五…、右列卷二/四/六…），\n    所以**不能只取第一个 ul** —— 用容器级 selector 一次全取即可。\n    ⚠ **卷号 ≠ 排序键**：cid 是数字（36994/36996/36998…）且**单调递增**，\n    用 `cid_numeric_asc` 就是正确的书序；**别去解析「卷一/卷二」中文数字**。\n  · 章节页 `/jibu/{bid}/{cid}.html`：200 / 36915 字符 / **8642 汉字**，`<h1>` = 「卷一」。\n    正文 `div.article-body`，**用 `<p>` + `<br />` 混合分段**\n    → ✅ 本仓 `extract_paragraphs` **原生支持 `<br>` 分段**，无需特殊处理。\n\n【正文真实性（用 v0.8.29 新增的 5b 检查验过）】\n  明文段落存在 ✓、无 base64、无 hex 密文、注释内汉字 0 → **是普通 HTML**（非加密，非位图）。\n  ⚠ 容器 class 里带 `blurred-text`（模糊文本）—— 实测**文本本身完整可读**，只是 CSS 效果，不影响抽取。\n\n【免费约束】\n  古籍站**无 VIP / 付费概念**（全文公开），天然满足免费六层约束；\n  万一将来加墙，第 3/4 层会拦。\n\n⚠ 法律：公开古籍库的**公有领域文本**（多为先秦至清人著作）。",
+  "match": [
+    "gj.zdic.net"
+  ],
+  "book": {
+    "url_pattern": "^https?://gj\\.zdic\\.net/((?:jing|shi|zi|ji)bu/\\d+)/?$",
+    "info_url": "https://gj.zdic.net/{bid}/",
+    "title": [
+      "h1",
+      "@title"
+    ],
+    "title_pattern": "《([^》]+)》",
+    "author": [
+      "@title"
+    ],
+    "author_pattern": "^(.+?)\\s*《",
+    "intro": [
+      "div.article-body p"
+    ]
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single"
+    },
+    "item_selector": "div.article-bookdata a[href*='.html']",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/(?P<cid>\\d+)\\.html$"
+    },
+    "url_template": "https://gj.zdic.net/{bid}/{cid}.html",
+    "volume_selector": "div.article-bookdata th",
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first",
+    "item_deny_text": [
+      "首页",
+      "上一页",
+      "下一页",
+      "回目录",
+      "回首页"
+    ]
+  },
+  "chapter": {
+    "title_selector": "h1",
+    "content_selector": "div.article-body",
+    "content_selectors": [
+      "div.article-body",
+      "div#jtarticle"
+    ],
+    "strip_selectors": [
+      "script",
+      "style"
+    ],
+    "ad_patterns": [
+      "漢典古籍",
+      "汉典古籍",
+      "手机版",
+      "本站网址"
+    ],
+    "pua_fallback": "□"
+  }
+}

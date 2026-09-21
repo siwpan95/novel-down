@@ -1450,6 +1450,31 @@ class TestGuessContentContainer(unittest.TestCase):
         self.assertGreater(len(res["paragraphs"]), 2)
         self.assertNotIn("自动识别", res["extract_note"])
 
+    # ---- chapter.pua_fallback（PUA → 缺字符号，**默认关**）----
+    # 实测场景：汉典古籍把生僻字/缺字写成 PUA 码位且**页面无 @font-face**
+    # → 浏览器也渲染不出，替换成「□」不丢信息（终检的 PUA 项也才过得去）。
+    # ⚠ 反面场景：番茄小说那类**真·字体反爬**（PUA 表常用字 + 自定义字体可还原）
+    # → 必须保持默认不处理，否则把能还原的信息抹掉。
+    _PUA_SAMPLE = "\ue3d7"
+
+    def test_pua_fallback_off_by_default(self):
+        """默认**不**处理 PUA —— 不能误伤「可还原的字体反爬」站点。"""
+        rule, html = self._page("article.prose")
+        html = html.replace(self.PROSE, self.PROSE + self._PUA_SAMPLE, 1)
+        res = parse_chapter_page(rule, html, "https://x.com/x/1", "1")
+        joined = "".join(res["paragraphs"])
+        self.assertIn(self._PUA_SAMPLE, joined)
+        self.assertNotIn("□", joined)
+
+    def test_pua_fallback_replaces_only_when_enabled(self):
+        rule, html = self._page("article.prose")
+        rule.chapter_cfg["pua_fallback"] = "□"
+        html = html.replace(self.PROSE, self.PROSE + self._PUA_SAMPLE, 1)
+        res = parse_chapter_page(rule, html, "https://x.com/x/1", "1")
+        joined = "".join(res["paragraphs"])
+        self.assertNotIn(self._PUA_SAMPLE, joined)
+        self.assertIn("□", joined)
+
 
 
 if __name__ == "__main__":
