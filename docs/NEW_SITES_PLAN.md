@@ -1660,7 +1660,7 @@ CUDA torch 可用（27× 提速，其他项目也受益）+ 6 个跨版本 shim 
 | 候选 | 状态 | 规则 | 备注 |
 |---|---|---|---|
 | 火星小说（正版域名 `hotread.com`） | ⛔ 存根 | `hotread.com` | ⚠ **正文是 hex 密文（熵 1.00）→ 红线段，不做** —— **不是「免费比例低」**。形态已全摸清（目录 558 章纯 HTML、VIP=`a.vip`），**唯一障碍是正文取不到文本**；见 §12.18 |
-| 咪咕阅读（`cmread.com`） | ⭕ 未探 | `cmread.com` | 纯 HTTP 只有 SPA 壳（1130 汉字 / 7 链接），**需专门一轮逆向**（页内 `getBook` / `/book/` / `.json` 有 XHR 线索）；见 §12.18 |
+| 咪咕阅读（`cmread.com`） | ⛔ 存根 | `cmread.com` | 全站 SPA 壳；目录/正文接口经**三轮逆向未定位**（bundle 内有 `isLogin` 线索 → 疑需登录态）。见 **§12.20 ②** |
 | 仙人掌小说（360） | ✅ 已接入 | `360kuai-xrz.com` | ⚠ **试读制**（单本 3~12 章），并非站点自述的「全站免费」，见 §12.17 |
 | 书旗小说 | ⛔ 存根 | `shuqi.com` | 正文加密（红线，§12.11） |
 | 米读小说 | ⛔ 存根 | `midureader.com` | APP 独占，无网页阅读入口 |
@@ -1916,3 +1916,66 @@ CUDA torch 可用（27× 提速，其他项目也受益）+ 6 个跨版本 shim 
 → **记存根 `ctext.org`**（第 14 条停用存根）。
 **触发条件**：将来做「**有头浏览器 + 会话复用**」（过一次挑战后复用 cookie / localStorage）时重试 ——
 它是**先秦至清全文库**，与出版读物线高度契合。
+
+---
+
+### 12.21 离线数据集接入：中国哲学书电子化计划（v0.8.32）
+
+#### 为什么走「离线导入」而不是抓站
+
+`ctext.org` 抓不到（§12.20 ③：Cloudflare Turnstile，纯 HTTP 与无头浏览器都被拦）。
+**全哥实测反馈**：该站**响应时间过长、疑似服务器问题**，指示**暂时搁置**；
+同时给出了它的**离线数据集**：`github.com/Guopop/chinese-philosophy`。
+
+→ 改走**离线导入**：数据在本地，**零网络、零风控**，且**内容比抓站更完整**。
+
+#### 数据集形态（实测）
+
+- zip 压缩 **102 MB** / 解压后 **314 MB**，**619 条目**（**399 个 JSON** + 88 个 TXT）
+- 按 **经 / 史 / 子 / 集 / 佛 / 道** 六部分类（与它 README 的目录一致）
+- JSON 结构与本仓模型**一一对应**：
+
+```json
+{ "name": "大学", "author": "战国·佚名", "loadChapterCount": 1,
+  "chapters": [ { "name": "大学",
+                  "paragraphs": [ { "paragraph": "…", "type": 1 } ] } ] }
+```
+
+| 数据集字段 | 本仓模型 |
+|---|---|
+| `name` / `author` | `Book.title` / `Book.author` |
+| `chapters[].name` | `Chapter.title` |
+| `chapters[].paragraphs[].paragraph` | `Chapter.paragraphs[]` |
+| `chapters[].paragraphs[].type` | 实测只有 `1` / `2` —— **原样保留，未做解释** |
+
+#### ⚠ 去重（同一本书在数据集里有 4 个版本目录）
+
+`back/old`（173）· `back/new`（111）· `back/simple`（25）· `back/traditional`（83），
+**外加顶层六部分类（最终整理版）**。
+→ 按**书名**去重，**优先级**：`顶层六部` > `back/new` > `back/simple` > `back/old` > `back/traditional`。
+
+实测：**399 个 JSON（去重前）→ 228 本（去重后）**，**8266 章 / 2608 万字**。
+
+⚠ **遗留（已知未解）**：**繁简不同名的书仍各存一份**（如 `史記`(繁体) 与 `史记`(简体)、
+`雜阿含經` 与 `杂阿含经`）—— 因为去重按 `name` 字段做，而繁简两版的 `name` 不同。
+**本轮不引入繁简转换**（会引入第三方依赖，违反本仓「零三方依赖」）；
+`--list` 会**标出每本的来源目录**，由使用者自选。
+
+#### 交付：`tools/import_chinese_philosophy.py`（**零网络**）
+
+**复用既有导出器**（`exporters.export_all`）→ 一次产出 txt / md / epub / **单文件 HTML 阅读器**。
+
+```bash
+python tools\import_chinese_philosophy.py --zip <zip> --list          # 看书目
+python tools\import_chinese_philosophy.py --zip <zip> --book 大学     # 导一本
+python tools\import_chinese_philosophy.py --zip <zip> --all           # 全量（228 本）
+```
+
+**全量实测**：**228 本全部成功（0 失败）**｜导出汉字总量 **2615.6 万字**｜output 约 **372 MB**。
+抽查《大学》：正文完整（「大学之道，在明明德…」）、**PUA 0**。
+
+**回归测试**：`tests/test_import_ctext.py` **7 个用例**（内存 zip 造数据，**不联网、不依赖数据集**）——
+覆盖优先级排序、按名去重取最优、跳过非书 JSON、模型映射、空章兜底、空段丢弃、汉字计数口径。
+
+⚠ **本工具与「规则驱动爬虫」是两条并行的路**：规则管**在线站点**，本工具管**离线数据集**；
+两者**共用导出层**，所以产物形态（含 HTML 阅读器）完全一致。

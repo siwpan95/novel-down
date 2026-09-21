@@ -5,6 +5,64 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.8.32] - 2026-09-21
+
+按全哥指示执行三件事：① 咪咕按已定位入口继续；② 复扫 229 域 → 过滤 → deep 深探 → 聚族；
+③ **ctext.org 暂时搁置**（全哥实测「响应时间过长，疑似服务器问题」），
+改用他提供的**离线数据集** `github.com/Guopop/chinese-philosophy`。
+
+### Added（本轮最有价值）：离线数据集接入 —— `tools/import_chinese_philosophy.py`
+
+**为什么**：`ctext.org` 抓不到（Cloudflare Turnstile，见 §12.20 ③），但它的**离线数据集**
+在本地 —— **零网络、零风控**，且内容比抓站更完整。
+
+| 项 | 实测 |
+|---|---|
+| 数据集 | 压缩 102 MB / 解压 **314 MB**；619 条目（**399 个 JSON** + 88 TXT） |
+| 结构 | 经/史/子/集/佛/道 六部；JSON = `{name, author, chapters[{name, paragraphs[{paragraph, type}]}]}` |
+| 映射 | 与 `Book` / `Chapter` **一一对应** → **直接复用既有导出器**（txt/md/epub/HTML 阅读器） |
+| 去重 | 数据集内有 4 个版本目录（old/new/simple/traditional）+ 顶层六部；按书名去重，优先级 **顶层 > back/new > simple > old > traditional** |
+| 结果 | **399 JSON → 228 本 / 8266 章 / 2608 万字** |
+| 全量导入 | **228 本全部成功（0 失败）**｜导出汉字 **2615.6 万字**｜output ≈ **372 MB**；抽查《大学》正文完整、**PUA 0** |
+
+⚠ **已知遗留**：**繁简不同名的书各存一份**（`史記`/`史记`、`雜阿含經`/`杂阿含经`）——
+去重按 `name` 字段做，而繁简两版 `name` 不同。**不引入繁简转换**（会破坏零三方依赖），
+`--list` 标出来源目录供使用者自选。
+
+**回归测试**：`tests/test_import_ctext.py` **7 个用例**（内存 zip 造数据，不联网、不依赖数据集）。
+
+### ② 咪咕阅读：逆向收尾 → **记存根**
+
+按上一轮定位的两个入口继续，**确认所有入口都是 SPA 壳**，目录/正文接口**未定位**：
+
+| 已确认（可复用） | |
+|---|---|
+| 书籍页 | `/nap/{bookId}/index.htm` |
+| API 基址 | `/nap/{f\|a}/ms.<服务>.<Service>/<方法>.json` |
+| 列表接口 | `/r/f/ms.external.externalService/getBIDataFor78.json` |
+| ⭐ **付费判据** | `getLockStatus.json?bid=&chapterids=` → `lockStatus: nolock/lock`（实测 200） |
+| 阅读页 | `/r/p/miguread.jsp`（纯壳，61365 字符 / **161 汉字**） |
+
+**已排除**：书籍页真浏览器监听 15 个接口内无目录；书籍页 DOM 章节名**只命中 1 个**；
+阅读页 0 条 XHR；`getCommonToReadPage.json` 参数名不对；**PC 版也是壳**。
+⚠ **关键线索**：bundle 里有 `/migu-bportal/book/pcenter/isLogin` → **很可能需要登录态**。
+
+→ 记存根 `cmread.com`（**不是版权/加密问题，是还没找到入口**，下一轮入口已写入存根）。
+
+### ③ 复扫 229 域 → 过滤 → deep 深探（进行中）
+
+两批存活域去重 = **229**，经 `scan_mirrors._reject_reason` 过滤后仍 229
+（该函数是**中文关键词启发式**，对 `1.ao3-cn.top` / `18rouman.org` 这类英文域名无效
+→ 交给 deep 段自然筛除）。已生成 `.sources/live.recovered.jsonl`，
+deep 深探在**后台运行**（`--concurrency 10`）。
+
+### 状态
+
+- 规则 156 → **157**（启用 142 不变；顶层 43 → **44**；停用 14 → **15**）
+  ｜正版 36 → **37**（23 启用）｜测试 267 → **274**（+7）｜门禁 **11 项 PASS**
+- 新增：`tools/import_chinese_philosophy.py`｜`tests/test_import_ctext.py`｜存根 `cmread.com`
+- `docs/NEW_SITES_PLAN.md §12.21`（离线数据集接入全记录）
+
 ## [0.8.31] - 2026-09-21
 
 按全哥「检测复扫结果批量处理进度，同时完成 ctext.org 逆向 / 咪咕逆向」执行。
