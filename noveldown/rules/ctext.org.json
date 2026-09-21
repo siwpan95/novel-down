@@ -1,0 +1,14 @@
+{
+  "id": "ctext.org",
+  "name": "中国哲学书电子化计划（Cloudflare Turnstile 人机验证 → 不做）",
+  "pool": "正版",
+  "enabled": false,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": true,
+  "demo_url": "https://ctext.org/zh",
+  "disabled_reason": "【Cloudflare Turnstile 人机验证 —— 纯 HTTP 与无头浏览器**都被拦**】\n（2026-09-21 实测，P3 文库站候选）\n\n① 纯 HTTP：首页返回 200，但只有 **2781 字符**，内容是挑战页：\n   · `<script src=\"https://challenges.cloudflare.com/turnstile/v0/api.js\" async defer>`\n   · 页面文字 =「Checking the security of your connection...」\n   · 校验走 `POST /cbcf.pl`（body: `test={token}`），成功后才 `window.location.reload()`\n   → **0 个链接、0 汉字**。\n   ⚠ 且请求会**长时间挂起**（实测 25s 超时被 SIGTERM 杀掉）—— 不是 403，是「卡住」。\n\n② 真浏览器（Playwright / headless）：渲染后 **2877 字符 / 0 汉字 / 仍含 Turnstile**\n   → **无头也过不了挑战**。\n\n③ ⚠ **headed（有头）未验证** —— 会弹窗打扰，本轮没试。按既有判据\n   「部分站点在无头下拒服，加 `--headed` 可过」，故**不排除有头能过**；\n   但即便能过，**每次抓取都要过一次挑战** → 速度与稳定性都不达标。\n\n【结论】按项目红线记存根。\n**触发条件（将来重试的前提）**：改用**有头浏览器 + 会话复用**\n（过完一次挑战后复用 cookie/localStorage），本站值得重试 ——\n它是**先秦至清的全文库**，与「出版读物 / 古籍」线高度契合。\n\n【本站资料（记下来，避免将来重复调研）】\n· 中文名：中国哲学书电子化计划（Chinese Text Project）\n· 性质：先秦至清中文古籍**全文库**，含原文与部分英译\n· URL 形态：书名 + 篇名 + 语言，如 `/analects/xue-er/zh`\n· 有官方 API 路径 `/api/`（同样被挑战拦住）\n\n⚠ 法律：该站内容多为公有领域古籍；阻碍纯粹是**技术性的**（人机验证），非版权或付费。",
+  "match": [
+    "ctext.org"
+  ]
+}
