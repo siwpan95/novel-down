@@ -1,15 +1,82 @@
 {
   "id": "read.douban.com",
-  "name": "豆瓣阅读（出版电子书·试读制）",
+  "name": "豆瓣阅读·专栏（原创连载·免登录可读）",
   "pool": "正版",
-  "enabled": false,
+  "enabled": true,
   "free_only": true,
   "predecode": false,
   "requires_js": true,
   "fetch_mode": "browser",
-  "demo_url": "https://read.douban.com/",
-  "disabled_reason": "【登录墙 + 出版电子书试读制】（2026-09-21 实测）。\n① 首页纯 HTTP 52 KB 但**仅 3 个链接**；渲染后 273 个链接，全是**栏目/作者/分类**\n   （`/column/{N}/`、`/author/{N}/`、`/category/{N}`），**没有一本具体的书**。\n② 书籍页在 `read.douban.com/ebook/{id}/`（从 `/category/{N}` 渲染后取得）。\n   实测 `/ebook/478267919/`（《深渊》）：页面写明 **提供方=中信出版社、2024-02、约 226,000 字、有 ISBN**\n   → 这是**正式出版的电子书**，不是网文章节。\n③ ⚠ **阅读页直接跳登录**：`/reader/ebook/478267919/toc/` → 重定向到\n   `accounts.arkread.com/oauth2/authorize?...`，页面是**手机号登录**表单（含各国区号）。\n→ 结论：**登录墙属项目红线**（不注入凭据、不登录）→ 停用。\n  另：即使能登录，出版书也是**试读制**，可抓的免费篇幅极小，投入产出不成比例。",
+  "demo_url": "https://read.douban.com/column/76273556/",
+  "notes": "★ 豆瓣阅读的**专栏（原创连载）**，2026-09-21 实测。\n  ⭐ **这条修正了上一轮的错误结论**：我曾把豆瓣阅读整站判成「登录墙」并记了停用存根 ——\n  那是因为**只试了「电子书」的 reader**（`/reader/ebook/{id}/toc/` → 302 到手机号登录），\n  而没有区分**专栏**。全哥给出免登录可读的专栏 URL 后复测确认：\n  **专栏单章正文免登录可读**（`/reader/column/{cid}/chapter/{chid}/` 返回 200、696 汉字正文）。\n  → 教训：判「整站是登录墙」之前，**要把站内的内容类别分清楚**（豆瓣阅读至少有两类：\n    电子书=出版授权（需登录）、专栏=原创连载（部分免登录可读））。\n\n【形态】\n  · 作品页 `/column/{cid}/`（书籍页）。\n  · ⚠ **章列表需要浏览器渲染**：纯 HTTP 取作品页只有 **13 个链接、0 个章链接**；\n    真 Chrome 渲染后章列表出现在 **`ul.chapter-list`** 里。\n    ⚠ 两条实测细节：① **等待要给够**（`wait_ms: 4000`；给 2000 时列表还没渲染完，\n    只取到 4 章）；② 列表首项是 **「最新」置顶回显**（文字被拼成\n    「最新53.陈述1.5版本2026-09-20」）→ 用 `item_deny_text: [\"最新\"]` 剔掉，\n    真正的第 53 章在后面还有一条。\n  · 章节页 `/column/{cid}/chapter/{chid}/`（会 302 到 `/reader/column/{cid}/chapter/{chid}/`，\n    两者都返回正文）；正文容器 **`div#article-static-content`**（实测 696 汉字）。\n  · ⚠ 目录页 `/reader/column/{cid}/toc/` **要登录**（跳「豆瓣阅读登录」）——\n    所以章列表只能从作品页拿，不能走 toc。\n\n【只覆盖专栏，不含电子书】出版电子书（`/ebook/{id}/`）的 reader 仍需登录，**不做**。\n  本规则按 URL 形态区分：只匹配 `/column/{cid}/…`。\n\n⚠ 法律：正版平台的**免费可读部分**。",
   "match": [
     "read.douban.com"
-  ]
+  ],
+  "book": {
+    "url_pattern": "/column/(\\d+)",
+    "info_url": "{url}",
+    "title": [
+      "@title",
+      "h1"
+    ],
+    "title_pattern": "^([^-–]+)",
+    "author": [
+      "@title"
+    ],
+    "author_pattern": "[-–]\\s*([^-–]+?)\\s*[-–]\\s*(?:豆瓣阅读|言情小说|原创|$)",
+    "intro": [
+      "meta[name='description']"
+    ]
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single"
+    },
+    "item_selector": "a.chapter-item, ul.chapter-list a",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/chapter/(?P<cid>\\d+)"
+    },
+    "url_template": "{origin}/column/{bid}/chapter/{cid}/",
+    "sort": "document_order",
+    "dedupe": "keep_first",
+    "item_deny_text": [
+      "最新"
+    ],
+    "item_strip_selectors": [
+      "div.description",
+      "div.meta",
+      ".description",
+      ".meta"
+    ]
+  },
+  "chapter": {
+    "title_selector": "h1, .article-title, article h1",
+    "content_selector": "#article-static-content",
+    "content_selectors": [
+      "#article-static-content",
+      "div#article-static-content",
+      "article"
+    ],
+    "strip_selectors": [
+      "script",
+      "style",
+      "nav",
+      "footer",
+      ".comments",
+      "#comments"
+    ],
+    "ad_patterns": [
+      "豆瓣阅读",
+      "加入书架",
+      "登录"
+    ]
+  },
+  "browser": {
+    "anti_detect": true,
+    "wait_selector": {
+      "catalog": "a.chapter-item"
+    },
+    "wait_ms": 4000
+  }
 }
