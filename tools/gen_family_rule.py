@@ -66,6 +66,16 @@ def load_raw(path):
     return out
 
 
+# ⚠⚠ 「候选 demo 是不是书页」的拒绝表（2026-09-21 实测踩的坑）。
+# 只拦**明显的非书页 / 非小说** demo；宁可漏（还有 bid_pat 兜底），不要错杀真书页。
+# ⚠ 必须匹配**任意路径段**，不能锚到行尾：`/comic/WGdz9651Q2` 的 `comic`
+#   在倒数第二段，锚 `$` 会漏掉它（我第一版就写错了）。
+_DEMO_DENY_PATH = re.compile(
+    r"/(?:cate\w*|top[_-]?\d*|rank\w*|booklist\w*|all\w*|index_?\d*|sort\w*"
+    r"|comic\w*|manhua\w*|manga\w*|cartoon\w*|video\w*|pic\w*)(?:/|\.html?|$)",
+    re.I)
+
+
 def _find_existing(rid: str):
     """在规则目录（**含 mirrors/ 等子目录**）里找同名规则文件，返回相对路径或 None。
 
@@ -133,7 +143,26 @@ def build_rule(domains, cat_sel, con_sel, samples):
     def _host_ok(u):
         h = (urlparse(u or "").hostname or "").lower()
         return any(h == d or h.endswith("." + d) for d in domains)
-    demo = next((s.get("book_url") for s in samples if _host_ok(s.get("book_url"))), None)
+    # ⚠⚠ 光「主机名在 match 内」**不够**（2026-09-21 实测踩到）：
+    # 深探记下的 book_url 可能是**分类页 / 榜单页**，主机名当然也在本组内，
+    # 但它根本不是书页 → 生成的草稿 probe 必然 0 章。实测两条：
+    #   m.sewenxue.com/top_0.html（榜单页）、m.jdzfx.com/cate1/（分类页）
+    # → 加两道判据：① 必须能按 `bid_pat` 提出书号（主，最硬）；
+    #   ② 路径里不含明显的「分类/榜单」词（辅，覆盖书号形态混杂时的漏网）。
+    #   ③ 「非小说内容」词（2026-09-21 实测补充）：`kaixinman.com/comic/WGdz9651Q2`
+    #      末段 `WGdz9651Q2` 是合法书号形态，**钻过了①**，但它其实是**漫画站**。
+    #      ⚠ 这层本来该由 `scan_mirrors._reject_reason` 在探活时就拦掉，
+    #        但那个表是**中文关键词**（成人/情色…），对**英文域名与路径无效** ——
+    #        所以这里补一道路径兜底（同一份判据在两处都该有，别只信一处的启发式）。
+    def _demo_ok(u):
+        if not _host_ok(u):
+            return False
+        if _DEMO_DENY_PATH.search(u or ""):
+            return False
+        m = re.search(bid_pat, u or "")
+        return bool(m) and bool(m.group(1))
+
+    demo = next((s.get("book_url") for s in samples if _demo_ok(s.get("book_url"))), None)
     if not demo:
         # ⚠ 没有**可验证**的 demo 就不生成这条规则。
         # 实测这种组的成因：站点把书页**跳转到另一个域名**，于是深探记下的
