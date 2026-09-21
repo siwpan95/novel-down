@@ -5,6 +5,61 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.8.24] - 2026-09-21
+
+**VLM 路线打通并做了严格对比 —— 结论是「不划算」**（含一条我自己的方法论纠错）。
+
+### Added / 打通（每关都有证据）
+
+- **CUDA torch 装成**：`torch 2.14.0+cu126`（主环境），CUDA 12.6，`cuda.is_available()=True`，
+  RTX 3050 6GB。**实测 GPU 37.8 秒/页 vs CPU 17 分钟/页 → 快 27 倍**。
+  （⚠ 选源坑：`cu124` **无 cp314 轮子** → pip 静默回退拿 CPU 版；`cu126+` 才有。
+  另 `cp314` ≠ `cp314t`，后者是 free-threaded 变体，本机不能用。）
+- **GOT-OCR2_0 1.37GB** 下齐（ModelScope）；**transformers 4.x 隔离**用 `pip --target G://py4x`
+  + 脚本 `sys.path` 前置（**不建 venv** —— `F://venvs` 写入被拦），`transformers 4.57.6` 生效。
+- **6 个跨版本 shim**：`LlamaFlashAttention2`→`LlamaAttention`、`is_torch_fx_available`→False、
+  `PretrainedConfig` 补 11 属性、`Tensor.cuda` 恒等（CPU 时）、`DynamicCache.seen_tokens`、
+  `DynamicCache.get_max_length`→None。
+- ⚠ **`WinError 5 拒绝访问` 的真因不是权限**：是 **`verovio` 在 cp314 上无轮子 → pip 源码构建
+  → 构建期撞杀软文件锁**（失败路径里的 `lib/python/…` 就是 setuptools 构建目录）。
+  `verovio` 仅是 GOT 支持**乐谱** OCR 的依赖，**去掉它立刻全过**。
+
+### ⭐⭐ 严格对比（同 8 页 / 同口径 / **退化的也全部计入**）
+
+| 档 | 汉字 | P4 | **隐含字准率** |
+|---|---|---|---|
+| GOT-OCR2_0（format） | 1646 | 4.2% | **44%** |
+| RapidOCR v5 | 3059 | 3.9% | **44%** |
+| RapidOCR v3（现行） | 2952 | 3.0% | **41%** |
+
+**→ VLM 与 RapidOCR v5 持平（44% vs 44%），只比 v3 高 3pp，没有质变**；
+且 GOT 有 **9/16 半页退化成重复串**（`清风清风…`，多为封面/题签页）—— RapidOCR 没有此问题。
+
+### Fixed（⚠⚠ 我自己的方法论错误，如实纠正）
+
+我一度报出「GOT 54% vs RapidOCR 41%」—— **那是幸存者偏差**：只看**单个半页**（232 字）
+且恰好是输出得好的那个。**跑满 8 页、把退化的算进去后优势就消失了**。
+→ **判据写进技能：OCR 质量对比必须「全量 + 含失败样本」，只挑好样本必然高估。**
+
+### Fixed（⭐⭐ 跨引擎判据：版式预处理不能照搬）
+
+| 处理 | RapidOCR（逐**字**检测框） | GOT-OCR2_0（端到端 **VLM**） |
+|---|---|---|
+| 切半页（双叶合拍） | ✅ 需要 | ✅ 需要 |
+| **逆时针 90°** | ✅ 需要（否则竖排当横排读、字全乱） | ❌ **绝对不要**（字侧躺 → VLM 读不出，**实测 0 字**；不旋转后 232 字可读） |
+
+**判据**：逐字检测器靠「**框**」工作，字侧躺也能认；端到端 VLM 靠「**看图理解**」，**字必须正立**。
+
+### Notes
+
+- **最终判断：VLM 路线（GOT-OCR2_0）在本素材上不划算**（质量持平 + 新增退化缺陷 + 代价高）
+  → 维持 §13.11 决定，DeepSeek-OCR/HunyuanOCR 一并搁置；将来再试须先确认**语料变化**能否拉开差距。
+- **本轮净收获是环境与判据**：CUDA torch 可用（27× 提速，**其他项目也受益**）
+  + 6 个跨版本 shim + 两条跨引擎判据。
+- transformers 4.x 隔离目录放在**仓库外** `G://py4x`（201MB 第三方包放仓内会触发门禁 1042 项违规
+  + 凭据自检失败 —— 实测踩到，已移出）。
+- 测试 **265** 全绿；门禁 **9 项** PASS。
+
 ## [0.8.23] - 2026-09-21
 
 **DeepSeek-OCR ⏸ 搁置**（全哥决定：不划算，列入计划以后再考虑）+ 环境与磁盘的两次「意外收获」。
