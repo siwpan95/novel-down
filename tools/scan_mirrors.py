@@ -553,7 +553,17 @@ def scan_deep(rec: dict, timeout: float):
             if u not in seen:
                 seen.add(u)
                 uniq.append(u)
-        cands = uniq
+        # ⚠ 非小说路径过滤（2026-09-21 实测踩到）：
+        # `classify()` 只按「书源名 + 域名 + 页面标题」判，而 `kaixinman.com`
+        # 的**域名里没有 `comic`** —— 证据在**路径** `/comic/WGdz9651Q2`。
+        # 于是它一路通过了探活与深探，直到人工验证才发现是**漫画站**。
+        # → 这里补一道**完整 URL（含路径）**级复检，命中就别浪费后续请求了。
+        before = len(uniq)
+        cands = [u for u in uniq if not classify("", "", u)]
+        if before and not cands:
+            why = classify("", "", uniq[0]) or "疑似非小说站"
+            out["verdict"] = f"疑似非小说站（书页路径命中：{why}）"
+            return out
         if not cands:
             out["verdict"] = "首页无书籍页链接"
             return out
