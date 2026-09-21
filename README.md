@@ -338,6 +338,27 @@ python tools\check_repo.py --selfcheck   # 证明门禁本身有效
 - **本机文件系统较慢**（实测创建+写+删一个目录约 1.5s，疑似杀软实时扫描），
   单测已改为共享临时目录以避免 I/O 成为瓶颈。
 
+## 发行版（可执行程序）
+
+除源码运行外，本项目也提供**便携版**与**安装版**，构建方法与踩坑清单见
+[packaging/README.md](./packaging/README.md)。
+
+| 产物 | 形态 | 说明 |
+|---|---|---|
+| `noveldown-0.8.38-portable-win64.zip` | **便携版（目录）** | 解压即用，启动约 **1.4 秒**（推荐） |
+| `noveldown-onefile.exe` | **便携版（单文件）** | 单个 exe；⚠ 每次启动约 **47 秒**（解包 + 杀软实时扫描） |
+| `novel-down-0.8.38-win64.msi` | **MSI 安装版** | 开始菜单 / PATH / 卸载项 |
+
+自己构建（在本仓根目录）：
+
+```bat
+F:/Python314/python.exe packaging/build.py --all
+```
+
+⚠ 发行版按**最小依赖**打包（`requests` + `beautifulsoup4` + `lxml`），
+**不含**浏览器路由（需 playwright）与字体反爬解码（需 fontTools）——
+需要这些能力请用**源码方式**运行，见「依赖」一节。
+
 ## 许可
 
 MIT，见 [LICENSE](./LICENSE)。

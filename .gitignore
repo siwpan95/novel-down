@@ -56,3 +56,9 @@ desktop.ini
 
 # 本地依赖缓存（transformers 4.x 隔离目录等）：不入仓、不参与门禁扫描
 .deps/
+
+# ---- 发行版构建产物（PyInstaller / cx_Freeze）----
+# ⚠ 这些是构建出来的，体积大（dist 35MB+），绝不入仓
+dist/
+build/
+*.spec
