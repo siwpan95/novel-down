@@ -5,6 +5,56 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.8.8] - 2026-09-21
+
+按「下一批建议」执行：**掌阅系两站接入成功**（书山中文网 + 掌阅小说网移动站），
+豆瓣阅读留作候选，书旗查清为「署名接口 + 非锚点目录」（超出当前 schema，转存根）。
+正版池 21 → **24 条**（启用 13 → 16）。
+
+### Added
+
+- **`shushan.zhangyue.net`：书山中文网（掌阅系·免费阅读）** —— 本批最大的一个
+  · 书籍页 `/book/{bid}/`，章节页 `/book/{bid}/{cid}`，正文容器 **`div.art_con`**。
+  · ⚠ **目录不在静态 HTML 里**：纯 HTTP 取书籍页只有 **39 个 `<a>`**（而该书有 821 章）。
+    目录是页内锚点 `#directory`（文字「目录（821章）」），**真 Chrome 里点一下**才渲染出列表 ——
+    实测渲染后 `a[href*='/book/']` = **821 条**，与「目录（821章）」完全吻合。
+    → 用 `browser.click_selectors` 点锚点 + `wait_selector` 等链接出现。
+  · 实测《无暗英雄》：**821 章**（第1章 → 第821章）、正文 58 段 / 3186 字、首段为正文。
+- **`m.zhangyue.com`：掌阅小说网移动站（全本免费）**
+  · 书籍页 `/detail/{bid}`，**目录在独立页 `/chapter/{bid}`**（书籍页只有 16 个链接），
+    章节页 `/readbook/{bid}/{cid}.html`，正文容器 **`div.read_c`**。
+  · 实测《重生农女之神戒空间》：50 章、正文 54 段 / 3472 字、首段为正文。
+  · ⚠ 与 `www.zhangyue.com`（**企业站**「掌阅科技-悦享美好时光」）区分。
+- **新能力 `catalog.item_strip_selectors`**：取目录项标题前，先剔掉**链接内部**的徽章元素。
+  实测掌阅小说网移动站：`<a …><span class="type">免费</span> 第一章：重生</a>` ——
+  直接取整段文本会得到「免费\n第一章：重生」，导出后标题全带个「免费」。
+  这些徽章在**链接内部**，`strip_selectors`（作用于正文容器）管不到、也没有别的绕法
+  → 按选择器剔（在**深拷贝**上剔，原树仍用于读 class 判 VIP）。
+
+### 存根
+
+- **`shuqi.com` 书旗小说（阿里）→ 停用**。已探明形态正确但**缺一个能力**：
+  ① 根路径 403，但 **`t.shuqi.com` 可用**；书籍页 `/book/{bid}.html`、目录 `/catalog/{bid}/`、
+    阅读页 `/reader/{bid}/?forceChapterId={cid}`。
+  ② **目录接口已挖到**：`ocean.shuqireader.com/webapi/bcspub/openapi/book/chapterlist` →
+    完整目录 + 逐章 **`payStatus`（0=免费）** + **`contUrlSuffix`（带 sign 的正文 URL 后缀）**
+    + `freeContUrlPrefix` —— 目录与 VIP 判定都能白拿。
+  ③ ⚠ 但该接口**纯 HTTP 打不开**：需 **JWT token + 每请求 sign**，直连 **401**；
+     token 是查询参数（`{cookie:NAME}` 读不到）。
+  ④ ⚠ 也**不能退化成渲染后读 DOM**：渲染目录页后 `a` 标签数 = **0** ——
+     章节渲染成 `<li class="ellipsis line">第一章 蛋要碎了</li>`，**无 href/id/data-***。
+  → 需要**新能力**「正文 URL 由目录项的 JSON 字段提供」（现 `body_api` 只支持固定模板形式）。
+
+### 尚未拿下（留作候选）
+
+- **豆瓣阅读 `read.douban.com`**：首页 200 / 52 KB，但**链接形态统计为空**（SPA/JS 壳），
+  且平台以**试读制**为主 → 免费比例需先核实再投入。
+
+### Notes
+
+- 测试 192 全绿；门禁 8 项 PASS；规则总数 142（正版 24 = 16 启用 + 8 存根 / 免费镜像 118）。
+- 本批方法复用：`tools/hunt_api.py`（书旗的接口、书山的目录锚点都是靠它/浏览器定位的）。
+
 ## [0.8.7] - 2026-09-21
 
 按全哥指示推进「① 创世/话本 ② 得间」：**创世、话本接入成功**，得间查清为**落地壳页**

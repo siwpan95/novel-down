@@ -336,13 +336,26 @@ def collect_catalog_items(rule, html: str, page_url: str, bid: str):
     items, locked = [], []
     state = {"vol": ""}
     deny_text = rule.catalog_cfg.get("item_deny_text") or []
+    strip_sel = rule.catalog_cfg.get("item_strip_selectors") or []
 
     def _handle(el):
         href = el.get("href") or ""
         cid, url = _extract_cid(rule, el, href, bid, origin, page_url)
         if not cid:
             return
-        title = _norm_space(el.get_text())
+        # `catalog.item_strip_selectors`：取标题前先剔掉目录项**内部**的徽章元素。
+        # 实测掌阅小说网移动站：`<a …><span class="type">免费</span> 第一章：重生</a>`
+        # → 直接取整段文本会得到「免费\n第一章：重生」，导出后标题全带个「免费」。
+        # 这些徽章在**链接内部**，`strip_selectors`（作用于正文容器）管不到，
+        # 也没有 id/class 之外的办法绕开 → 按选择器剔。
+        # 只在**深拷贝**上剔：原树还要用来读 class 判 VIP。
+        work = el
+        if strip_sel:
+            work = copy.copy(el)           # bs4 的 __copy__ 是深拷贝（模块已 import copy）
+            for sel in strip_sel:
+                for sub in work.select(sel):
+                    sub.decompose()
+        title = _norm_space(work.get_text())
         # `catalog.item_deny_text`：丢掉**站点导航类**的伪目录项。
         # 实测常见：「开始阅读」「在线书库」「TXT下载」「最新章节」——
         # 它们和真章节一样带数字 href（`/book/21/1.html`），cid 甚至与第 1 章**相同**，

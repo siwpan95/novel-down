@@ -562,6 +562,21 @@
 | 书旗 `shuqi.com` / 掌阅 `zhangyue.com` 根路径 | 403 / 企业站 | 试 `t.shuqi.com`、`m.zhangyue.com` |
 | 微信读书 `weread.qq.com` | 存活 ✓ | 预计登录墙 → 存根 |
 
+### 12.8 第四批（v0.8.8，按「下一批建议」执行）
+
+| 站点 | 结论 |
+|---|---|
+| **书山中文网 `shushan.zhangyue.net`** | ✅ **已接入**。掌阅系；书籍页 `/book/{bid}/`、章节 `/book/{bid}/{cid}`、正文 `div.art_con`。⚠ **目录不在静态 HTML 里**（纯 HTTP 只有 39 个 `<a>`，而书有 821 章）—— 是页内锚点 `#directory`，**真 Chrome 点一下后才渲染出 821 条** → browser 路由 + `click_selectors` |
+| **掌阅小说网移动站 `m.zhangyue.com`** | ✅ **已接入**。书籍页 `/detail/{bid}`、**目录在独立页 `/chapter/{bid}`**、章节 `/readbook/{bid}/{cid}.html`、正文 `div.read_c`。实测 50 章 3472 字 |
+| **书旗小说 `shuqi.com`** | ⛔ **存根**。形态全对但**缺一个能力**：目录接口 `ocean.shuqireader.com/.../book/chapterlist` 已挖到（含 `payStatus` 与带 sign 的 `contUrlSuffix`），但 ① 纯 HTTP **401**（需 JWT token + 每请求 sign）；② 渲染后目录 `a` 标签数 = **0**（`<li>` 无 href/id/data-*）→ 需新能力「正文 URL 由目录 JSON 字段提供」 |
+| **豆瓣阅读 `read.douban.com`** | ⏳ **候选**。首页 200/52KB 但**链接形态统计为空**（SPA 壳）；且以**试读制**为主 → 免费比例需先核实 |
+
+**由「得间」牵出的收获（值得记住的排查路径）**
+
+得间 PC 端是导流落地页 → 但它页面里引用了掌阅系域名（`zhangyuecdn.com`）→
+顺着找到 **两个真正有内容的站**（书山中文网、掌阅小说网移动站）并都接入了。
+→ **一个「打不动」的站，它的外链/合作方域名里往往藏着能打的站**，值得顺手扫一眼。
+
 **下一批候选（已初筛，按优先级）**
 
 | 候选 | 状态 | 备注 |

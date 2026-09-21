@@ -1,0 +1,86 @@
+{
+  "id": "shushan.zhangyue.net",
+  "name": "书山中文网（掌阅系·免费阅读）",
+  "pool": "正版",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": true,
+  "fetch_mode": "browser",
+  "demo_url": "https://shushan.zhangyue.net/book/112812/",
+  "notes": "★ 掌阅系「书山中文网」，2026-09-21 实测。来源同 `m.zhangyue.com` ——\n  都是从「得间免费小说」的落地页顺藤摸到的（详见 idejian.com 存根）。\n\n【形态 + 为什么要浏览器路由】\n  · 书籍页 `/book/{bid}/`，章节页 `/book/{bid}/{cid}`（cid 是长 ID，递增）。\n  · ⚠ **目录不在静态 HTML 里**：纯 HTTP 取书籍页只有 **39 个 `<a>`**（而该书有 821 章）。\n    页面上目录是个**页内锚点** `#directory`（链接文字「目录（821章）」），\n    真 Chrome 里**点一下它之后**才渲染出章节列表 —— 实测渲染后 `a[href*='/book/']` = **821 条**，\n    与「目录（821章）」完全吻合。\n    → 故用 `browser.click_selectors` 点锚点 + `wait_selector` 等章节链接出现。\n  · 正文容器 **`div.art_con`**（实测 2820 汉字 / 58 段；外层 `.content-body` 2872）。\n\n【免费】该线与掌阅小说网移动站同为免费阅读线，实测未见锁标记；\n  仍按项目六层约束处理。\n\n⚠ 与 `www.zhangyue.com`（企业站）区分；本规则只匹配 `shushan.zhangyue.net`。\n\n⚠ 法律：正版平台的**免费章节**。",
+  "match": [
+    "shushan.zhangyue.net"
+  ],
+  "book": {
+    "url_pattern": "/book/(\\d+)/",
+    "info_url": "{url}",
+    "title": [
+      "@title",
+      "h1"
+    ],
+    "title_pattern": "^([^,，]+)",
+    "author": [
+      "@title"
+    ],
+    "author_pattern": "[,，]\\s*([^,，]+?)作品",
+    "intro": [
+      "meta[name='description']"
+    ],
+    "cover": [
+      "meta[property='og:image']"
+    ]
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single"
+    },
+    "item_selector": "a[href*='/book/']",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/book/\\d+/(?P<cid>\\d+)"
+    },
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first",
+    "item_deny_text": [
+      "目录",
+      "免费试读",
+      "开始阅读",
+      "加入书架"
+    ]
+  },
+  "chapter": {
+    "title_selector": "h1, .title",
+    "content_selector": "div.art_con",
+    "content_selectors": [
+      "div.art_con",
+      ".content-body",
+      "div.article"
+    ],
+    "strip_selectors": [
+      "script",
+      "style",
+      ".footer",
+      ".nav",
+      ".comment",
+      "#comment"
+    ],
+    "ad_patterns": [
+      "书山中文网",
+      "请记住本站",
+      "加入书架",
+      "手机版阅读"
+    ]
+  },
+  "browser": {
+    "anti_detect": true,
+    "click_selectors": [
+      "a[href*='#directory']"
+    ],
+    "wait_selector": {
+      "catalog": "a[href*='/book/']",
+      "chapter": "div.art_con"
+    },
+    "wait_ms": 2000
+  }
+}

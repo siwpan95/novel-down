@@ -1,0 +1,15 @@
+{
+  "id": "shuqi.com",
+  "name": "书旗小说（阿里·署名接口 + 非锚点目录）",
+  "pool": "正版",
+  "enabled": false,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": true,
+  "fetch_mode": "browser",
+  "demo_url": "https://t.shuqi.com/book/8229478.html",
+  "disabled_reason": "【目录能拿到，但「正文 URL 由目录 JSON 下发」——现有规则 schema 表达不了】（2026-09-21 实测）。\n已探明的形态（都对，但缺一个能力）：\n① 根路径 `shuqi.com` 403，但 **`t.shuqi.com` 可用**（HTTP 200，89 KB）；\n   书籍页 `/book/{bid}.html`，目录页 `/catalog/{bid}/`，阅读页 `/reader/{bid}/?forceChapterId={cid}`。\n② **目录接口已挖到**（tools/hunt_api.py）：\n   `GET ocean.shuqireader.com/webapi/bcspub/openapi/book/chapterlist?...`\n   返回完整结构：`data.chapterList[].volumeList[]`，每章含 `chapterId` / `chapterName` /\n   **`payStatus`（0=免费）** / `chapterOrdid`（顺序号）/ **`contUrlSuffix`（带 sign 的正文 URL 后缀）**，\n   且 data 里还给了 `freeContUrlPrefix` / `chargeContUrlPrefix`。→ 目录与 VIP 判定**都能白拿**。\n③ ⚠ **但这个接口纯 HTTP 打不开**：需要 **JWT token + 每请求 sign**，直连返回 **401 Unauthorized**；\n   二者由站点 JS 生成，规则里无法构造（`{cookie:NAME}` 只能读 cookie，token 是查询参数）。\n④ ⚠ **目录也不能退化成「渲染后读 DOM」**：真 Chrome 渲染目录页后 `a` 标签数 = **0** ——\n   章节列表渲染成 `<li class=\"ellipsis line level-0\">第一章 蛋要碎了</li>`，\n   **无 href、无 id、无 data-* 属性**，章节 ID 只存在于 JS 状态里。\n→ 结论：需要**新能力**「正文 URL（或其后缀）由目录项的 JSON 字段提供」\n  （现 `chapter.body_api` 只支持 `{origin}/{bid}/{cid}/{seq}` 形式模板，无法逐章带签名）。\n  这是本项目第一个「接口驱动 + 逐章签名」的站点，值得单独设计。\n\n（同类：阿里系签名接口；不要试图逆向 sign —— 属灰色且易变。）",
+  "match": [
+    "shuqi.com"
+  ]
+}

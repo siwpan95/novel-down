@@ -1,0 +1,81 @@
+{
+  "id": "m.zhangyue.com",
+  "name": "掌阅小说网（移动站·全本免费）",
+  "pool": "正版",
+  "enabled": true,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://m.zhangyue.com/detail/12305587",
+  "notes": "★ 掌阅小说网移动站 `m.zhangyue.com`（掌阅 iReader 旗下免费线），2026-09-21 实测。\n  来源：从「得间免费小说」顺藤摸出来的 —— 得间 PC 端只是**导流落地页**（详见 idejian.com 存根），\n  但它页面里引用了掌阅系域名，顺着找到这个**真正有内容**的站。\n\n【形态】\n  · 书籍页 `/detail/{bid}`（首页 44 个 `/detail/{N}` 链接，服务端渲染）。\n  · ⭐ **目录在独立页 `/chapter/{bid}`**（**不在书籍页里**）—— 书籍页只有 16 个链接；\n    实测目录页给出 **50 条 `/readbook/{bid}/{cid}.html`**。\n    （和创世一样是「目录不在书籍页」的形态，但这次从书籍页里那个 `/chapter/{N}` 入口直接看出来了。）\n  · 章节页 `/readbook/{bid}/{cid}.html`，正文容器 **`div.read_c`**（实测 3055 汉字；\n    外层 `.h5_mainbody` 3013）。\n  · `{cid}` 是**章节序号**（1、2、3…）→ `sort=cid_numeric_asc` 即阅读顺序。\n\n【元信息】从 `<title>` 分段取：`《书名》最新章节_作者著_掌阅小说网`。\n\n【VIP/免费】该线定位是「热门全本免费小说」，实测目录与章节页**都没有锁标记元素**；\n  仍按项目六层约束：目录锁 → 正文付费墙 → 导出前终检（第 4 层兜底）。\n\n⚠ 注意与 `www.zhangyue.com` 区分：后者根路径是**企业站**（「掌阅科技-悦享美好时光」），\n  不是阅读站。\n\n⚠ 法律：正版平台的**免费章节**。",
+  "match": [
+    "m.zhangyue.com"
+  ],
+  "book": {
+    "url_pattern": "/detail/(\\d+)",
+    "info_url": "{url}",
+    "title": [
+      "@title"
+    ],
+    "title_pattern": "^《?(.+?)》?(?:最新章节|_)",
+    "author": [
+      "@title"
+    ],
+    "author_pattern": "_([^_]+?)著",
+    "intro": [
+      "meta[name='description']"
+    ],
+    "cover": [
+      "meta[property='og:image']"
+    ]
+  },
+  "catalog": {
+    "pages": {
+      "mode": "single",
+      "url": "{origin}/chapter/{bid}"
+    },
+    "item_selector": "a[href*='/readbook/']",
+    "id_from": {
+      "mode": "href",
+      "pattern": "/readbook/\\d+/(?P<cid>\\d+)\\.html"
+    },
+    "url_template": "{origin}/readbook/{bid}/{cid}.html",
+    "sort": "cid_numeric_asc",
+    "dedupe": "keep_first",
+    "item_deny_text": [
+      "最新章节",
+      "开始阅读",
+      "立即阅读",
+      "加入书架"
+    ],
+    "item_strip_selectors": [
+      "span.type",
+      ".type"
+    ]
+  },
+  "chapter": {
+    "title_selector": "h1, .title",
+    "content_selector": "div.read_c",
+    "content_selectors": [
+      "div.read_c",
+      ".h5_mainbody"
+    ],
+    "strip_selectors": [
+      "script",
+      "style",
+      ".footer",
+      ".nav",
+      ".comment",
+      "#comment",
+      "div.h5_mainbody:first-of-type"
+    ],
+    "ad_patterns": [
+      "掌阅小说网",
+      "请记住本站",
+      "加入书架",
+      "手机版阅读"
+    ],
+    "drop_leading_title_paragraph": true
+  }
+}
