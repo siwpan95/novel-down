@@ -11,8 +11,8 @@ FictionDown 是 GPL-3.0、novel-downloader 是 AGPL-3.0-or-later，本项目是 
 但"不含"如果只写在文档里，迟早会有人手滑 `git add -A` 把它带进去。
 所以做成 <1 秒可跑的检查。
 
-九项检查
---------
+十一项检查
+----------
 1. 许可文件唯一且为本项目 LICENSE（不得混入第三方 LICENSE/COPYING）
 2. 不跟踪第三方源码目录（_ref/ vendor/ node_modules/ third_party/ …）
 3. 不跟踪归档（*.zip / *.tar.gz / *.7z / *.rar）
@@ -22,6 +22,8 @@ FictionDown 是 GPL-3.0、novel-downloader 是 AGPL-3.0-or-later，本项目是 
 7. 生产代码（noveldown/ tools/ tests/）不得写死本机绝对路径（解释器安装目录/用户目录/开发盘）
 8. 无调试残留 / 草稿文件
 9. 镜像族规则 `notes` 里的「域数 N」必须等于 `match` 长度（同一事实写在两处必须相等）
+10. README 里的关键计数必须等于**从代码算出的**事实
+11. `docs/NEW_SITES_PLAN.md §12.6` 规划表的「状态」必须等于规则文件的存在/启用事实
 
 用法：
     python tools\\check_repo.py
@@ -245,6 +247,39 @@ def _selfcheck() -> int:
         hit = expect in items
         ok = ok and hit
         print(f"  [{ 'PASS' if hit else 'FAIL' }] 检出「{expect}」")
+
+    # --- 第 11 项反证：搭一个「表里写已接入、规则文件却不存在」的假现场 ---
+    import shutil
+    import tempfile
+    prob11 = []
+    hit11 = False
+    tmp = tempfile.mkdtemp(prefix="gate11_")
+    try:
+        os.makedirs(os.path.join(tmp, "docs"))
+        os.makedirs(os.path.join(tmp, "noveldown", "rules"))
+        with open(os.path.join(tmp, PLAN_DOC_REL), "w", encoding="utf-8") as fh:
+            fh.write(
+                "### 12.6 正版站扩展 · 优先级规划\n\n"
+                "| 候选 | 状态 | 规则 | 备注 |\n|---|---|---|---|\n"
+                "| 假站A | ⭕ 未探 | `fake-missing` | 应通过（确实无规则）|\n"
+                "| 假站B | ✅ 已接入 | `fake-absent` | 违规 ①：无规则文件 |\n"
+                "| 假站C | ⛔ 存根 | `fake-on` | 违规 ②：规则其实是启用的 |\n")
+        with open(os.path.join(tmp, "noveldown", "rules", "fake-on.json"),
+                  "w", encoding="utf-8") as fh:
+            json.dump({"enabled": True}, fh)
+        _ok11, prob11, _uv11 = check_plan_state(tmp)
+        hit11 = (not _ok11) and len(prob11) == 2
+    except Exception as e:                      # noqa: BLE001
+        prob11 = ["自检异常：%s" % e]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    ok = ok and hit11
+    print(f"  [{ 'PASS' if hit11 else 'FAIL' }] 第 11 项：规划表脱节被检出"
+          f"（应 2 条，实 {len(prob11)} 条）")
+    if prob11 and not hit11:
+        for d in prob11:
+            print(f"         · {d}")
+
     print()
     print("门禁自检：" + ("有效 ✓" if ok else "失效 ✗（门禁没能抓到假违规）"))
     return 0 if ok else 1
@@ -259,12 +294,13 @@ def _selfcheck() -> int:
 # 与其靠人眼，不如让门禁**从代码算出事实**再与 README 文本比对，
 # 不一致就 FAIL 并**直接告诉该改成什么**。
 #
-# ⚠ 只校验 **README**，不校验 docs/ —— 这是刻意的：
-#   · README 的计数读起来像「**当前事实**」且无版本号 → 必须与代码同步；
-#   · docs/（RULES / FREE_ONLY / REFERENCE / NEW_SITES_PLAN）里的数字**大多是
-#     「实测证据」（如「700 章 + 650 个 li.vip」）或「带版本号的历史快照」
-#     （如「截至 v0.7.1，18 条规则」）—— 它们**本就该保持原值**，改反而破坏证据链。
-#   → 判据：**带版本号或明确标注为实测结果**的数字，不纳入一致性校验。
+# ⚠ 本项只校验 **README 的计数**；**docs/ 里「读作现状」的表**由第 11 项负责。
+#   ⚠ 划界依据在 v0.8.27 修正过 —— 原文写的是「只校验 README、不校验 docs」，**太粗**：
+#     · **豁免**：带版本号的快照（如「截至 v0.7.1，18 条规则」）、
+#       明确标注为实测结果的数字（如「700 章 + 650 个 li.vip」）—— 改反而破坏证据链；
+#     · **必须同步**：任何**读起来就是当前事实**的内容，不论它在 README 还是 docs
+#       （§12.6 规划表就是这么一处，实测脱节 3 处 → 见第 11 项）。
+#   → 判据是「**它承诺的是快照还是现状**」，不是「它在哪个文件」。
 # ---------------------------------------------------------------
 def check_readme_counts(root: str):
     import os as _os
@@ -335,6 +371,107 @@ def check_readme_counts(root: str):
     return (not problems), problems
 
 
+# ---------------------------------------------------------------
+# 11. docs 规划表 ↔ 规则文件一致性（v0.8.27 新增）
+#
+# 为什么需要它：`docs/NEW_SITES_PLAN.md §12.6` 是一张**读作当前事实的现状表**
+# （标题就叫「优先级规划」，无版本号）。实测它脱节了 3 处 ——
+# 把**已接入且启用**的晋江 / 掌阅标成「⭕ 未探」，把**已从存根翻案**的创世标成「⛔ 存根」。
+# 这与第 10 项是同一类病：**同一事实写在两处（文档 vs 代码），迟早不一致**。
+#
+# ⚠ 与第 10 项的划界（**修正版**：判据不是「在 README 还是 docs」）：
+#   · **豁免** —— 带版本号的快照（「截至 v0.7.1，18 条规则」）、
+#     明确标注为实测结果的数字（「700 章 + 650 个 li.vip」）：改反而破坏证据链；
+#   · **必须同步** —— 标为「计划 / 现状 / 优先级」的表：它读起来就是当前事实。
+#   → 判据是「**它承诺的是快照还是现状**」。
+#
+# 校验方式：解析 §12.6 之后所有 `| 候选 | 状态 | 规则 | 备注 |` 形态的行，
+# 状态列三选一，再拿「规则」列反引号内的**规则标识**去核对 noveldown/rules/：
+#   ✅ 已接入 → 规则文件必须存在**且启用**
+#   ⛔ 存根   → 规则文件必须存在**且停用**
+#   ⭕ 未探   → 规则文件必须**不存在**
+# 「状态」列没写这三种值之一的行（如 P3/P4 的说明表）**不参与校验**，避免误扫。
+# ---------------------------------------------------------------
+
+PLAN_DOC_REL = os.path.join("docs", "NEW_SITES_PLAN.md")
+PLAN_SECTION_MARK = "### 12.6 正版站扩展"
+PLAN_STATE_ON = "✅ 已接入"
+PLAN_STATE_OFF = "⛔ 存根"
+PLAN_STATE_NONE = "⭕ 未探"
+
+
+def check_plan_state(root: str):
+    """返回 (ok, problems, unverified_rows)。
+
+    unverified_rows = 「⭕ 未探」但没给出规则标识的行（无法校验，**不静默**，由调用方报出）。
+    """
+    doc = os.path.join(root, PLAN_DOC_REL)
+    if not os.path.isfile(doc):
+        return True, [], []
+
+    text = open(doc, encoding="utf-8").read()
+    i = text.find(PLAN_SECTION_MARK)
+    if i < 0:
+        return False, ["找不到章节标记「%s」（章节被改名？请同步本项）"
+                       % PLAN_SECTION_MARK], []
+
+    seg = text[i:]
+    # 截到下一个二级/三级标题为止（§12.6 目前是末节，但别依赖这一点）
+    nxt = re.search(r"\n#{2,3} ", seg[len(PLAN_SECTION_MARK):])
+    if nxt:
+        seg = seg[:len(PLAN_SECTION_MARK) + nxt.start() + 1]
+
+    rules_dir = os.path.join(root, "noveldown", "rules")
+    known = {f[:-5] for f in os.listdir(rules_dir) if f.endswith(".json")}
+
+    def is_enabled(rid):
+        p = os.path.join(rules_dir, rid + ".json")
+        if not os.path.isfile(p):
+            return None
+        try:
+            with open(p, encoding="utf-8") as fh:
+                return json.load(fh).get("enabled", True) is not False
+        except Exception:
+            return None
+
+    problems, unverified, n_rows = [], [], 0
+    for line in seg.splitlines():
+        s = line.strip()
+        if not s.startswith("|"):
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        if len(cells) < 3:
+            continue
+        state = cells[1].replace("*", "").replace("`", "").strip()
+        if state not in (PLAN_STATE_ON, PLAN_STATE_OFF, PLAN_STATE_NONE):
+            continue
+        n_rows += 1
+        ids = [x for x in re.findall(r"`([^`]+)`", cells[2]) if x != "—"]
+        if state == PLAN_STATE_NONE and not ids:
+            # 未探行没给标识 → 校验不到（原脱节正是这种形态：标识被写在候选名括号里）
+            unverified.append(cells[0].replace("*", "").strip())
+            continue
+        for rid in ids:
+            actual = is_enabled(rid)
+            if state == PLAN_STATE_ON:
+                if actual is None:
+                    problems.append("§12.6 标「已接入」但无规则文件：%s" % rid)
+                elif not actual:
+                    problems.append("§12.6 标「已接入」但规则**已停用**：%s" % rid)
+            elif state == PLAN_STATE_OFF:
+                if actual is None:
+                    problems.append("§12.6 标「存根」但无规则文件：%s" % rid)
+                elif actual:
+                    problems.append("§12.6 标「存根」但规则**是启用的**：%s" % rid)
+            else:
+                if actual is not None:
+                    problems.append("§12.6 标「未探」但规则文件**已存在**：%s" % rid)
+
+    if n_rows == 0:
+        problems.append("§12.6 规划表解析到 0 行（表格格式变了？请同步本项）")
+    return (not problems), problems, unverified
+
+
 def main():
     ap = argparse.ArgumentParser(description="仓库卫生门禁")
     ap.add_argument("--selfcheck", action="store_true",
@@ -374,6 +511,14 @@ def main():
             print(f"    · {d}")
         return 1
 
+    ok_pl, pl_problems, pl_unverified = check_plan_state(ROOT)
+    if not ok_pl:
+        print(f"结果：FAIL —— {len(pl_problems)} 项规划表脱节")
+        print("\n  【§12.6 规划表 与 规则文件事实不一致】")
+        for d in pl_problems:
+            print(f"    · {d}")
+        return 1
+
     print("结果：PASS")
     print("  1 许可文件唯一且为本项目 LICENSE（MIT）        ✓")
     print("  2 无第三方源码目录 / 产物目录                 ✓")
@@ -387,6 +532,10 @@ def main():
     print("  8 无调试残留 / 草稿文件                           ✓")
     print("  9 镜像族规则 notes 的「域数 N」== match 长度       ✓")
     print(" 10 README 关键计数 == 代码事实（规则/启用/正版/存根/用例） ✓")
+    _n_uv = len(pl_unverified)
+    _tail = ("（⚠ 其中 %d 行「未探」未给规则标识、无法校验：%s）"
+             % (_n_uv, "、".join(pl_unverified))) if _n_uv else ""
+    print(" 11 §12.6 规划表状态 == 规则文件存在/启用事实%s ✓" % _tail)
     return 0
 
 

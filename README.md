@@ -316,7 +316,8 @@ python tools\verify_reader.py "output\<书名>_<站点>\<书名>_<站点>.html"
 :: 3. 产物终检：受保护内容零请求 / 零泄漏 / 无乱码残留
 python tools\verify_artifacts.py "output\<书名>_<站点>"
 
-:: 4. 仓库卫生门禁：不含第三方源码 / 凭据 / 产物，且借鉴记账完整
+:: 4. 仓库卫生门禁：不含第三方源码 / 凭据 / 产物，借鉴记账完整，
+::    且「文档里读作现状的内容」与代码事实一致（README 计数 / §12.6 规划表状态）
 python tools\check_repo.py
 python tools\check_repo.py --selfcheck   # 证明门禁本身有效
 ```
