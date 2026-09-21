@@ -1,0 +1,15 @@
+{
+  "id": "motie.com",
+  "name": "磨铁中文网（出版/按字计费）",
+  "pool": "正版",
+  "enabled": false,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "fetch_mode": "http",
+  "demo_url": "https://www.motie.com/",
+  "disabled_reason": "【无免费章节 —— 按字计费】（2026-09-21 实测，全哥提示「主打出版读物」后重点核实）。\n① `www.motie.com/` 纯 HTTP 仅 **796 字节、0 个链接** → 真 Chrome 渲染后**跳到 `/wenxue`**，\n   全页仅 **34 个链接**，且多为 `m.motie.com/activePage/...` 与微信公众号文章 → **www 已是营销页**。\n② `m.motie.com/` 渲染后跳到 `/channel/106?siteId=99`，给出 **`/detail/{N}` 书籍页 ×30**，\n   但点进去**跳到另一个域** `m.laikan.com/detail/{N}`（磨铁系阅读站）。\n③ `m.laikan.com/detail/207816`（《异人之上》）页面上明写 **「148万字 | 5磨铁币/千字」**，\n   只有「加入书架 / 立即阅读 / 打赏」—— **按千字计费，没有免费章节一说**；\n   且该页仅 18 个链接、**无目录**（目录需接口）。\n→ 结论：与项目「只抓免费章节」的目标不匹配，**不再投入**。\n  （若要复查，入口是 `m.laikan.com` 而非 `motie.com`；但那也改变不了「按字计费」这一点。）",
+  "match": [
+    "motie.com"
+  ]
+}

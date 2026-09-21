@@ -1,0 +1,15 @@
+{
+  "id": "read.douban.com",
+  "name": "豆瓣阅读（出版电子书·试读制）",
+  "pool": "正版",
+  "enabled": false,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": true,
+  "fetch_mode": "browser",
+  "demo_url": "https://read.douban.com/",
+  "disabled_reason": "【登录墙 + 出版电子书试读制】（2026-09-21 实测）。\n① 首页纯 HTTP 52 KB 但**仅 3 个链接**；渲染后 273 个链接，全是**栏目/作者/分类**\n   （`/column/{N}/`、`/author/{N}/`、`/category/{N}`），**没有一本具体的书**。\n② 书籍页在 `read.douban.com/ebook/{id}/`（从 `/category/{N}` 渲染后取得）。\n   实测 `/ebook/478267919/`（《深渊》）：页面写明 **提供方=中信出版社、2024-02、约 226,000 字、有 ISBN**\n   → 这是**正式出版的电子书**，不是网文章节。\n③ ⚠ **阅读页直接跳登录**：`/reader/ebook/478267919/toc/` → 重定向到\n   `accounts.arkread.com/oauth2/authorize?...`，页面是**手机号登录**表单（含各国区号）。\n→ 结论：**登录墙属项目红线**（不注入凭据、不登录）→ 停用。\n  另：即使能登录，出版书也是**试读制**，可抓的免费篇幅极小，投入产出不成比例。",
+  "match": [
+    "read.douban.com"
+  ]
+}

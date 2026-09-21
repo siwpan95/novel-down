@@ -1,0 +1,15 @@
+{
+  "id": "weread.qq.com",
+  "name": "微信读书（登录墙 + 非锚点）",
+  "pool": "正版",
+  "enabled": false,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": true,
+  "fetch_mode": "browser",
+  "demo_url": "https://weread.qq.com/",
+  "disabled_reason": "【登录墙】（2026-09-21 实测）。\n① 首页 `weread.qq.com/` 纯 HTTP 823 KB、55 个链接，但 **`/web/book/` 链接 = 0** ——\n   渲染后可见书名（《明朝那些事儿》《被讨厌的勇气》…），但那些卡片是**非锚点元素**，\n   且页面顶部有**「登录」**入口。\n② `/web/category/1`（精品小说）渲染后正文是 **「暂无书籍」** —— 未登录不给书单。\n③ 页面结构上没有可供规则书写的章节链接（即便登录，阅读器也是 canvas/虚拟列表形态）。\n→ 结论：**登录墙属红线** → 停用。\n  与豆瓣阅读同属「出版读物平台」，这一类（含磨铁）**共性就是免费内容极少 + 需要登录**。",
+  "match": [
+    "weread.qq.com"
+  ]
+}
