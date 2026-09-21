@@ -331,6 +331,9 @@ def check_readme_counts(root: str):
             "顶层停用存根": sum(1 for v in top.values() if not v.enabled),
             "正版总数": len(gb),
             "正版启用": sum(1 for v in gb.values() if v.enabled),
+            # ⚠ 全仓停用数（含镜像池）—— 与「顶层停用存根」是两个口径，
+            #   README 里「停用存根共 N 条」指的是**全仓**，别拿顶层口径去比。
+            "停用总数": sum(1 for v in r.values() if not v.enabled),
         }
     except Exception as e:                       # 规则加载失败不在这里报
         return True, []
@@ -352,6 +355,10 @@ def check_readme_counts(root: str):
         (r"顶层手写 \*\*(\d+) 条\*\*（启用 (\d+)）\+ \*\*镜像池 (\d+) 条\*\*；另有 (\d+) 条停用存根",
          ["顶层手写", "顶层启用", "镜像池", "顶层停用存根"], "顶层/镜像池/存根"),
         (r"\*\*正版\*\*（(\d+) 条，(\d+) 启用）", ["正版总数", "正版启用"], "正版池"),
+        # ⚠ v0.8.28 补：README 末尾还有一句「**停用存根共 N 条**（正版 X + 免费镜像 Y）」，
+        #   它此前**不在**校验范围内 —— 实测已脱节（写 11，实际 12；本轮加火星后应为 13）。
+        #   教训同第 11 项：**同一事实的每一处都要进校验，只覆盖「主要那处」迟早漏。**
+        (r"\*\*停用存根共 (\d+) 条\*\*", ["停用总数"], "停用存根总数"),
     ]
     for pat, keys, label in checks:
         m = _re.search(pat, text)

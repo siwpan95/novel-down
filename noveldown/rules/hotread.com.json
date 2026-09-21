@@ -1,0 +1,14 @@
+{
+  "id": "hotread.com",
+  "name": "火星小说（正版·免费章可读但仅 3.4%，低于 5% 阈值）",
+  "pool": "正版",
+  "enabled": false,
+  "free_only": true,
+  "predecode": false,
+  "requires_js": false,
+  "demo_url": "https://www.hotread.com/story/1016255",
+  "disabled_reason": "【免费章**可读**，但免费比例仅 3.4%（558 章 = 19 免费 + 539 VIP），低于 §12.6 的 5% 阈值】\n（2026-09-21 实测，正版站扩展 P1）\n\n⚠⚠ 先说一件更重要的事：**本条判据与既有实践冲突** ——\n   云起书院 679 章 = 20 免费 + 659 VIP（**2.9% 免费**）却**已接入**并正常工作。\n   说明写在 §12.6 的前置条件「免费比例 < 5% → 直接记存根」，把「**排优先级**」误当成了「**拒收线**」。\n   本存根按**现行判据**落地（记存根），同时把完整实测证据留在下面 ——\n   **若拍板翻案为「接入」，本存根可直接开工**（形态已完全摸清，见 ④）。\n\n① 域名辨识（重要，差点搞错）：\n   正版火星小说是 **`hotread.com`**（北京金影科技；title「火星小说|好看的免费小说网」），\n   **不是** `huoxing.com`（不解析）、也**不是** `huoxingxsw.com`（形近的另一个站，别混）。\n   首页 200 / 249320 字节 / 11685 汉字 / 372 链接，**纯 HTTP 可取**。\n\n② 三页形态（全部纯 HTTP，**零浏览器**）：\n   · 书籍页 `/story/{bid}` → 200 / 130002 字节。⚠ **目录不在书籍页**：\n     它是 Vue 异步渲染（`v-for=\"chapter in chapterList[index]\"` + `v-cloak`），\n     页面里只有 3 个 `/story/{bid}/{cid}`。\n     ⭐ 但页内埋了 `<a class=\"more\" :href=\"'//www.hotread.com/catalogue/' + story.id\">查看更多目录</a>`\n     → **指向独立目录页**（这条线索决定了它可做）。\n   · 目录页 `/catalogue/{bid}` → 200 / 178187 字节 / **558 个章节链接，纯 HTML 可解析** ✓\n   · 章节页 `/story/{bid}/{cid}` → 200 / 91966 字节 / **1461 汉字可读** ✓（title 正确）\n\n③ ⭐ 免费判据（目录层，**零请求**即可拦下全部 VIP 章）：\n   目录项形态 = `<a class=\"vip\" href=\"//www.hotread.com/story/{bid}/{cid}\"><span class=\"chapter-name\">章名</span></a>`\n   —— **免费章 `class=\"\"`（空）／VIP 章 `class=\"vip\"`**，与本仓既有 `vip_class` 判据同型\n   （对照：云起 `span.icon-lock`、创世同款）。\n   实测 558 章 = **19 免费 + 539 VIP = 96.6% VIP**；免费章集中在第一~十九章。\n\n④ 若翻案为接入，所需事实已齐：\n   `vip_class: \"vip\"`；目录项 = `a[href*='/story/'] > span.chapter-name`；\n   `content_selector` 待定（第 1 章里候选容器为 `div.chapter-content` / `div.main_content`，已 dump）。\n\n→ 现行结论：**按 §12.6 前置条件（<5%）记存根，不投入**。\n   ⚠ 建议把该判据修正为：**网文站只要「免费章正文可读」+「VIP 章目录层零请求可拦」即可接入**；\n   「免费比例」只用于**排优先级**，不作拒收线（否则与云起 2.9% 已接入自相矛盾）。",
+  "match": [
+    "hotread.com"
+  ]
+}
