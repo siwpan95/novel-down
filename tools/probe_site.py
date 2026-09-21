@@ -147,7 +147,10 @@ def probe(url):
     hr("5. 正文容器候选（按容器内段落标记数量排序）")
     scored = []
     for div in soup.select("div, article, section"):
-        seg = str(div)[:4000]
+        # ⚠ 必须先剔掉注释再数 <p>/<br>：站点常把**正文密文**放在注释里
+        #   （火星小说就是 `<!-- <p>D07D53…十六进制…`），
+        #   否则那个容器会因为「注释里有个 <p>」而被误判成正文容器候选。
+        seg = re.sub(r"<!--.*?-->", "", str(div), flags=re.S)[:4000]
         n_br = seg.count("<br")
         n_p = seg.count("<p")
         if n_br + n_p >= 3:
@@ -163,6 +166,54 @@ def probe(url):
         sel = f"#{did}" if did else (f".{dcls.split()[0]}" if dcls else "(无 id/class)")
         print(f"      {score:4d} 分  {sel:28s} br={nbr:4d} p={np_:4d} len={size}")
     print("  → 取最外层且分数最高的为 chapter.content_selector")
+
+    # ---- 正文真实性（⚠ 关键补充：区分「真正文」与「导航/推荐/评论里的汉字」）----
+    hr("5b. 正文真实性检查（⚠ **页面汉字数不可信**）")
+    plain_ps = []
+    for p in soup.find_all("p"):
+        txt = p.get_text(" ", strip=True)
+        if len(re.findall(r"[\u4e00-\u9fff]", txt)) >= 20:
+            plain_ps.append(txt)
+    in_comments = len(re.findall(
+        r"[\u4e00-\u9fff]", "".join(re.findall(r"<!--.*?-->", html, flags=re.S))))
+    total_han = len(re.findall(r"[\u4e00-\u9fff]", html))
+    print(f"  页面汉字总数        : {total_han}")
+    print(f"    其中在 HTML 注释里: {in_comments}")
+    print(f"  明文段落数(≥20汉字) : {len(plain_ps)}   ← **真正文的最强指纹**")
+    for p in plain_ps[:3]:
+        print(f"      · {p[:60]}")
+
+    hex_blobs = re.findall(r"[0-9A-Fa-f]{120,}", html)
+    if hex_blobs:
+        h0 = hex_blobs[0]
+        h0 = h0 if len(h0) % 2 == 0 else h0[:-1]
+        b = bytes.fromhex(h0[:4000])
+        ent = (len(set(b)) / 256.0) if b else 0.0
+        print(f"  ⚠ 长 hex 串          : {len(hex_blobs)} 段"
+              f"（最长 {len(hex_blobs[0])} 字符 → 取 {len(b)} 字节）")
+        print(f"  ⚠ 密文熵             : {ent:.2f}（≈1.0 = 接近随机 = 已加密）")
+        # 顺手验一下：能不能当编码解出来（有些站只是 hex 编码，不是加密）
+        for enc in ("utf-8", "gbk"):
+            try:
+                s = b.decode(enc)
+                print(f"  · 但 {enc} 解码**成功** → 可能只是 hex 编码，"
+                      f"样例 {s[:40]!r}（本项目 predecode 或加一步 hex 还原即可）")
+                break
+            except Exception:
+                pass
+        else:
+            print("  · utf-8 / gbk 均解码失败 → **不是编码，是加密**")
+
+    if not plain_ps and hex_blobs:
+        print("  ❌ 结论：**正文疑似加密**（无明文段落 + 高熵 hex 串）")
+        print("     → 属项目红线（不破解服务端加密正文），**该站不做**。")
+    elif not plain_ps:
+        print("  ⚠ 结论：**未找到明文段落** —— 正文可能由 JS 渲染（需浏览器路由），")
+        print("     或本页不是章节页。别被总汉字数骗了，那大多是导航/推荐/评论。")
+    else:
+        print("  ✓ 结论：有明文段落，正文应为普通 HTML")
+    print("  ⚠ 判据提醒：实测火星小说免费章页面 **1461 汉字里 0 个是正文**")
+    print("     （正文是注释里的 hex 密文）→ 只认「明文段落数」，不认汉字总数。")
 
     # ---- 元信息 ----
     hr("6. 书籍元信息（og:novel:* 常用）")
