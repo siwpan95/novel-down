@@ -1505,3 +1505,39 @@ Gundam 的内核是「给视觉编码器更多有效分辨率」。本流程里�
 **剩下的唯一变量就是「识别模型本身」** → **直接上端到端 VLM**。
 顺序：**先榨干已在下载的 DeepSeek-OCR**（最强）→ 跑不动再降级到
 **GOT-OCR2.0（1.37 GB）** 或 **HunyuanOCR（1.9 GB）**。
+
+### 13.11 DeepSeek-OCR ⏸ **搁置**（v0.8.23，全哥决定：不划算，列入计划，以后再考虑）
+
+#### 已投入并已完成的（不白费）
+
+| 项 | 状态 |
+|---|---|
+| 权重 6.36 GB | ✅ ModelScope 下载完整（64 位校验通过） |
+| 代码/配置/分词 | ✅ 18 个文件下齐（跳过 assets） |
+| 环境：`threadpoolctl` 缺失 | ✅ **已定位并修复** —— 它的**包目录整个不见了**、只剩 `threadpoolctl-3.6.0.dist-info`（pip 认为已安装）→ `find_spec` 返回 None → 连带 `sklearn` / `transformers.generation` / `AutoModel` 全崩。**与本机「site-packages 被批量删」的历史现象同型** |
+| shim ① `LlamaFlashAttention2` | ✅ 5.x 已删该类；走 `eager` 时不会实例化 → 用 `LlamaAttention` 替身可过 |
+| shim ② `is_torch_fx_available` | ✅ 5.x 已删；纯 CPU eager 不需要 fx → 恒 False 可过 |
+| shim ③ `PretrainedConfig` 补回 11 个属性 | ✅ 5.x 删了 `pad/bos/eos/sep/cls/mask_token_id`、`tie_word_embeddings`（**默认须为 True**）、`torchscript`、`use_cache`、`add_cross_attention`、`decoder_start_token_id` |
+| shim ④ `__getattr__` 无差别兜底 | ❌ **实测有害，已撤** —— 它把「缺属性」变成 `None`，下游炸出更晦涩的 `AttributeError: 'NoneType' object has no attribute 'per_layer_overrides'`。**教训：不要用兜底去掩盖版本不兼容** |
+
+#### 为什么搁置
+
+- 远程代码是**针对 transformers 4.x 写的**，5.15.1 删掉了一批它依赖的内部符号；
+  shim 到 ③ 之后仍有 `attention_dropout`、`per_layer_overrides` 等**模型级 config 默认值**缺失 ——
+  继续补等于**重实现 4.x 的 config 语义**，脆弱且不划算。
+- **正路**是隔离环境装 `transformers==4.46.3`（它的 `requirements.txt` pin），但这需要另起
+  Python 3.12/3.13 + torch，而**本机 torch 是 CPU 版、GPU 只有 6 GB**（权重 6.36 GB 装不进显存）
+  → 即便跑通也只能 CPU、单页可能数分钟，**适合验证质量、不适合整本 129 页批量**。
+
+#### 列入计划（以后再考虑，按性价比排序）
+
+| 备选 | 体量 | 说明 |
+|---|---|---|
+| **GOT-OCR2_0**（`stepfun-ai/GOT-OCR2_0` @ ModelScope） | **1.37 GB** | 同路线 VLM，体量最小，6 GB 卡更现实 |
+| **HunyuanOCR**（`Tencent-Hunyuan/HunyuanOCR`） | **1.9 GB** | 腾讯，1B 端到端多模态 |
+| DeepSeek-OCR | 6.36 GB | 最强但**装不进显存**；要跑须隔离 4.x 环境 |
+| PaddleOCR 3.0 / PP-StructureV3 | — | ❌ 本机无 paddle，Python 3.14 基本无轮子 |
+| Surya / MinerU / PDF-Extract-Kit | — | 依赖也在 HF（本机不可达）；ModelScope 上无对应官方仓 |
+
+> **触发条件**：先在**版式/流程**上榨干现有 RapidOCR（已到 41~43%），
+> 或换书换素材后仍不够时，再按上表从 **GOT-OCR2_0** 开始试。

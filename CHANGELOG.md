@@ -5,6 +5,40 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.8.23] - 2026-09-21
+
+**DeepSeek-OCR ⏸ 搁置**（全哥决定：不划算，列入计划以后再考虑）+ 环境与磁盘的两次「意外收获」。
+
+### Notes（搁置，但已投入的都没白费）
+
+- **权重 6.36 GB 已下完**（ModelScope，断点续传循环解了「大文件断流」）；代码/配置/分词 18 个文件下齐。
+- ⭐ **`threadpoolctl` 缺失的真因**：它的**包目录整个不见了**、只剩 `threadpoolctl-3.6.0.dist-info`
+  → pip 认为「已安装」，而 `find_spec()` 返回 None → 连带 `sklearn` → `transformers.generation`
+  → `AutoModel` **全线崩**。**与本机「site-packages 被批量删」的历史现象同型**。
+  修法：`pip install --force-reinstall --no-deps threadpoolctl`（并把 TEMP 指到 F 盘，避开写满的 C 盘）。
+- **兼容性实测（这次是实打实的 4.x → 5.x 差异）**：远程代码依赖
+  `LlamaFlashAttention2`、`is_torch_fx_available`、`PretrainedConfig` 的一批 token 属性
+  （5.x 都已删除）。shim ①②③ 可过（`LlamaFlashAttention2`→`LlamaAttention`、
+  `is_torch_fx_available`→False、`PretrainedConfig` 补回 11 个属性且 `tie_word_embeddings` 须为 **True**）。
+- ⚠⚠ **shim ④（`__getattr__` 无差别兜底）实测有害，已撤**：它把「缺属性」变成 `None`，
+  下游炸出更晦涩的 `AttributeError: 'NoneType' object has no attribute 'per_layer_overrides'`。
+  **教训：不要用兜底去掩盖版本不兼容** —— 要么精确补值，要么换回兼容版本。
+- **计划清单（以后再考虑，按性价比）**：GOT-OCR2_0 **1.37 GB** → HunyuanOCR **1.9 GB**
+  → DeepSeek-OCR 6.36 GB（**装不进 6 GB 显存**，须隔离 4.x 环境）。
+  PaddleOCR 3.0 ❌ 本机无 paddle（Py3.14 无轮子）；Surya/MinerU/PDF-Extract-Kit 依赖在 HF（本机不可达）。
+  **触发条件**：版式/流程上榨干现有 RapidOCR（已 41~43%）后仍不够时再试。
+
+### Notes（磁盘：一次典型案例）
+
+- C 盘一度只剩 **470 MB**。定位到 `%TEMP%` **18.29 GB**，其中
+  **`odis_download_dest` 独占 16.67 GB（91%）** —— 42 个文件**全叫 `pkg.odis.tar`、每个精确 426.7 MB**
+  → **同一个包被重复下载 42 份**（Autodesk ODIS 下载器「失败重试不清理」的典型堆积）。
+- **处置**：**转移到 `F://c-relocate//odis_download_dest`**（45 文件 / 16.67 GB，数量核对一致），
+  C 盘 `470 MB → 6.3 GB`。选择「转移」而非「删到回收站」是因为
+  **回收站也在 C 盘、不释放空间** —— 这是 C 盘满时的一个关键陷阱。
+- ⚠ 顺带记下一条：**C 盘回收站默认上限约是卷容量的 5%（119 G → ≈6 GB）**，
+  堆满时清空可立得数 GB。
+
 ## [0.8.22] - 2026-09-21
 
 古籍 OCR：**度量口径纠错**（我前面两轮的结论有一半是错的）+ **低成本手段全部试完**，
