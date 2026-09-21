@@ -53,3 +53,6 @@ desktop.ini
 .screenshot_tmp/
 *.tmp
 *.log
+
+# 本地依赖缓存（transformers 4.x 隔离目录等）：不入仓、不参与门禁扫描
+.deps/

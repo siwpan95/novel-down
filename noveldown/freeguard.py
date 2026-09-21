@@ -215,7 +215,7 @@ SELFCHECK_EXEMPT = {"freeguard.py", "constants.py"}
 # 跳过的目录。tests/ 里有**故意构造**的违规样本（用于验证自检有效），
 # 属预期内容且不参与运行时分发，故排除。
 SELFCHECK_SKIP_DIRS = {"__pycache__", ".git", "output", "cache", "state",
-                       "fixtures", "_ref", "dist", "build", ".venv", "tests"}
+                       "fixtures", "_ref", "dist", "build", ".venv", "tests", ".deps"}
 
 
 def selfcheck(root_dir: str) -> dict:

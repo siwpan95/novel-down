@@ -5,6 +5,52 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.8.25] - 2026-09-21
+
+按全哥指示做的**项目级整理**（技能体系、环境残留、依赖归属、正版站优先级）。
+
+### Changed（技能体系：确立「总纲 / 特定形态」两层）
+
+- **`novel-site-rule-crawler` = 规则引擎总纲**（规则 JSON 全部选项、免费六层约束、逆向方法论），
+  文首显式声明，并列出 4 个「特定形态」子技能。
+- 4 个子技能（`chinese-text-site-crawler` / `nlc-guji-ocr-pipeline` / `trpg-rulebook-crawler` /
+  `cn-netdisk-downloader`）各加一节指针：**通用做法先查总纲；冲突以总纲为准，并回改本文**。
+  → 解决「同一事实写多处、迟早跑偏」的问题。
+- 小说写作类技能（`novel` / `my-novel-writer` / `open-novel-writing` / `wordbank-expand-novel`）
+  **按指示搁置**（其他项目要用），未改动。
+
+### Fixed（环境残留清理）
+
+- **site-packages 残留 6 项已删**：`~orch`（pip 卸载中断留下的 `~` 垃圾名，pip 一直警告
+  `Ignoring invalid distribution ~orch`）+ 旧的 `torch-2.14.0.dist-info`
+  → 现在只剩 `torch-2.14.0+cu126.dist-info`，`torch 2.14.0+cu126 / cuda True` 复验正常。
+- **Temp 第三方临时区**：`XLLiveUD`(342MB) / `wps`(14MB) / `cand` / `pkg` / `0FC61B838D5E0F6B`
+  **已删**；`doubao_ext` 有句柄未释放、暂未删。⚠ 全程**避开 WorkBuddy 进程**（6 个 PID 均未动）。
+- ⚠ **发现 Autodesk `odis_download_dest` 会「复发」**：上次移走 16.67GB 后**又长回 5.1GB**
+  （ODIS 下载器反复重试的固有行为）→ 已再次转移；**建议定期清理或处理 Autodesk 更新服务**。
+
+### Changed（依赖归属：仓库外 → 仓内 `.deps/`）
+
+- `G://py4x`（transformers 4.57.6 隔离目录，201MB）→ **`novel-down/.deps/py4x`**
+  （按指示收进项目根）。
+- 同步三处，避免门禁误报：`.gitignore` 加 `.deps/`；
+  `freeguard.SELFCHECK_SKIP_DIRS` 加 `.deps`（它是**本地依赖缓存、不入仓**，
+  扫它会命中第三方包里的 `token` 变量等**正常代码**，产生海量假阳性 —— 实测 1042 项）。
+- 结果：**门禁 9 项 PASS + 265 测试全绿**。
+
+### Added（正版站扩展 · 优先级规划，§12.6）
+
+- 立**投入前置条件**：任何候选先花**一次请求**测免费比例；**< 5% 或需登录 → 直接记存根**。
+  （依据：仙人掌小说自述"全站免费"实为试读制，是先实探才发现的。）
+- 分级：**P0 批量复扫**（782 曾被拒域 + 1676 未确认域，上一轮 41% 救回率）→
+  **P1 大厂组剩余**（火星免费小说 / 咪咕阅读）→ **P2 老牌 VIP 剩余**（晋江 / 掌阅）→
+  **P3 文库型铺开**（虚阁网同类站，无 VIP 概念、内容即出版书文本）→
+  **P4 出版读物已收束**（电子书平台三家全灭；影印本 OCR 搁置）。
+
+### Notes
+
+- 测试 **265** 全绿；门禁 **9 项** PASS；版本 0.8.25。
+
 ## [0.8.24] - 2026-09-21
 
 **VLM 路线打通并做了严格对比 —— 结论是「不划算」**（含一条我自己的方法论纠错）。
