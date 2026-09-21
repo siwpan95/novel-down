@@ -250,6 +250,91 @@ def _selfcheck() -> int:
     return 0 if ok else 1
 
 
+# ---------------------------------------------------------------
+# 10. README 计数一致性（v0.8.25 新增）
+#
+# 为什么需要它：README 里的「153 条规则 / 141 条启用 / 265 个用例」这类数字
+# **全是人写的**，改代码时极易忘记同步 —— 实测就脱节过
+# （README 写「170 个用例」而实际已 265；写「11 条存根」而实际 12）。
+# 与其靠人眼，不如让门禁**从代码算出事实**再与 README 文本比对，
+# 不一致就 FAIL 并**直接告诉该改成什么**。
+#
+# ⚠ 只校验 **README**，不校验 docs/ —— 这是刻意的：
+#   · README 的计数读起来像「**当前事实**」且无版本号 → 必须与代码同步；
+#   · docs/（RULES / FREE_ONLY / REFERENCE / NEW_SITES_PLAN）里的数字**大多是
+#     「实测证据」（如「700 章 + 650 个 li.vip」）或「带版本号的历史快照」
+#     （如「截至 v0.7.1，18 条规则」）—— 它们**本就该保持原值**，改反而破坏证据链。
+#   → 判据：**带版本号或明确标注为实测结果**的数字，不纳入一致性校验。
+# ---------------------------------------------------------------
+def check_readme_counts(root: str):
+    import os as _os
+    import re as _re
+    import sys as _sys
+    readme = _os.path.join(root, "README.md")
+    if not _os.path.isfile(readme):
+        return True, []
+    text = open(readme, encoding="utf-8").read()
+    if root not in _sys.path:
+        _sys.path.insert(0, root)
+    problems = []
+    try:
+        from noveldown.rules import load_rules, active_rules
+        r = load_rules()
+        a = active_rules(r)
+        top = {k: v for k, v in r.items()
+               if _os.sep + "mirrors" + _os.sep not in (v.path or "")}
+        mir = {k: v for k, v in r.items()
+               if _os.sep + "mirrors" + _os.sep in (v.path or "")}
+        gb = {k: v for k, v in r.items() if v.pool == "正版"}
+        facts = {
+            "总规则数": len(r),
+            "启用规则数": len(a),
+            "顶层手写": len(top),
+            "顶层启用": sum(1 for v in top.values() if v.enabled),
+            "镜像池": len(mir),
+            "顶层停用存根": sum(1 for v in top.values() if not v.enabled),
+            "正版总数": len(gb),
+            "正版启用": sum(1 for v in gb.values() if v.enabled),
+        }
+    except Exception as e:                       # 规则加载失败不在这里报
+        return True, []
+    # 测试用例数：从测试源码里数 test_ 方法（与 unittest 的计数口径一致）
+    n_tests = 0
+    tdir = _os.path.join(root, "tests")
+    if _os.path.isdir(tdir):
+        for fn in _os.listdir(tdir):
+            if fn.endswith(".py"):
+                src = open(_os.path.join(tdir, fn), encoding="utf-8",
+                           errors="replace").read()
+                n_tests += len(_re.findall(r"^\s+def (test_\w+)", src, _re.M))
+    checks = [
+        (r"内置 \*\*(\d+) 条\*\*规则（\*\*(\d+) 条启用\*\*",
+         ["总规则数", "启用规则数"], "规则总数/启用数"),
+        # ⚠ 措辞要与数字口径**一一对应**：README 原写「顶层手写 28 条」，
+        #   而"手写"其实是 40（28 启用 + 12 存根）—— 门禁首次运行就抓到了这个措辞歧义，
+        #   故两边都改成「手写 40 条（启用 28）」。
+        (r"顶层手写 \*\*(\d+) 条\*\*（启用 (\d+)）\+ \*\*镜像池 (\d+) 条\*\*；另有 (\d+) 条停用存根",
+         ["顶层手写", "顶层启用", "镜像池", "顶层停用存根"], "顶层/镜像池/存根"),
+        (r"\*\*正版\*\*（(\d+) 条，(\d+) 启用）", ["正版总数", "正版启用"], "正版池"),
+    ]
+    for pat, keys, label in checks:
+        m = _re.search(pat, text)
+        if not m:
+            problems.append("README 里找不到「%s」的计数（格式变了？请同步本节正则）" % label)
+            continue
+        for got, key in zip(m.groups(), keys):
+            if int(got) != facts[key]:
+                problems.append("README 写 %s=%s，实际 %s=%d" % (key, got, key, facts[key]))
+    # 测试用例数（README 里多处出现，全部要一致）
+    for m in _re.finditer(r"\*\*(\d+) 个用例", text):
+        if int(m.group(1)) != n_tests:
+            problems.append("README 写用例数=%s，实际 %d" % (m.group(1), n_tests))
+    for m in _re.finditer(r"tests/\s+(\d+) 个用例", text):
+        if int(m.group(1)) != n_tests:
+            problems.append("README 目录树写用例数=%s，实际 %d" % (m.group(1), n_tests))
+    return (not problems), problems
+
+
 def main():
     ap = argparse.ArgumentParser(description="仓库卫生门禁")
     ap.add_argument("--selfcheck", action="store_true",
@@ -281,6 +366,14 @@ def main():
             print(f"    · {detail}")
         return 1
 
+    ok_rd, rd_problems = check_readme_counts(ROOT)
+    if not ok_rd:
+        print(f"结果：FAIL —— {len(rd_problems)} 项 README 计数脱节")
+        print("\n  【README 与代码事实不一致】")
+        for d in rd_problems:
+            print(f"    · {d}")
+        return 1
+
     print("结果：PASS")
     print("  1 许可文件唯一且为本项目 LICENSE（MIT）        ✓")
     print("  2 无第三方源码目录 / 产物目录                 ✓")
@@ -293,6 +386,7 @@ def main():
     print("  7 生产代码无硬编码本机路径（解释器 / 用户目录 / 开发盘）  ✓")
     print("  8 无调试残留 / 草稿文件                           ✓")
     print("  9 镜像族规则 notes 的「域数 N」== match 长度       ✓")
+    print(" 10 README 关键计数 == 代码事实（规则/启用/正版/存根/用例） ✓")
     return 0
 
 
