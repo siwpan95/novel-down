@@ -18,6 +18,11 @@ import os
 import sys
 import time
 
+# ⚠ `BrowserUnavailable` 必须显式导入 —— `main()` 要捕它。
+#   （这是**同一个坑我踩第二次**：上次是 engine 里漏 import RuleError，
+#    两次都是「代码写对了、但异常类没引进」，而且都要等真跑到那条分支才炸。
+#    → 配套加了 tests/test_cli_errors.py 直接覆盖 main() 的各异常分支。）
+from .browser import BrowserUnavailable
 from .constants import (APP_TITLE, DEFAULT_CONFIG, MIN_CHAPTER_CHARS,
                         POLICY_DENYLIST, VERSION)
 from .exporters import EXPORTERS, export_all, safe_out_dir
@@ -433,6 +438,14 @@ def main(argv=None):
     except FileNotFoundError as e:
         print(f"\n[未找到] {e}", file=sys.stderr)
         return 5
+    except BrowserUnavailable as e:
+        # ⚠ 审计 #10：该站点的目录/正文靠 JS 渲染，需要浏览器路由，但本机没装 playwright。
+        #   原来没捕它 → 用户看到一段原始 traceback。这里按 probe 的 [失败] 风格说清怎么办。
+        print(f"\n[需要浏览器路由] {e}", file=sys.stderr)
+        print("  该站点的页面靠 JS 渲染，需要可选依赖 playwright：\n"
+              "    pip install playwright && python -m playwright install chromium\n"
+              "  （发行版是最小依赖、不含它；详见 README「依赖」一节）", file=sys.stderr)
+        return 6
     except KeyboardInterrupt:
         print("\n[中断]")
         return 130

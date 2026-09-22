@@ -65,6 +65,21 @@ def assert_site_allowed(url: str):
     """
     host = site_of(url)
     for denied in POLICY_DENYLIST:
+        # ⚠⚠ 这里**故意**保留 `startswith`（fail-closed），不是笔误 —— 2026-09-22 记录：
+        #
+        #   审计报告 #11 曾建议删掉它，理由是「`endswith("."+d)` 已够挡子域，
+        #   `startswith` 没有安全增益，反而会误拦 `example-bad.competitor.org`」。
+        #   **实测后不采纳这条建议**：政策名单要防的是「**用相似域名绕过**」——
+        #   例如名单里写了 `example-bad.com`，而 `example-bad.com.evil.net`
+        #   既不等于它、也不以 `.example-bad.com` 结尾（结尾是 `.evil.net`），
+        #   删掉 startswith 后就**拦不住了**。tests/test_freeguard.py 里那条用例
+        #   正是钉这个行为的（我删掉后它立刻报红）。
+        #
+        #   语义区别很关键：
+        #     · 这里 = **政策名单**（「本项目不做这些站」）→ 宁可误拦，fail-closed；
+        #     · `rules.matches()` = **规则匹配**（判断此 URL 属于哪条规则）→ 必须严格，
+        #       那里的 host 比对只允许「相等 / 子域」，`example.com.evil.net` 已复现被拒。
+        #   两处judgement 不同是**有意的**，不要图省事合并。
         if host == denied or host.endswith("." + denied) or host.startswith(denied):
             raise FreeGuardError(
                 f"该域名在项目声明的不支持名单内：{host}（命中 {denied}）。\n"

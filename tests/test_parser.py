@@ -261,7 +261,7 @@ class TestContinuationPatternValidation(unittest.TestCase):
         return load_rules(td)
 
     def test_too_broad_pattern_rejected(self):
-        """校验保证的三类必须拦下：空模式 / 匹配空串 / 匹配常见标题样本。
+        r"""校验保证的三类必须拦下：空模式 / 匹配空串 / 匹配常见标题样本。
 
         ⚠ 这不是「万能的过宽检测」—— 只覆盖这三类**可机械判定**的情形
         （例如 `^[（(]\d*[）)]$` 允许 `()` 这种懒写法，机械判定抓不到，靠人写规则时自觉）。

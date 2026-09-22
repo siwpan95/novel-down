@@ -24,18 +24,18 @@ F:/Python314/python.exe packaging/build.py --all --clean       :: 先清空 dist
 | 产物 | 形态 | 体积（实测） |
 |---|---|---|
 | `dist/noveldown/` | **便携版（目录）**：exe + `_internal`，解压即用 | 35 MB（zip 后 18 MB） |
-| `dist/noveldown-onefile.exe` | **便携版（单文件）**：单个 exe | 18.6 MB（⚠ 启动约 **47 秒**，见下） |
+| `dist/noveldown-onefile.exe` | **便携版（单文件）**：单个 exe | 18.6 MB（⚠ 启动约 **40 秒**，见下） |
 | `dist/novel-down-0.8.39-win64.msi` | **MSI 安装版**：开始菜单、PATH、卸载项 | 见构建输出 |
 | `dist/novel-down-0.8.39-setup.exe` | **EXE 安装器**：需 Inno Setup 编译 `inno.iss` | 本机未编译（见下） |
 
-### ⚠ 单文件版（onefile）启动很慢 —— 实测 47 秒
+### ⚠ 单文件版（onefile）启动很慢 —— 实测约 40 秒
 
 同一台机器上实测 `--version`：
 
 | 形态 | 启动耗时 |
 |---|---|
 | **onedir** | **约 1.4 秒** |
-| **onefile** | **约 47 秒**（第二、三次一样慢，**不是冷启动**） |
+| **onefile** | **约 40 秒**（第二、三次一样慢，**不是冷启动**） |
 
 onefile 每次运行都要把 18MB 解包到临时目录，本机**杀毒软件会对解出来的文件做实时扫描**
 （本机是腾讯电脑管家），开销几乎全在这。**这不是打包配置问题，是运行环境决定的。**
@@ -53,7 +53,7 @@ F:/Python314/python.exe packaging/build.py --gui
 ⚠ 两个与 CLI 版不同的处理：
 
 - **不能排除 `tkinter`**（CLI 版排除它是为了省 ~10MB，GUI 版必须留着）；
-- **只出 onedir、不出 onefile** —— onefile 每次启动要解包 + 被杀软扫描，实测 **47 秒**，
+- **只出 onedir、不出 onefile** —— onefile 每次启动要解包 + 被杀软扫描，实测 **约 40 秒**，
   对「双击就要看到窗口」的 GUI 完全不可接受。
 
 ⚠ GUI 版依赖打包用的 Python **自带 Tcl/Tk**（本机 `F://Python314` 自带 Tcl/Tk 9）。

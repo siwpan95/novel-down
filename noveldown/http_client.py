@@ -167,6 +167,13 @@ def http_get(url, headers=None, timeout=30, retries=2, proxies=None,
                     proxies=proxies, allow_redirects=True, verify=verify,
                     impersonate=impersonate,
                 )
+                # ⚠ 与 requests 路径保持一致：**不承载任何凭据**，用完即清
+                #   （审计 #14：原来只清了 requests 的 cookie jar，curl 这边没清，
+                #    与 README / FREE_ONLY 里「无 Cookie」的表述不符）。
+                try:
+                    sess.cookies.clear()
+                except Exception:
+                    pass
             else:
                 sess = _thread_session()
                 resp = sess.get(

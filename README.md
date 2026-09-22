@@ -120,6 +120,8 @@ python -m noveldown selfcheck
 | `--timeout/--retries` | 30 / 3 | 超时与重试 |
 | `--proxy` | — | 代理地址 |
 | `--curl-cffi` | 关 | 启用 TLS 指纹伪装 |
+| `--max-items N` | 8 | 校对报告里最多列几条明细 |
+| `--report` | 关 | 配合 `--quiet` 时也强制打印校对报告 |
 | `-q/--quiet` | 关 | 安静模式 |
 
 ---
@@ -275,7 +277,7 @@ novel-down/
 ├── tools/import_chinese_philosophy.py  「中国哲学书电子化计划」离线数据集导入（零网络）
 ├── tools/check_official.py    「作家入口」校验：用有无创作/投稿入口交叉验证站点归类
 ├── tools/check_repo.py        仓库卫生门禁（本仓不含第三方源码 / 凭据 / 产物）
-├── tests/                     336 个用例（含端到端拦截集成测试）+ fixtures
+├── tests/                     341 个用例（含端到端拦截集成测试）+ fixtures
 ├── docs/
 │   ├── REFERENCE.md           借鉴记账（来源 + 许可证 + 范围 + 排除项）
 │   ├── RULES.md               规则格式与典型形态（含字体反爬 / 浏览器路由）
@@ -319,7 +321,7 @@ python -m pip install -r requirements.txt
 python -m unittest discover -s tests -t .
 ```
 
-**336 个用例，约 6 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
+**341 个用例，约 6 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
 目录归一化（含 `document_order`/`keep_last`）、目录页发现、正文提取、
 免费六层拦截、四格式导出（含 EPUB 结构与 XML 合法性校验）、
 断点续爬状态机、规则校验、校对报告、字体反爬解码（glyph 名 / 轮廓索引）、
@@ -366,7 +368,7 @@ python tools\check_repo.py --selfcheck   # 证明门禁本身有效
 | 产物 | 形态 | 说明 |
 |---|---|---|
 | `noveldown-0.8.39-portable-win64.zip` | **便携版（目录）** | 解压即用，启动约 **1.4 秒**（推荐） |
-| `noveldown-onefile.exe` | **便携版（单文件）** | 单个 exe；⚠ 每次启动约 **47 秒**（解包 + 杀软实时扫描） |
+| `noveldown-onefile.exe` | **便携版（单文件）** | 单个 exe；⚠ 每次启动约 **40 秒**（解包 + 杀软实时扫描） |
 | `novel-down-0.8.39-win64.msi` | **MSI 安装版** | 开始菜单 / PATH / 卸载项 |
 
 自己构建（在本仓根目录）：
@@ -385,6 +387,11 @@ MIT，见 [LICENSE](./LICENSE)。
 
 **第三方来源**：本项目在调研阶段参照过三个第三方项目（FictionDown / 404-novel-downloader /
 backupqidian），**只借鉴设计思路，未复制任何代码**，其源码**不入本仓**
+
+> ⚠ **这句话的边界要说清**（审计 #17）：`tools/check_repo.py` 能机械证明的是
+> 「**仓里不含第三方源码树**」+「借鉴记账完整」——它**不能**证明「零行复制」
+> （往里抄几行是实现层的事，路径/文件名门禁看不出来）。所以准确的表述是：
+> **门禁保证「不随仓分发第三方源码」，不保证「没有任何行级借鉴」。**
 （其中两份是 GPL-3.0 与 AGPL-3.0-or-later，与本仓 MIT 不兼容）。
 浏览器反检测所用的 `puppeteer-extra-plugin-stealth`（MIT）经评估后**未随仓分发**
 （实测内置伪装已足够，仅保留可选外挂入口）。
