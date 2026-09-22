@@ -257,7 +257,7 @@ def _selfcheck() -> int:
     ⚠ 审计 #9（2026-09-22）：原来的自检只抽验了 11 项里的 5 项
     （许可文件唯一 / 无第三方源码 / 无归档 / 无调试残留 / 规划表脱节）。
     只抽验一部分的问题是：**没被抽到的那几项，你不知道它是活的还是死的**——
-    而第 7 项当时恰好就是「死」的（正则对 `F:/Python314` 匹配不上，长期漏报）。
+    而第 7 项当时恰好就是「死」的（正则对本机那个解释器目录匹配不上，长期漏报）。
 
     所以现在**每一项都注入一次**，两种手段：
       · **路径类**（1/2/3/8）：伪造 `tracked` 文件清单即可，不用真建文件；
@@ -323,15 +323,22 @@ def _selfcheck() -> int:
         """5 无凭据：塞一行**免费约束相关**的凭据代码。
 
         ⚠ 注意这里注入的是什么：`freeguard.selfcheck` 的模式表盯的是
-        **cookie / --vip / password / token 字段**（都是「本项目承诺不做」的东西），
-        **不是**通用的 API key 扫描。我第一版塞了 `api_key = "sk-..."`，
+        **Cookie / 付费开关 / 口令字段 / token 字段**这类「本项目承诺不做」的代码路径，
+        **不是**通用的密钥扫描。我第一版塞的是一个通用形态的 API key 赋值，
         结果「没报」——查了才发现那是**符合设计**的，不是门禁坏了。
-        自检用例本身写错，比门禁坏掉更难发现，所以这段注释要留着。
+        自检用例本身写错，比门禁坏掉更难发现，所以这段说明要留着。
+
+        ⚠ 另外：这些「反面示例」的字面量**不能**直接写进本文件（含 docstring）——
+        `check_repo` 与 `freeguard.selfcheck` 都会把它们当成真证据
+        （实测：本文件一度被第 7 项和凭据项同时报红）。所以下面用拼接构造。
         """
         d = os.path.join(tmp, "noveldown")
         os.makedirs(d, exist_ok=True)
+        # ⚠ 拼出来：字面量会让 `freeguard.selfcheck` 把本文件自己扫成违规
+        #   （tests/test_freeguard.py 里那条「项目自身无凭据代码路径」用例会因此失败）
+        fake_key = "pass" + "word"
         with open(os.path.join(d, "leak.py"), "w", encoding="utf-8") as f:
-            f.write('password = "hunter2"')
+            f.write(fake_key + " = " + "\"" + "hunter2" + "\"")
             f.write("\n")
 
     def _doc(tmp):
@@ -341,11 +348,17 @@ def _selfcheck() -> int:
             f.write("# 参照\n\n这里什么都没记。\n")
 
     def _hardpath(tmp):
-        """7 无硬编码本机路径：⭐ 这条正是本轮修过的「死正则」。"""
+        """7 无硬编码本机路径：⭐ 这条正是本轮修过的「死正则」。
+
+        ⚠ 假路径必须**拼出来**，不能以字面量写在本文件里 ——
+        否则 `tools/` 自己就会被第 7 项报红（我第一次就是这么把门禁搞挂的）。
+        同理，下面 #5 的假凭据也是拼的。
+        """
         d = os.path.join(tmp, "noveldown")
         os.makedirs(d, exist_ok=True)
+        fake_path = "F" + ":" + "\\" + "Python" + "314" + "\\" + "python.exe"
         with open(os.path.join(d, "hard.py"), "w", encoding="utf-8") as f:
-            f.write('PY = r"F:/Python314/python.exe"')
+            f.write("PY = r\"" + fake_path + "\"")
             f.write("\n")
 
     def _mirror(tmp):
