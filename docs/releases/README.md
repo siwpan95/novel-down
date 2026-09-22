@@ -4,7 +4,8 @@
 
 | 版本 | 说明 | 发布物 |
 |---|---|---|
-| v0.8.38 | [v0.8.38.md](./v0.8.38.md) | 便携版（目录/单文件）+ 图形界面版 + SHA256SUMS（见 Gitee Releases） |
+| **v0.8.39** | [v0.8.39.md](./v0.8.39.md) | 便携版（目录/单文件）+ 图形界面版 + SHA256SUMS |
+| ~~v0.8.38~~ | ~~v0.8.38.md~~ | ⚠ **已撤下**：该版图形界面导出必崩（`AttributeError`）+ 输出目录路径穿越，改用 v0.8.39 |
 
 ⚠ 发布物**不入仓**（体积大，见 `.gitignore` 的 `dist/`），只存说明。
 发版流程见 skill `gitee-repo-and-release-flow`，构建见 `packaging/README.md`。
