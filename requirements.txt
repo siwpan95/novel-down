@@ -1,5 +1,11 @@
 # novel-down 依赖
 #
+# ⚠ 要注意「下限」与「可复现」是两件事（审计 #5，2026-09-22）：
+#   本文件只给**下限**，适合「我就要能跑起来」的场景；
+#   要**复现构建**（尤其是出 exe / 复现某个 tag 的产物）请用锁文件：
+#       pip install -r requirements.lock
+#   锁文件里的版本=发布版 exe 实际链进去的版本。
+#
 # 运行期只需这两个（EPUB/HTML 导出为纯标准库实现，不依赖 ebooklib/pandoc）
 requests>=2.31
 beautifulsoup4>=4.12

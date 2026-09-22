@@ -1,0 +1,35 @@
+# novel-down 依赖锁（v0.8.40 起）
+#
+# ⚠ 为什么需要这个文件（审计 #5，2026-09-22）：
+#   requirements.txt 原来只有下限（requests>=2.31 之类），**没有 ==、没有 hash、没有 lock**
+#   → 每次构建/安装都可能静默拉到更新的版本（OWASP A06 易受攻击与过时组件 / A08 数据与完整性失效）。
+#   本项目**对外发 exe**，构建期依赖漂移会让「同一个 tag 两次构建出不同产物」。
+#
+# 用法：
+#   复现开发/打包环境（推荐）：
+#       pip install -r requirements.lock
+#   只想装最低限度的运行期依赖：
+#       pip install -r requirements.txt
+#
+# ⚠ 版本来源：**本机打包环境实测**（2026-09-22，Python 3.14.7），
+#   也就是「v0.8.39 那几个 exe 实际链进去的版本」——不是「最新的版本」。
+#   升级依赖时请**整份重新生成**，不要单点改一行（传递依赖会对不上）。
+#
+# 未含 hash：本机沙箱无法访问 PyPI 下载 wheel 来算 hash（见 packaging/README.md 的环境限制）。
+# 正式做供应链加固时，应在有网机器上执行：
+#     pip download -r requirements.txt -d /tmp/w --no-deps
+#     pip hash /tmp/w/*
+# 然后把 --hash 补进本文件。
+
+# ---- 直接依赖 ----
+requests==2.34.2
+beautifulsoup4==4.15.0
+lxml==6.1.2
+
+# ---- 传递依赖（由上面三个引入，一并钉住）----
+certifi==2026.7.22
+charset-normalizer==3.5.1
+idna==3.20
+soupsieve==1.8
+typing-extensions==4.16.0
+urllib3==2.7.0
