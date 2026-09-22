@@ -17,6 +17,7 @@ HTTP 客户端层：请求发送、退避重试、代理、限速。
 import random
 import threading
 import time
+import re
 from urllib.parse import urlparse
 
 import requests
@@ -129,6 +130,41 @@ def _fix_encoding(resp):
     return resp
 
 
+# ⚠ 内网地址段（审计 #12 的 SSRF 纵深）。**刻意不含回环 127.0.0.1** ——
+#   本地合成站的测试要用它，而且回环并不属于「内网服务」那一类真正的 SSRF 目标。
+_PRIVATE_HOST_RE = re.compile(
+    r"^(?:"
+    r"10\."                       # RFC1918
+    r"|192\.168\."
+    r"|172\.(?:1[6-9]|2\d|3[01])\."
+    r"|169\.254\."               # 链路本地：云元数据服务（169.254.169.254）
+    r"|0\.0\.0\.0$"             # 「本机」的另一种写法
+    r"|\[?::1\]?$"               # IPv6 回环的显式写法（不含裸 127.*）
+    r"|localhost$"
+    r")", re.I)
+
+# 提示：这里**故意**不把 127.0.0.1 / ::1 列进去（见上）。若将来要做更严的白名单
+# （只允许该规则的域名），注意会误伤「入口域 302 到真实承载域」的跳转型站点 ——
+# 本仓有若干条这种规则（见 docs/NEW_SITES_PLAN.md 的「跳转型」小节）。
+
+
+def _reject_private_host(final_url: str, original: str):
+    """响应最终落到了内网地址就报错。
+
+    ⚠ 说明「为什么事后校验也有效」：SSRF 的危害是**借我们的网络位置读到内网服务的响应**。
+    这里是**已经跟随完重定向、拿到响应之后**才判——请求确实发出去了，
+    但**响应不会被交回给调用方**，攻击者拿不到数据。要完全阻止请求发出，
+    就得 `allow_redirects=False` 自己逐跳走，那会改变所有调用方的语义（且要处理
+    跳转型站点），收益不成比例。
+    """
+    from urllib.parse import urlparse
+    host = (urlparse(final_url).hostname or "")
+    if _PRIVATE_HOST_RE.match(host):
+        raise requests.exceptions.ConnectionError(
+            f"重定向落到了内网/链路本地地址，已拒绝使用该响应："
+            f"{host}（起点 {original}）")
+
+
 def http_get(url, headers=None, timeout=30, retries=2, proxies=None,
              verify=True, use_curl_cffi=False, impersonate="chrome120",
              on_retry=None):
@@ -144,6 +180,7 @@ def http_get(url, headers=None, timeout=30, retries=2, proxies=None,
         use_curl_cffi: 使用 curl_cffi TLS 指纹伪装
         impersonate: curl_cffi 指纹别名
         on_retry: 可选回调 on_retry(attempt, exc, sleep_secs)
+        （重定向的内网防护见 `_reject_private_host`：始终生效，不需要调用方传参。）
 
     Returns:
         requests.Response
@@ -186,6 +223,8 @@ def http_get(url, headers=None, timeout=30, retries=2, proxies=None,
                 except Exception:
                     pass
             resp.raise_for_status()
+            # ⚠ 审计 #12：命中站点若 302 到内网/云元数据地址，这里拒绝交出响应
+            _reject_private_host(getattr(resp, "url", "") or url, url)
             return _fix_encoding(resp)
         except requests.exceptions.HTTPError as e:
             resp = getattr(e, "response", None)
