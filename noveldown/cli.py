@@ -20,7 +20,7 @@ import time
 
 from .constants import (APP_TITLE, DEFAULT_CONFIG, MIN_CHAPTER_CHARS,
                         POLICY_DENYLIST, VERSION)
-from .exporters import EXPORTERS, export_all
+from .exporters import EXPORTERS, export_all, safe_out_dir
 from .freeguard import (assert_no_protected, assert_site_allowed, selfcheck,
                         FreeGuardError)
 from .models import Book, STATUS_OK
@@ -324,7 +324,8 @@ def _finish(book, store, args, log, skip_fetch=False):
         return 1
 
     # 导出
-    out_dir = os.path.join(cfg["save_dir"], f"{book.title}_{book.site}" if book.title else book.book_id)
+    # ⚠ 目录名必须净化 + 断言不越界：`book.title` 来自远端页面（见 safe_out_dir 注释）
+    out_dir = safe_out_dir(cfg["save_dir"], book)
     print("\n导出：")
     results = export_all(book, out_dir, formats=formats, verbose=log)
 

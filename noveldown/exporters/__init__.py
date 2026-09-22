@@ -37,6 +37,39 @@ def book_slug(book) -> str:
     return safe_filename(f"{book.title}_{book.site}")
 
 
+def safe_out_dir(save_dir: str, book) -> str:
+    r"""把「保存根目录 + 书名」拼成**保证不越界**的输出目录。
+
+    ⚠⚠ 为什么需要它（2026-09-22 上线前全检的 🔴 发现，CWE-22）：
+    `cli.py` 与 `gui.py` 原来都写
+    `os.path.join(save_dir, f"{book.title}_{book.site}")` —— 而 `book.title`
+    来自**远端页面**：被劫持/恶意的镜像站返回 `..\..\PWNED`（反斜杠形式的上级目录）就能把成品写到
+    `--out` **之外**；书名含 Windows 非法字符（`?` `*` `|`）时更是**直接建目录失败**
+    （后者不需要任何攻击者就会命中）。
+    仓内**早有** `book_slug()`（四个导出器都用它做文件名），**唯独目录名漏用**。
+
+    这里做两件事：
+      1. 目录名过 `book_slug()`（净化非法字符，`..` 也会被替换掉）；
+      2. 拼完用 `commonpath` **断言仍在 save_dir 之内**，越界直接抛错（fail-closed）——
+         「净化」是概率性的，「断言」才是兜底。
+    """
+    root = os.path.abspath(save_dir)
+    # ⚠ 保留 cli.py 原来的语义：**书名空时只用 book_id**
+    #   （原来是 `f"{title}_{site}" if title else book_id`）。
+    #   我第一版写成 `book_slug(book) or book_id` —— `book_slug` 对空标题返回的是
+    #   `"_demo"`（下划线 + 站点），**非空**，于是 `or` 永不触发，语义被悄悄改掉了。
+    #   是 tests/test_export_paths.py 里那条用例把它揪出来的。
+    title = (getattr(book, "title", "") or "").strip()
+    if title:
+        slug = book_slug(book)
+    else:
+        slug = safe_filename(getattr(book, "book_id", "") or "", fallback="book")
+    out = os.path.abspath(os.path.join(root, slug))
+    if os.path.commonpath([root, out]) != root:
+        raise ValueError("输出目录越界，已拒绝：%r 不在 %r 之内" % (out, root))
+    return out
+
+
 def group_by_volume(chapters):
     """按卷分组，保持原有顺序。
 

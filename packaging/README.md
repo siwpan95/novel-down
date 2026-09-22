@@ -25,8 +25,8 @@ F:/Python314/python.exe packaging/build.py --all --clean       :: 先清空 dist
 |---|---|---|
 | `dist/noveldown/` | **便携版（目录）**：exe + `_internal`，解压即用 | 35 MB（zip 后 18 MB） |
 | `dist/noveldown-onefile.exe` | **便携版（单文件）**：单个 exe | 18.6 MB（⚠ 启动约 **47 秒**，见下） |
-| `dist/novel-down-0.8.38-win64.msi` | **MSI 安装版**：开始菜单、PATH、卸载项 | 见构建输出 |
-| `dist/novel-down-0.8.38-setup.exe` | **EXE 安装器**：需 Inno Setup 编译 `inno.iss` | 本机未编译（见下） |
+| `dist/novel-down-0.8.39-win64.msi` | **MSI 安装版**：开始菜单、PATH、卸载项 | 见构建输出 |
+| `dist/novel-down-0.8.39-setup.exe` | **EXE 安装器**：需 Inno Setup 编译 `inno.iss` | 本机未编译（见下） |
 
 ### ⚠ 单文件版（onefile）启动很慢 —— 实测 47 秒
 

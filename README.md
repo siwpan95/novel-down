@@ -275,7 +275,7 @@ novel-down/
 ├── tools/import_chinese_philosophy.py  「中国哲学书电子化计划」离线数据集导入（零网络）
 ├── tools/check_official.py    「作家入口」校验：用有无创作/投稿入口交叉验证站点归类
 ├── tools/check_repo.py        仓库卫生门禁（本仓不含第三方源码 / 凭据 / 产物）
-├── tests/                     288 个用例（含端到端拦截集成测试）+ fixtures
+├── tests/                     298 个用例（含端到端拦截集成测试）+ fixtures
 ├── docs/
 │   ├── REFERENCE.md           借鉴记账（来源 + 许可证 + 范围 + 排除项）
 │   ├── RULES.md               规则格式与典型形态（含字体反爬 / 浏览器路由）
@@ -319,7 +319,7 @@ python -m pip install -r requirements.txt
 python -m unittest discover -s tests -t .
 ```
 
-**288 个用例，约 6 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
+**298 个用例，约 6 秒**（离线，不联网）。覆盖：预解码（含真实页面回归）、
 目录归一化（含 `document_order`/`keep_last`）、目录页发现、正文提取、
 免费六层拦截、四格式导出（含 EPUB 结构与 XML 合法性校验）、
 断点续爬状态机、规则校验、校对报告、字体反爬解码（glyph 名 / 轮廓索引）、
@@ -365,9 +365,9 @@ python tools\check_repo.py --selfcheck   # 证明门禁本身有效
 
 | 产物 | 形态 | 说明 |
 |---|---|---|
-| `noveldown-0.8.38-portable-win64.zip` | **便携版（目录）** | 解压即用，启动约 **1.4 秒**（推荐） |
+| `noveldown-0.8.39-portable-win64.zip` | **便携版（目录）** | 解压即用，启动约 **1.4 秒**（推荐） |
 | `noveldown-onefile.exe` | **便携版（单文件）** | 单个 exe；⚠ 每次启动约 **47 秒**（解包 + 杀软实时扫描） |
-| `novel-down-0.8.38-win64.msi` | **MSI 安装版** | 开始菜单 / PATH / 卸载项 |
+| `novel-down-0.8.39-win64.msi` | **MSI 安装版** | 开始菜单 / PATH / 卸载项 |
 
 自己构建（在本仓根目录）：
 

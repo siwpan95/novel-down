@@ -51,7 +51,7 @@ UPGRADE_CODE = "{8F1B2C3D-4E5A-6B7C-8D9E-0F1A2B3C4D5E}"
 
 setup(
     name="novel-down",
-    version="0.8.38",
+    version="0.8.39",
     description="规则驱动的网络小说离线阅读工具（仅免费章节）",
     options={
         "build_exe": {

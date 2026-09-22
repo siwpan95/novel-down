@@ -5,6 +5,66 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.8.39] - 2026-09-22
+
+**修上线前全检的 2 个阻塞项 + 全哥实测到的 GUI 导出崩溃。**
+（审计报告：`deliverables/gstack/launch-check-noveldown-2026-09-22.md`，结论「条件 Go」，2 个阻塞项）
+
+### 🔴 Fixed：输出目录**路径穿越**（CWE-22）—— 审计报告的 B-1
+
+`cli.py` 与 `gui.py` 原来都把**远端返回的 `book.title`** 直接拼进输出目录：
+
+```python
+out_dir = os.path.join(cfg["save_dir"], f"{book.title}_{book.site}")
+```
+
+→ 被劫持/恶意的镜像站返回上级目录形式的名字，就能把成品写到 `--out` **之外**；
+而且书名含 Windows 非法字符（`?` `*` `|`）时**连目录都建不出来**（这条不需要攻击者就会命中）。
+⚠ 讽刺的是仓内**早有** `book_slug()`（四个导出器都用它做文件名），**唯独目录名漏用**。
+
+→ 新增 `exporters.safe_out_dir(save_dir, book)`（**一处定义、两处调用**）：
+① 目录名过 `book_slug()`；② 拼完用 `commonpath` **断言仍在 save_dir 之内**，越界抛错（fail-closed）。
+「净化」是概率性的，「断言」才是兜底。
+
+⚠ 写这个函数时我**悄悄改掉了原语义**（原逻辑是「书名空时只用 book_id」，我写成
+`book_slug(book) or book_id` —— 而 `book_slug` 对空标题返回 `"_demo"` 非空，`or` 永不触发）
+—— 是**新加的测试把它揪出来的**。
+
+### 🔴 Fixed：GUI 导出必崩 —— 全哥实测
+
+```
+noveldown-0.8.38-gui-win64.zip → 导出失败 AttributeError: 'list' object has no attribute 'split'
+```
+
+根因是**两个错叠在一起**：
+1. `DEFAULT_CONFIG["formats"]` 是 **list**（`constants.py:113`），而我在 `gui.py` 对它调了
+   `.split(",")` → 必然 AttributeError；
+2. 更隐蔽的是 `_config_from_args()` **根本不处理 `formats`** —— 所以我 `_Args` 里传的
+   格式串**压根没生效**，等于用户勾选的格式被静默忽略。
+
+→ 对齐 `cli._finish` 的正确做法：格式从 **args 的字符串**切；
+并且**在 UI 线程里取好 list 再传进工作线程**（Tk 变量不能跨线程读）。
+新增 `_fmt_list()`，`_do_fetch` / `_do_export` / `_finish` 改为显式接收 `fmts`。
+
+### 🟠 Fixed：`SyntaxWarning`（`\.` 不是合法转义）
+
+`exporters/__init__.py` 新增 docstring 里的反斜杠触发 `SyntaxWarning`，
+在 `-W error` 下直接变 `SyntaxError`（`\.` 未来会是错误）。→ 改 raw docstring。
+**全仓 `compileall -W error::SyntaxWarning` 复扫确认无同类问题。**
+
+### Added
+
+- `tests/test_export_paths.py` **10 个用例**，专测导出路径安全（审计报告指出
+  `grep -rn safe_filename tests/` 当时**为空**、这条路零覆盖）：
+  穿越（`../`、`..\`、`a/../../b`、`....//`）、绝对路径书名、Windows 非法字符、
+  空书名回退 book_id、正常书名不被误伤、`safe_filename` 的净化/兜底/截断。
+
+### 状态
+
+- 规则 **161**（启用 146）不变｜测试 **288 → 298**（+10）｜门禁 11 项 PASS
+- ⚠ **审计报告里其余 P1/P2 项尚未处理**（GUI 停止语义、目录静默 0 章、
+  packaging 纳入门禁、依赖钉版本等），见下方「未完成」说明
+
 ## [0.8.38] - 2026-09-22
 
 按全哥「以安装版 exe/msi、便携版/免安装版的形式制作发行版」执行；

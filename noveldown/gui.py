@@ -256,7 +256,20 @@ class App(tk.Tk):
         self.btn_stop.configure(state="normal" if running else "disabled")
 
     def _formats(self):
+        """给 `_Args` 用的**字符串**形式（逗号分隔）。"""
         return ",".join(k for k, v in self.var_fmt.items() if v.get())
+
+    def _fmt_list(self):
+        """给导出用的 **list** 形式。
+
+        ⚠⚠ 这里曾经写成 `cfg.get("formats", "txt").split(",")` —— 直接崩：
+        `DEFAULT_CONFIG["formats"]` 是 **list**（constants.py:113），对 list 调 `.split()`
+        必然 `AttributeError: 'list' object has no attribute 'split'`
+        （2026-09-22 全哥用 GUI 便携版实测撞到）。
+        而且 `_config_from_args()` **根本不处理 formats**，所以 `_Args.formats` 也没生效 ——
+        正确的是像 cli._finish 那样，从 args 取**字符串**再切。
+        """
+        return [k for k, v in self.var_fmt.items() if v.get()]
 
     # ------------------------------------------------------------- 抓取
     def _start_fetch(self, force=False):
@@ -264,17 +277,23 @@ class App(tk.Tk):
         if not url:
             messagebox.showwarning("缺少地址", "请先填入书籍 URL（选中站点会自动带出示例地址）。")
             return
-        if not self._formats():
+        fmts = self._fmt_list()
+        if not fmts:
             messagebox.showwarning("未选格式", "至少勾选一种导出格式。")
             return
-        self._run_in_thread(self._do_fetch, url)
+        # ⚠ 格式必须**在 UI 线程里取好**再传进工作线程：Tk 变量不能跨线程读。
+        self._run_in_thread(self._do_fetch, url, fmts)
 
     def _start_export(self):
         url = self.var_url.get().strip()
         if not url:
             messagebox.showwarning("缺少地址", "请先填入书籍 URL。")
             return
-        self._run_in_thread(self._do_export, url)
+        fmts = self._fmt_list()
+        if not fmts:
+            messagebox.showwarning("未选格式", "至少勾选一种导出格式。")
+            return
+        self._run_in_thread(self._do_export, url, fmts)
 
     def _run_in_thread(self, fn, *a):
         if self._worker and self._worker.is_alive():
@@ -299,7 +318,7 @@ class App(tk.Tk):
                      proxy=DEFAULT_CONFIG.get("proxy") or "",
                      formats=self._formats())
 
-    def _do_fetch(self, url):
+    def _do_fetch(self, url, fmts):
         try:
             from .engine import Downloader
             cfg = _config_from_args(self._args(url))
@@ -308,7 +327,7 @@ class App(tk.Tk):
             self._tail_log(f"目标：{url}")
             book = d.run(limit=self.var_limit.get(),
                          force=self.var_force.get())
-            self._finish(book, d.store, cfg, fetched=True)
+            self._finish(book, d.store, cfg, fmts)
         except KeyboardInterrupt:
             # engine 里 run() 已经处理了 Ctrl-C 的语义（保存断点后抛出）——
             # 我们的「停止」按钮走的就是同一条路（见 _prog）。
@@ -318,13 +337,13 @@ class App(tk.Tk):
         except Exception as e:  # noqa: BLE001
             self._q.put(("fail", f"{type(e).__name__}: {e}\n{traceback.format_exc()[-600:]}"))
 
-    def _do_export(self, url):
+    def _do_export(self, url, fmts):
         try:
             from .cli import load_book
             cfg = _config_from_args(self._args(url))
             book, store, rule = load_book(cfg, url, self._rules)
             self._tail_log(f"重新导出：{book.title}  [{rule.id}/{book.book_id}]")
-            self._finish(book, store, cfg, fetched=False)
+            self._finish(book, store, cfg, fmts)
         except Exception as e:  # noqa: BLE001
             self._q.put(("fail", f"{type(e).__name__}: {e}"))
 
@@ -339,9 +358,12 @@ class App(tk.Tk):
     def _tail_log(self, s):
         self._q.put(("log", f"\n{s}"))
 
-    def _finish(self, book, store, cfg, fetched):
-        """校对 + 导出（复用 CLI 的同一套：proofread / export_all）。"""
-        from .exporters import export_all
+    def _finish(self, book, store, cfg, fmts):
+        """校对 + 导出（复用 CLI 的同一套：proofread / export_all）。
+
+        `fmts` 是**已在本线程外取好的 list**（见 _fmt_list 的注释）。
+        """
+        from .exporters import export_all, safe_out_dir
         from .proofread import format_report, proofread
 
         try:
@@ -350,9 +372,14 @@ class App(tk.Tk):
         except Exception as e:  # noqa: BLE001
             self._q.put(("log", f" ⚠ 校对报告生成失败（不影响导出）：{e}"))
 
-        out_dir = os.path.join(cfg["save_dir"], f"{book.title}_{book.site}")
         try:
-            paths = export_all(book, out_dir, formats=[f.strip() for f in cfg.get("formats", "txt").split(",") if f.strip()],
+            # ⚠ 目录名净化 + 越界断言（同 cli.py，见 safe_out_dir 注释）
+            out_dir = safe_out_dir(cfg["save_dir"], book)
+        except ValueError as e:
+            self._q.put(("fail", str(e)))
+            return
+        try:
+            paths = export_all(book, out_dir, formats=fmts,
                                verbose=lambda m, lv="": self._q.put(("log", "   " + m)))
         except Exception as e:  # noqa: BLE001
             self._q.put(("fail", f"导出失败：{type(e).__name__}: {e}"))
