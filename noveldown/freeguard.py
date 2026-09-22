@@ -36,7 +36,8 @@
     `python -m noveldown selfcheck` 机械校验）。
 """
 
-from .constants import (POLICY_DENYLIST, PAYWALL_MARKERS,
+from .constants import (
+    PAYWALL_MARKERS_WEAK, PAYWALL_WEAK_MAX_CHARS,POLICY_DENYLIST, PAYWALL_MARKERS,
                         VIP_ITEM_CLASS_MARKERS, VIP_ITEM_TEXT_MARKERS,
                         MIN_CHAPTER_CHARS)
 from .models import STATUS_BLOCKED, STATUS_EMPTY
@@ -129,6 +130,16 @@ def check_content(paragraphs, extra_markers=None) -> tuple:
     for m in PAYWALL_MARKERS:
         if m.lower() in low:
             return True, STATUS_BLOCKED, f"正文命中付费墙特征 '{m}'"
+    # ⚠ 弱信号（审计 #15）：只在**正文很短**时才采信。
+    #   「打开APP」这类词单独看太泛，长正文里出现多半是正常内容；
+    #   而 APP 墙的特征恰恰是「整章正文就是那句提示」（实测 78 字）。
+    #   阈值 200 字：远高于墙的 ~80 字，也远低于正常章节的 1000+ 字。
+    if len(text) <= PAYWALL_WEAK_MAX_CHARS:
+        for m in PAYWALL_MARKERS_WEAK:
+            if m.lower() in low:
+                return True, STATUS_BLOCKED, (
+                    f"正文命中付费墙弱特征 '{m}'"
+                    f"（正文仅 {len(text)} 字 ≤ {PAYWALL_WEAK_MAX_CHARS}，判定为整章占位）")
     for m in (extra_markers or []):
         if m and m.lower() in low:
             return True, STATUS_BLOCKED, f"正文命中站点级受保护特征 '{m}'"
