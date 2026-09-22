@@ -1,0 +1,10 @@
+# 发行说明存档
+
+每次在 Gitee 建发布时用的说明，**原文存档**在这里，便于追溯「当时对外说了什么」。
+
+| 版本 | 说明 | 发布物 |
+|---|---|---|
+| v0.8.38 | [v0.8.38.md](./v0.8.38.md) | 便携版（目录/单文件）+ 图形界面版 + SHA256SUMS（见 Gitee Releases） |
+
+⚠ 发布物**不入仓**（体积大，见 `.gitignore` 的 `dist/`），只存说明。
+发版流程见 skill `gitee-repo-and-release-flow`，构建见 `packaging/README.md`。
