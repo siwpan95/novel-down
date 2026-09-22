@@ -51,6 +51,12 @@ LICENSE_BASENAMES = ("LICENSE", "LICENSE.TXT", "LICENSE.MD", "LICENSE.RST",
 FORBIDDEN_DIR_PARTS = (
     "_ref/", "vendor/", "node_modules/", "third_party/", "third-party/",
     "output/", "state/", "cache/", "dist/", "build/", "release/", ".venv/",
+    # ⚠ `.archived/` 里实有 8 个**第三方归档**（FictionDown×3 / novel-downloader /
+    #   backupqidian / novel-spider / QidianCrawler / QidianScrapy）。
+    #   它此前不在名单里 → 一旦有人在那儿解压再 `git add -A`，
+    #   第三方源码就能入仓而**门禁第 2 项不报**（MIT 仓分发 GPL/AGPL 源码的许可风险）。
+    #   审计 #13，2026-09-22。
+    ".archived/",
 )
 FORBIDDEN_ARCHIVE_EXT = (".zip", ".tar.gz", ".tgz", ".7z", ".rar", ".xz", ".bz2")
 
@@ -201,7 +207,10 @@ def check(root_dir=ROOT, tracked=None) -> list:
     if not os.path.exists(doc_path):
         bad.append(("6 借鉴记账完整", f"缺少 {REFERENCE_DOC}"))
     else:
-        doc = read(REFERENCE_DOC)
+        # ⚠ 必须按 root_dir 读（原来写死 `read(REFERENCE_DOC)` —— 读的是**真实仓库**，
+        #   于是 `check(root_dir=临时目录)` 时第 6 项检查的其实是本仓，
+        #   自检那边根本没法为它注入现场。2026-09-22 扩展 --selfcheck 时发现）。
+        doc = read(os.path.join(root_dir, REFERENCE_DOC))
         for item in EXPECTED_THIRD_PARTY:
             if item["url"] not in doc:
                 bad.append(("6 借鉴记账完整",
@@ -243,57 +252,165 @@ def check(root_dir=ROOT, tracked=None) -> list:
 
 # ------------------------------------------------------------
 def _selfcheck() -> int:
-    """注入假违规，证明门禁不是死的。"""
-    print("=" * 66)
-    print("门禁自检：注入假违规，验证门禁必须报红")
-    print("=" * 66)
-    fake = ["LICENSE", "noveldown/cli.py", "docs/REFERENCE.md",
-            "_ref/FictionDown-master/LICENSE",      # 违规 2/1
-            "big.zip",                              # 违规 3
-            ".tmptest_dump.html",                   # 违规 8
-            "output/x.txt"]                         # 违规 2
-    bad = check(tracked=fake)
-    items = {b[0] for b in bad}
-    ok = True
-    for expect in ("1 许可文件唯一", "2 无第三方/产物目录", "3 无归档文件", "8 无调试残留"):
-        hit = expect in items
-        ok = ok and hit
-        print(f"  [{ 'PASS' if hit else 'FAIL' }] 检出「{expect}」")
+    """注入假违规，**逐项证明**门禁不是死的。
 
-    # --- 第 11 项反证：搭一个「表里写已接入、规则文件却不存在」的假现场 ---
+    ⚠ 审计 #9（2026-09-22）：原来的自检只抽验了 11 项里的 5 项
+    （许可文件唯一 / 无第三方源码 / 无归档 / 无调试残留 / 规划表脱节）。
+    只抽验一部分的问题是：**没被抽到的那几项，你不知道它是活的还是死的**——
+    而第 7 项当时恰好就是「死」的（正则对 `F:/Python314` 匹配不上，长期漏报）。
+
+    所以现在**每一项都注入一次**，两种手段：
+      · **路径类**（1/2/3/8）：伪造 `tracked` 文件清单即可，不用真建文件；
+      · **内容类**（4/5/6/7/9/10/11）：在临时目录里**搭一个假现场**，
+        塞进真文件内容，再对那个目录跑一次 `check()`。
+    """
+    print("=" * 66)
+    print("门禁自检：逐项注入假违规，验证门禁必须报红")
+    print("=" * 66)
+
     import shutil
     import tempfile
-    prob11 = []
-    hit11 = False
-    tmp = tempfile.mkdtemp(prefix="gate11_")
-    try:
+
+    results = []          # [(项名, 是否检出)]
+
+    # ---------- 路径类：伪造 tracked 清单 ----------
+    fake_tracked = [
+        "LICENSE", "noveldown/cli.py", "docs/REFERENCE.md",
+        "_ref/FictionDown-master/LICENSE",       # 违规 1（根之外有 LICENSE）+ 2
+        "big.zip",                               # 违规 3
+        ".tmptest_dump.html",                    # 违规 8
+        "output/x.txt",                          # 违规 2
+        ".archived/vendor-snapshot.zip",         # 违规 2/3（审计 #13 新增覆盖）
+    ]
+    items = {b[0] for b in check(tracked=fake_tracked)}
+    for expect in ("1 许可文件唯一", "2 无第三方/产物目录", "3 无归档文件",
+                   "8 无调试残留"):
+        results.append((expect, expect in items))
+
+    # ---------- 内容类：临时现场 ----------
+    def _probe(label, build, expect_item, with_tracked=False):
+        """在临时目录里搭现场 → 跑 check() → 看是否报出该项。
+
+        `with_tracked=True` 时，把临时目录里**真实存在的文件**当作 tracked 清单
+        —— 因为第 4 项（无大文件）是按 `tracked` + getsize 判定的，传空清单它就看不到文件。
+        """
+        tmp = tempfile.mkdtemp(prefix="gate_")
+        try:
+            build(tmp)
+            if with_tracked:
+                tracked = []
+                for dp, _dn, fns in os.walk(tmp):
+                    for fn in fns:
+                        tracked.append(os.path.relpath(os.path.join(dp, fn), tmp))
+            else:
+                tracked = []
+            probs = check(root_dir=tmp, tracked=tracked)
+            hit = any(p.startswith(expect_item) for p, _ in probs)
+            results.append((label, hit))
+        except Exception as e:                      # noqa: BLE001
+            results.append((label + "（自检异常：%s: %s）" % (type(e).__name__, e), False))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def _big(tmp):
+        """4 无大文件：真放一个 >5MiB 的文件。"""
+        d = os.path.join(tmp, "noveldown")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "huge.bin"), "wb") as f:
+            f.write(b"0" * (6 * 1024 * 1024))
+
+    def _cred(tmp):
+        """5 无凭据：塞一行**免费约束相关**的凭据代码。
+
+        ⚠ 注意这里注入的是什么：`freeguard.selfcheck` 的模式表盯的是
+        **cookie / --vip / password / token 字段**（都是「本项目承诺不做」的东西），
+        **不是**通用的 API key 扫描。我第一版塞了 `api_key = "sk-..."`，
+        结果「没报」——查了才发现那是**符合设计**的，不是门禁坏了。
+        自检用例本身写错，比门禁坏掉更难发现，所以这段注释要留着。
+        """
+        d = os.path.join(tmp, "noveldown")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "leak.py"), "w", encoding="utf-8") as f:
+            f.write('password = "hunter2"')
+            f.write("\n")
+
+    def _doc(tmp):
+        """6 借鉴记账完整：REFERENCE.md 里什么都没记。"""
+        os.makedirs(os.path.join(tmp, "docs"), exist_ok=True)
+        with open(os.path.join(tmp, REFERENCE_DOC), "w", encoding="utf-8") as f:
+            f.write("# 参照\n\n这里什么都没记。\n")
+
+    def _hardpath(tmp):
+        """7 无硬编码本机路径：⭐ 这条正是本轮修过的「死正则」。"""
+        d = os.path.join(tmp, "noveldown")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "hard.py"), "w", encoding="utf-8") as f:
+            f.write('PY = r"F:/Python314/python.exe"')
+            f.write("\n")
+
+    def _mirror(tmp):
+        """9 镜像族域数：notes 写 3、match 只有 1。"""
+        d = os.path.join(tmp, "noveldown", "rules", "mirrors")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "m.json"), "w", encoding="utf-8") as f:
+            json.dump({"notes": "签名：x；域数 3", "match": ["a.com"]}, f)
+
+    def _counts(tmp):
+        """10 README 计数：写一个明显对不上的数字。"""
+        with open(os.path.join(tmp, "README.md"), "w", encoding="utf-8") as f:
+            f.write("内置 **9999 条**规则（**9999 条启用**）\n")
+
+    def _plan(tmp):
+        """11 规划表脱节：表里写已接入、规则文件却不存在。"""
         os.makedirs(os.path.join(tmp, "docs"))
         os.makedirs(os.path.join(tmp, "noveldown", "rules"))
         with open(os.path.join(tmp, PLAN_DOC_REL), "w", encoding="utf-8") as fh:
-            fh.write(
-                "### 12.6 正版站扩展 · 优先级规划\n\n"
-                "| 候选 | 状态 | 规则 | 备注 |\n|---|---|---|---|\n"
-                "| 假站A | ⭕ 未探 | `fake-missing` | 应通过（确实无规则）|\n"
-                "| 假站B | ✅ 已接入 | `fake-absent` | 违规 ①：无规则文件 |\n"
-                "| 假站C | ⛔ 存根 | `fake-on` | 违规 ②：规则其实是启用的 |\n")
+            fh.write("### 12.6 正版站扩展 · 优先级规划\n\n")
+            fh.write("| 候选 | 状态 | 规则 | 备注 |\n|---|---|---|---|\n")
+            fh.write("| 假站A | ⭕ 未探 | `fake-missing` | 应通过（确实无规则）|\n")
+            fh.write("| 假站B | ✅ 已接入 | `fake-absent` | 违规 ①：无规则文件 |\n")
+            fh.write("| 假站C | ⛔ 存根 | `fake-on` | 违规 ②：规则其实是启用的 |\n")
         with open(os.path.join(tmp, "noveldown", "rules", "fake-on.json"),
                   "w", encoding="utf-8") as fh:
             json.dump({"enabled": True}, fh)
-        _ok11, prob11, _uv11 = check_plan_state(tmp)
-        hit11 = (not _ok11) and len(prob11) == 2
-    except Exception as e:                      # noqa: BLE001
-        prob11 = ["自检异常：%s" % e]
+
+    _probe("4 无大文件", _big, "4 无大文件", with_tracked=True)
+    _probe("5 无凭据", _cred, "5 无凭据")
+    _probe("6 借鉴记账完整", _doc, "6 借鉴记账完整")
+    _probe("7 无硬编码本机路径", _hardpath, "7 无硬编码本机路径")
+    _probe("9 镜像族域数一致", _mirror, "9 镜像族域数一致")
+
+    # 10 README 计数（走的是独立函数，不看 tracked）
+    tmp = tempfile.mkdtemp(prefix="gate10_")
+    try:
+        _counts(tmp)
+        _ok10, probs10 = check_readme_counts(tmp)
+        results.append(("10 README 计数一致", (not _ok10) and bool(probs10)))
+    except Exception as e:                          # noqa: BLE001
+        results.append(("10 README 计数一致（自检异常：%s）" % type(e).__name__, False))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    ok = ok and hit11
-    print(f"  [{ 'PASS' if hit11 else 'FAIL' }] 第 11 项：规划表脱节被检出"
-          f"（应 2 条，实 {len(prob11)} 条）")
-    if prob11 and not hit11:
-        for d in prob11:
-            print(f"         · {d}")
 
+    # 11 规划表状态（独立函数）
+    tmp = tempfile.mkdtemp(prefix="gate11_")
+    try:
+        _plan(tmp)
+        _ok11, prob11, _uv11 = check_plan_state(tmp)
+        results.append(("11 §12.6 规划表状态", (not _ok11) and len(prob11) == 2))
+    except Exception as e:                          # noqa: BLE001
+        results.append(("11 §12.6 规划表状态（自检异常：%s）" % type(e).__name__, False))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # ---------- 汇总 ----------
+    ok = True
+    for label, hit in results:
+        ok = ok and hit
+        print("  [%s] %s" % ("PASS" if hit else "FAIL", label))
+    covered = len([1 for _l, h in results if h])
+    print("\n 覆盖 %d 项 / 全部 11 项；检出 %d 项" % (len(results), covered))
     print()
-    print("门禁自检：" + ("有效 ✓" if ok else "失效 ✗（门禁没能抓到假违规）"))
+    print("门禁自检：" + ("有效 ✓" if ok else "失效 ✗（有检查项没能抓到假违规）"))
     return 0 if ok else 1
 
 

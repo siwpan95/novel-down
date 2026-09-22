@@ -62,3 +62,12 @@ desktop.ini
 dist/
 build/
 *.spec
+
+# ---- 第三方归档快照（**绝不入仓**）----
+# ⚠ `.archived/` 里是调研用的第三方源码打包（FictionDown×3 / novel-downloader /
+#   backupqidian / novel-spider / QidianCrawler / QidianScrapy 共 8 个）。
+#   其中 GPL-3.0 与 AGPL-3.0-or-later 与本仓 MIT 不兼容；
+#   backupqidian 未声明许可（按「保留全部权利」处理）→ 更不能收录。
+#   此前它只是「没被 git add」，而不是「被忽略」—— 一次 git add -A 就进去了（审计 #13）。
+#   清单与 sha256 记在 docs/REFERENCE.md。
+.archived/

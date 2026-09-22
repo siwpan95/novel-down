@@ -63,6 +63,27 @@
 因此本仓只保留**上游链接 + 许可证说明**，并在 `.gitignore` 里挡掉 `_ref/`、`*.zip`、`*.tar.gz`。
 这条约束是可机械验证的：`python tools/check_repo.py`（第 1/2/3/6 项）。
 
+### `.archived/` 里的源码快照（**不入仓**，此处登记以便追溯）
+
+> ⚠ 审计 #13 指出：这个目录里有 8 个第三方归档，其中 **QidianCrawler / QidianScrapy
+> 在上面的「参照清单」里完全没有记账**；而且 `.archived/` 当时既不在 `.gitignore`
+> 也不在门禁的禁止目录里 —— 一次 `git add -A` 就会把 GPL/AGPL 源码带进 MIT 仓。
+> 现在：`.gitignore` 已挡、门禁第 2 项已覆盖（注入测试验证过），并在下面登记清楚。
+
+| 归档 | 体积 | SHA-256 |
+|---|---|---|
+| `FictionDown-master.zip` | 0.07 MB | `a562a094b7ecd37f12f9b064d8bc6f0913e64711b17bbb15edc3dd0f8413446d` |
+| `FictionDown_0.1.3_Windows_i386.tar.gz` | 4.69 MB | `31c1e3b7d74c13f749465ea6380263913c7d555c844581ca347b0de017c9e100` |
+| `FictionDown_0.1.3_Windows_x86_64.tar.gz` | 4.96 MB | `9bff0c41ee591b27276dcdcfa82529e4b6be7d0301a2ce2379082cafa07d8e8f` |
+| `QidianCrawler-master.zip` | 0.00 MB | `d47eb65bcc8b35b73b6eacf69b13d8abbd40e212cfe8d0c5029e876a715c22e4` |
+| `QidianScrapy-master.zip` | 0.01 MB | `d0a888c07d95289a96b9645e1ea57380cf16bff5294952c0c4cc56d5c8abdb04` |
+| `backupqidian-master.zip` | 0.01 MB | `7ae5a071ce12766f62a4c3068338e09f0ddd88aa8583cbf13e1535ee2992d885` |
+| `novel-downloader-master.zip` | 3.54 MB | `1e3f6dde23ab7c631ad3a2a0b601a194bc33a10d02f60254affa8a5a5252d488` |
+| `novel-spider-main.zip` | 0.27 MB | `4a72b01ff097f6f8c2ca9d89bed0e9cdc052c2594444debdf9e9b3538963f24a` |
+
+⚠ 这些**只是调研期的下载快照**，不是本仓依赖，也不会随仓分发。
+取用范围见上表「本仓取用」列 —— 全部停在设计思路层面。
+
 ### 参照清单
 
 | 项目 | 上游 | 许可证（依据） | 本仓取用（仅设计层面） | **明确排除** |
