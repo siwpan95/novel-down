@@ -141,6 +141,23 @@ class Rule:
                     raise RuleError(
                         f"{self.id}: continuation_title_pattern 过宽 —— 它匹配到了正常标题 "
                         f"{sample!r}。该模式只应匹配「纯页码标记」（如 ^[（(]\\d+[）)]$）")
+        # `catalog.id_from.pattern` 必须含**命名组 `(?P<cid>…)`**（审计 #4，2026-09-22）：
+        # 解析器用 `m.group("cid")` 取章节号，pattern 若写成无名组 `(\d+)` 就抛 IndexError，
+        # 而调用处 `except Exception: pass` **把它吞掉** → **目录静默 0 章、不报任何错**，
+        # 用户只会看到「怎么一本都没抓到」。
+        # 这类配置事故（漏个命名组）完全能在**加载时**拦住，不该留到运行时。
+        idf = (self.raw.get("catalog") or {}).get("id_from") or {}
+        if isinstance(idf, dict) and idf.get("pattern"):
+            try:
+                _rx = re.compile(idf["pattern"])
+            except re.error as e:
+                raise RuleError(f"{self.id}: catalog.id_from.pattern 不是合法正则（{e}）")
+            if "cid" not in (_rx.groupindex or {}):
+                raise RuleError(
+                    f"{self.id}: catalog.id_from.pattern 必须含命名组 `(?P<cid>…)` —— "
+                    f"解析器用 m.group(\"cid\") 取章节号；写成无名组会抛 IndexError，"
+                    f"而调用处会吞掉异常 → **目录静默 0 章且不报错**。"
+                    f"当前 pattern={idf['pattern']!r}")
         if not self.raw["chapter"].get("content_selector"):
             raise RuleError(f"{self.id}: chapter.content_selector 不能为空")
         # `book.info_api`（v0.8.13）：书籍页是 SPA 外壳、简介/封面由 XHR

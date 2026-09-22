@@ -260,7 +260,12 @@ class TestLayer6CodeSelfcheck(unittest.TestCase):
         rx = _re.compile(r"[A-Za-z]:" + r"[\\/]+" +
                          r"(?:Python\d|Users|repos|local|notpython|assets)\b")
         bad = []
-        for sub in ("noveldown", "tools", "tests"):
+        # ⚠ 不要在这里再抄一份目录表（审计 #6 同源问题：同一事实写两处必漂移）——
+        #   直接取门禁自己用的那份。
+        import sys as _sys
+        _sys.path.insert(0, os.path.join(root, "tools"))
+        from check_repo import SCAN_CODE_DIRS as _SCAN
+        for sub in _SCAN:
             for dp, dns, fns in os.walk(os.path.join(root, sub)):
                 dns[:] = [d for d in dns if d != "__pycache__"]
                 for fn in fns:

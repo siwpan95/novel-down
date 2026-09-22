@@ -5,12 +5,12 @@
 用法（在本仓根目录执行）：
 
     # cx_Freeze 装在 .deps/pkgs（不污染系统环境）
-    PYTHONPATH=.deps/pkgs F:/Python314/python.exe packaging/setup_cx.py build
-    PYTHONPATH=.deps/pkgs F:/Python314/python.exe packaging/setup_cx.py bdist_msi
+    PYTHONPATH=.deps/pkgs <python> packaging/setup_cx.py build
+    PYTHONPATH=.deps/pkgs <python> packaging/setup_cx.py bdist_msi
 
 产物：`dist/novel-down-0.8.37-win64.msi`
 
-⚠ 为什么排除这么多模块：本机 `F:\\Python314` 装了大量与本项目无关的包
+⚠ 为什么排除这么多模块：本机 `<你的打包环境>` 装了大量与本项目无关的包
 （numpy / PIL / cryptography / curl_cffi / gevent / Cython / pygame …），
 cx_Freeze 的静态分析会把它们一起打进去 —— 实测不排除时产物 **110MB**，
 排除后 **约 35MB**。本项目运行期其实只要 `requests` + `bs4`（+ 可选的 `lxml`）。

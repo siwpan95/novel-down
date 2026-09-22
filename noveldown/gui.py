@@ -6,7 +6,7 @@
 抓取仍走 `engine.Downloader`，导出仍走 `exporters.export_all`，
 校对仍走 `proofread` —— GUI 只是把 CLI 的流程接到控件上、把日志接到文本框。
 
-⚠ 为什么用 Tkinter：**零第三方依赖**（标准库），且本机 `F:\\Python314` 自带 Tcl/Tk 9，
+⚠ 为什么用 Tkinter：**零第三方依赖**（标准库），且本机 `<你的 Python 环境>` 自带 Tcl/Tk 9，
 可直接被 PyInstaller 打进 exe（见 packaging/README.md）。
 
 线程模型：
@@ -306,8 +306,15 @@ class App(tk.Tk):
         self._worker.start()
 
     def _stop(self):
+        """请求停止。
+
+        ⚠ 文案要**说清是协作式取消**：不是「立刻断」，也不是「等全部跑完」——
+        而是「不再开始新章节，已在跑的那几章会正常收尾并落盘」。
+        原来的文案（「会在当前章节结束后停下」）与实际行为（全部跑完）不符，属误导。
+        """
         self._stop_flag.set()
-        self._log("已请求停止 —— 会在当前章节结束后停下（断点已保存，下次可续）。", "warn")
+        self._log("已请求停止：不会再开始新章节；正在跑的少数几章会正常收尾并落盘"
+                  "（断点已保存，重新点“开始抓取”即可续爬）。", "warn")
         self.btn_stop.configure(state="disabled")
 
     def _args(self, url):
@@ -326,12 +333,12 @@ class App(tk.Tk):
                            log=self._log, progress=self._prog)
             self._tail_log(f"目标：{url}")
             book = d.run(limit=self.var_limit.get(),
-                         force=self.var_force.get())
+                         force=self.var_force.get(),
+                         stop_event=self._stop_flag)
             self._finish(book, d.store, cfg, fmts)
         except KeyboardInterrupt:
-            # engine 里 run() 已经处理了 Ctrl-C 的语义（保存断点后抛出）——
-            # 我们的「停止」按钮走的就是同一条路（见 _prog）。
-            self._q.put(("done", "已停止（断点已保存，重新点“开始抓取”即可续爬）"))
+            # 用户按 Ctrl-C 关窗口等场景，engine 会保存断点后重抛
+            self._q.put(("done", "已中断（断点已保存，重新点“开始抓取”即可续爬）"))
         except (RuleError,) as e:
             self._q.put(("fail", f"没有匹配的站点规则：{e}"))
         except Exception as e:  # noqa: BLE001
@@ -348,11 +355,15 @@ class App(tk.Tk):
             self._q.put(("fail", f"{type(e).__name__}: {e}"))
 
     def _prog(self, done, total, msg=""):
-        # ⚠ 这里是**唯一**能安全中断抓取的位置：engine.run() 不接受 stop 参数，
-        #    但它在回调栈里对 KeyboardInterrupt 有专门处理（保存断点后重抛）。
-        #    所以「停止」= 在进度回调里抛 KeyboardInterrupt，而不是去 set 一个没人看的标志位。
-        if self._stop_flag.is_set():
-            raise KeyboardInterrupt("user-stop")
+        """进度回调：**纯上报**，不做取消（取消由 engine 自己查 stop_event）。
+
+        ⚠ 这里原来是 `if stop_flag: raise KeyboardInterrupt(...)` —— 那是**错的**：
+        异常从 `as_completed` 循环抛出后，`with ThreadPoolExecutor(...)` 的 `__exit__`
+        照样 `shutdown(wait=True)`，**等完所有已提交的章节才真正退出**。
+        审计实测：第 3 章点停止 → 40/40 全抓完，而界面还提示「会在当前章节结束后停下」。
+        现在改成把 `threading.Event` 交给 `engine.run(stop_event=...)`，由它在循环里
+        `break` + `cancel_futures`。
+        """
         self._q.put(("prog", (done, total, msg)))
 
     def _tail_log(self, s):

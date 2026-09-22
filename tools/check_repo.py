@@ -59,9 +59,21 @@ FORBIDDEN_ARCHIVE_EXT = (".zip", ".tar.gz", ".tgz", ".7z", ".rar", ".xz", ".bz2"
 # 正确做法是自发现：`sys.executable`（解释器）、`os.environ`（系统目录）、`shutil.which`（外部命令）。
 # 注意：这里只查**生产代码**（noveldown/ 与 tools/*.py），文档里的来源记账（如 本家 webcopier 仓）
 # 属溯源信息，不在本项范围内。
+# ⚠⚠ 原来的写法 `(?:Python\d|...)\b` 对 **`F:/Python314` 是失效的**（2026-09-22 注入测试发现）：
+#   `Python\d` 只吃一位数字，匹配到 `Python3` 后下一个字符是 `1`（同为 word 字符）
+#   → **没有词边界** → 整个匹配失败。也就是说门禁第 7 项对本机最常用的
+#   `F://Python314//...` 一律漏报；而 `G://assets`、`C://Users` 这类行尾有边界的能中，
+#   于是「看起来门禁是活的」。
+#   改用**负向先行断言**（不是 `\b`，因为 `\b` 依赖「后面不是 word 字符」这一前提，
+#   而路径里 `Python314` 后面还有数字），并且 `\d+` 吞掉全部版本号。
 HARDCODED_PATH_RE = re.compile(
-    r"[A-Za-z]:[\\/]+(?:Python\d|Users|repos|local|notpython|assets)\b")
-SCAN_CODE_DIRS = ("noveldown", "tools", "tests")
+    r"[A-Za-z]:[\\/]+(?:Python\d*|Users|repos|local|notpython|assets)"
+    r"(?![A-Za-z0-9_])")
+# ⚠ 2026-09-22 审计 #6：原先是 ("noveldown","tools","tests") —— **漏了 packaging**，
+#   而 packaging/build.py 当时正硬编码着 `F:/Python314/python.exe`，
+#   门禁却照样打印「生产代码无硬编码本机路径 ✓」→ 属**过度声称**。
+#   packaging/ 是本仓自己维护的构建脚本，同样是「生产代码」。
+SCAN_CODE_DIRS = ("noveldown", "tools", "tests", "packaging")
 
 # 调试残留 / 草稿文件名特征（实测踩过：调试用的 .tmptest_*.html 被 git add -A 带进仓并推送）
 JUNK_NAME_RE = re.compile(r"(?:^|/)(?:\.tmptest|\.pytest_cache|__pycache__)|"

@@ -4,10 +4,10 @@
 
 ## 用法（在本仓根目录执行）
 
-    F:/Python314/python.exe packaging/build.py --all
-    F:/Python314/python.exe packaging/build.py --portable          # 只做便携版
-    F:/Python314/python.exe packaging/build.py --msi               # 只做 MSI
-    F:/Python314/python.exe packaging/build.py --portable --zip    # 顺带打 zip
+    <python> packaging/build.py --all
+    <python> packaging/build.py --portable          # 只做便携版
+    <python> packaging/build.py --msi               # 只做 MSI
+    <python> packaging/build.py --portable --zip    # 顺带打 zip
 
 ## 为什么把这些固化成脚本
 
@@ -15,7 +15,7 @@
 
 1. `--add-data` 用**相对路径**会被解析成相对 `--specpath` 的目录 →
    实测报 `Unable to find ...\\build\\noveldown\\rules`。**必须用绝对路径**。
-2. 本机 `F:\\Python314` 装了大量无关包，静态分析会把 numpy / PIL / cryptography /
+2. 本机 `<你的打包环境>` 装了大量无关包，静态分析会把 numpy / PIL / cryptography /
    curl_cffi / gevent / Cython / pygame 一起打进去 → 产物 **110MB**；
    显式排除后 **约 35MB**。**不排除就是 3 倍体积**。
 3. 打包后 Windows 控制台 stdout 是 **GBK**，输出 `⚠` 会直接崩
@@ -124,8 +124,11 @@ def zip_portable():
 
 def main():
     ap = argparse.ArgumentParser(description="novel-down 发行版构建")
-    ap.add_argument("--py", default=r"F:/Python314/python.exe",
-                    help="打包用的 Python（需已装 requests/bs4/lxml/PyInstaller）")
+    # ⚠ 默认用**当前解释器**，不硬编码本机路径（审计 #6）：
+    #   换机/换盘时旧写法必失败，而且它刚好落在门禁「生产代码不得写死本机路径」的射程内。
+    #   本机要指名打包用的 Python 时，显式传 --py <python>。
+    ap.add_argument("--py", default=sys.executable,
+                    help="打包用的 Python（默认=当前解释器；需已装 requests/bs4/lxml/PyInstaller）")
     ap.add_argument("--pkgs-dir", default=os.path.join(ROOT, ".deps", "pkgs"),
                     help="cx_Freeze 所在目录（pip --target 装），用于 MSI")
     ap.add_argument("--portable", action="store_true", help="便携版（onedir + onefile）")

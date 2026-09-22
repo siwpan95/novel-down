@@ -37,6 +37,10 @@ from .parser import (_dig, body_api_fragment, catalog_links_from_page,
                      collect_json_catalog, normalize_catalog, origin_of,
                      parse_book_info, parse_chapter_page)
 from .ratelimit import RateLimiter
+# ⚠ 必须显式导入：0 章时 `discover()` 要抛 RuleError。我第一版漏了这行，
+#   而当时的测试**没有覆盖 0 章路径**，所以 pytest 全绿也没发现 ——
+#   「测试全绿」不等于「这条路能跑」，是这个用例补上之后才暴露的。
+from .rules import RuleError
 from .rules import find_rule, load_rules
 from .state import StateStore
 
@@ -329,6 +333,22 @@ class Downloader:
         if n_cont:
             self.log(f"[目录] 续页合并：{n_cont} 个续页条目并入前一章"
                      f"（判定 {rule.catalog_cfg.get('continuation_title_pattern')!r}）")
+
+        if not chapters:
+            # ⚠⚠ 「目录 0 章」必须是**显式报错**，不能静默通过（审计 #4，2026-09-22）：
+            #   目录解析路径上曾有 `except Exception: pass` 吞掉一切 —— 规则作者把
+            #   `catalog.id_from.pattern` 写成无名组 `(\d+)` 时，`m.group("cid")` 抛
+            #   IndexError 被吞 → **一本都没抓到、却什么也不报**，用户只会一脸懵。
+            #   `rules.validate()` 已在加载时拦住命名组问题，但仍有别的成因会走到这里
+            #   （选择器失配 / 需 JS 渲染 / WAF 挑战页），所以这里再兜一层并**说清排查方向**。
+            raise RuleError(
+                "%s: 目录解析出 **0 章**，已中止。常见原因：\n"
+                "  ① catalog.item_selector 与当前页面不匹配（站点改版最常见）\n"
+                "  ② 目录页需要 JS 渲染 —— 该站可能要配 browser 路由\n"
+                "  ③ 页面被 WAF 拦下，返回的是挑战页而非目录页\n"
+                "  ④ 该书的目录确实为空\n"
+                "  用 `python -m noveldown probe <书籍URL>` 可逐环节定位。"
+                % rule.id)
 
         book.chapters = chapters
         book.catalog_sort = sort_mode
@@ -680,7 +700,22 @@ class Downloader:
         ch.note = ""
         ch.paragraphs = paragraphs
 
-    def run(self, limit: int = 0, force: bool = False) -> Book:
+    def run(self, limit: int = 0, force: bool = False,
+            stop_event: "threading.Event | None" = None) -> Book:
+        """抓取待抓章节。
+
+        `stop_event`（可选）：**协作式取消**信号。置位后不再提交/等待新章节，
+        但**已在跑的章节会自然收尾并落盘**（断点可续）。
+
+        ⚠ 为什么是「协作式」而不是抛异常：原来 GUI 的「停止」是在进度回调里抛
+        `KeyboardInterrupt`，而 `with ThreadPoolExecutor(...)` 的 `__exit__` 会
+        `shutdown(wait=True)` —— **异常也拦不住它等完所有已提交的 future**。
+        实测（审计 #3）：第 3 章点停止 → **40/40 全抓完**，提示语还写着「会在当前章节结束后停下」。
+        正确做法是在 `as_completed` 循环里检查信号并 `cancel_futures`，
+        以 `wait=False` 关闭线程池。
+        """
+        if stop_event is None:
+            stop_event = threading.Event()
         if self.book is None:
             self.discover()
 
@@ -758,10 +793,15 @@ class Downloader:
                         ch.note = f"未捕获异常：{e}"
                     self._on_chapter_done(ch, store, book)
             else:
-                with ThreadPoolExecutor(max_workers=concurrency) as pool:
+                # ⚠ 不用 `with ThreadPoolExecutor(...)`：它的 `__exit__` 会
+                #   `shutdown(wait=True)` —— 取消信号也拦不住它，必须显式控制。
+                pool = ThreadPoolExecutor(max_workers=concurrency)
+                try:
                     futures = {pool.submit(self._fetch_one_chapter, c): c
                                for c in pending}
                     for fut in as_completed(futures):
+                        if stop_event.is_set():
+                            break
                         ch = futures[fut]
                         try:
                             fut.result()
@@ -769,6 +809,16 @@ class Downloader:
                             ch.status = STATUS_FAILED
                             ch.note = f"未捕获异常：{e}"
                         self._on_chapter_done(ch, store, book)
+                finally:
+                    if stop_event.is_set():
+                        # 协作式取消：**不等**在跑的章节，直接取消未开始的。
+                        # 已完成的章节在 _on_chapter_done 里已落盘 → 断点可续。
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        done = self._done
+                        self.log(f"[抓取] 已停止：完成 {done}/{self._total} 章"
+                                 f"（已落盘，重新运行同一命令即可续爬）", "warn")
+                    else:
+                        pool.shutdown(wait=True)
         finally:
             self.close()
 
