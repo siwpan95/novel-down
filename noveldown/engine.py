@@ -26,6 +26,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from . import parser
 from .browser import DEFAULT_NAV_RETRIES
 from .constants import DEFAULT_CONFIG
+
+# 字体反爬的**最低可接受覆盖率**（审计 #8）。低于它就不还原，改为保留原文 + 告警：
+# 半还原的正文「一半对一半是占位符」，比不还原更糟 —— 后者至少一眼能看出有问题。
+FONT_DECODE_MIN_COVERAGE = 0.90
 from .freeguard import (assert_site_allowed, check_content,
                         check_page_markers, FreeGuardError)
 from .http_client import build_headers, http_get, parse_proxy
@@ -492,6 +496,18 @@ class Downloader:
 
         out = [fd.decode_text(p, mapping) for p in paragraphs]
         cov = fd.decode_coverage(paragraphs, mapping)
+        # ⚠ 覆盖率过低就**不要还原**（审计 #8，2026-09-22）：
+        #   原来这里算完 cov 只写进备注，正文照还原 —— 于是「覆盖 30%」的结果是
+        #   **一部分字还原对了、一部分还是 PUA 占位**，两者混在一起，而该章依然
+        #   status=ok 被导出：用户拿到手才发现是半乱码。
+        #   宁可**不还原**（保留原始字符）+ **明确告警**，也不要产出看起来正常、
+        #   实际半截坏掉的数据 —— 这是本项目一贯的「宁缺勿滥」取向。
+        if cov < FONT_DECODE_MIN_COVERAGE:
+            self.log(f"  字体解码覆盖率仅 {cov:.1%}"
+                     f"（< {FONT_DECODE_MIN_COVERAGE:.0%}）→ 放弃还原，"
+                     f"正文保留原始字符并在备注里标出", "warn")
+            return paragraphs, (f"字体解码覆盖率过低（{cov:.1%}），"
+                                f"未还原以避免产出半乱码正文")
         note = f"字体反爬还原 {len(mapping)} 码位（覆盖 {cov:.1%}）"
         return out, note
 
@@ -502,6 +518,10 @@ class Downloader:
         ok, why = fd.deps_available()
         if not ok:
             raise fd.FontDecodeError(why)
+        if why:
+            # ⚠ ok=True 也可能带说明（如「缺 brotli：woff2 读不了」）——
+            #   原来这里只判 `not ok`，把那句说明**直接丢了**，等于白写。
+            self.log(f"  {why}", "warn")
 
         urls = fd.font_urls_from_html(page_html or "")
         if not urls:

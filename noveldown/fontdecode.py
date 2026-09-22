@@ -449,18 +449,38 @@ class FontDecoder:
 # ============================================================
 
 def deps_available() -> tuple:
-    """返回 (是否可用, 缺失说明)。"""
+    """返回 (是否可用, 缺失说明)。
+
+    ⚠ 审计 #8（2026-09-22）：原来对 brotli 的 ImportError 是 **`pass`** 掉的，
+    理由是「只在读 woff2 时才需要」——但这与本模块 docstring 里
+    「缺失时…会给出明确提示」**自相矛盾**，而且后果不轻：
+    只装了 fontTools、没装 brotli 时这里照样返回 True，于是 woff2 站点一路走到
+    `TTFont()` 才在**深层**炸掉，被 engine 兜住之后，**含 PUA 占位字符的半乱码正文
+    会被当成 status=ok 存下来并导出**。
+
+    两件事分开说清楚：
+      · 缺 fontTools → 整个能力不可用（返回 False）；
+      · 缺 brotli   → 能力**部分**可用（otf/ttf 能读、woff2 不能），
+        所以这里返回「说明」让调用方在真遇到 woff2 时报得明白。
+    """
     missing = []
+    parts_ok = []
     try:
         import fontTools  # noqa: F401
+        parts_ok.append("fontTools")
     except ImportError:
         missing.append("fontTools")
     try:
         import brotli  # noqa: F401
+        parts_ok.append("brotli")
     except ImportError:
-        # brotli 只读 woff2 时才需要；otf/ttf 不需要
-        pass
-    if missing:
+        missing.append("brotli")
+
+    if "fontTools" in missing:
         return False, ("缺少依赖：" + "、".join(missing)
                        + f"。安装：{PY} -m pip install fontTools brotli")
+    if "brotli" in missing:
+        # 能跑，但读不了 woff2 —— 明确告知，别等深层报错
+        return True, ("缺少 brotli：otf/ttf 字体仍可解码，但 **woff2 读不了**。"
+                      f"安装：{PY} -m pip install brotli")
     return True, ""
