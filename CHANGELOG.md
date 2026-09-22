@@ -5,6 +5,66 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.8.40] - 2026-09-22
+
+**把上线前全检报告的 P1（5 项）与 P2（13 项）全部处理完毕。**
+（报告：`deliverables/gstack/launch-check-noveldown-2026-09-22.md`；v0.8.39 已清掉两个阻塞项）
+
+### P1（发版前项）
+
+| # | 内容 | 关键点 |
+|---|---|---|
+| #6 | 门禁**过度声称** | `SCAN_CODE_DIRS` 漏了 `packaging/`，而 `packaging/build.py` 正硬编码着解释器路径 —— 门禁却照印「无硬编码本机路径 ✓」。已纳入扫描；`--py` 默认改 `sys.executable`；测试里那份重复的目录表改为从门禁导入（同一事实别写两处）。<br>⚠ **并抓到审计也漏掉的真 bug**：`HARDCODED_PATH_RE` 写成 `Python\d` + `\b`，而 `F:/Python314` 里 `Python3` 后跟 `1`（同为 word 字符）→ **没有词边界** → 这条检查对**本机最常用的路径一直漏报**。改用负向先行断言；注入测试证明两个位置都报红。 |
+| #4 | 目录**静默 0 章** | 规则把 `id_from.pattern` 写成无名组时 `m.group("cid")` 抛 IndexError，被 `except Exception: pass` 吞掉 → 一本没抓到却不报错。两层防线：加载时校验命名组；`discover()` 0 章显式抛错并列出排查方向。 |
+| #3 | GUI「停止」**实际停不下来** | 旧做法是在进度回调里抛 `KeyboardInterrupt`，而 `with ThreadPoolExecutor` 的 `__exit__` 会 `shutdown(wait=True)` —— 异常拦不住它等完所有已提交的任务（审计实测 40/40 全抓完）。改为协作式取消：`run(stop_event=…)` + `cancel_futures`。 |
+| #7 | 三模块**零测试** | `http_client` / `ratelimit` / `identity_manager` 共补 28 个用例。 |
+| #5 | 依赖**未钉版本** | 新增 `requirements.lock`（3 直接 + 6 传递，全 `==`）。 |
+
+### P2（加固项）
+
+- **#8** 字体反爬**降级不干净**：`deps_available()` 把 brotli 的 ImportError `pass` 掉（与自己 docstring 矛盾）；
+  `_font_decode` 算出覆盖率却**只写备注、不做处置** → 覆盖率 30% 的「半还原」正文照样按 ok 导出。
+  → 如实报告依赖状态；新增 `FONT_DECODE_MIN_COVERAGE=0.90`，低于它**不还原**（保留原文 + 告警）。
+- **#9** `--selfcheck` 从**抽验 5/11 项**扩到 **11/11**。只抽验一部分的害处是：
+  没被抽到的项，你不知道它是活的还是死的 —— 而第 7 项当时恰好就是**死的**。
+- **#10** CLI 捕 `BrowserUnavailable`：不再是裸 traceback，改为退出码 6 + 告诉用户装什么。
+- **#12** 重定向 **SSRF 纵深**：拒绝落到内网段 / 链路本地（`169.254.*` 云元数据）的响应。
+  实现上**故意不含回环**（本地合成站测试要用），也不依赖站点白名单（会误伤跳转型站点）。
+- **#13** `.archived/` 里**实有 8 个第三方归档**却既没被忽略、也没被记账（含两个从未登记过的）。
+  → `.gitignore` + 门禁禁止目录 + `docs/REFERENCE.md` 登记（体积 + SHA-256）。
+- **#14** curl_cffi 路径的 cookie 未清（与 requests 路径不一致）。
+- **#15** 付费墙判定**过宽**：「打开APP」这类泛词对整章正文匹配 → 正常长章被整章丢弃。
+  → 拆**强/弱两档**，泛词只在正文 ≤200 字时才采信（APP 墙的正文实测只有 ~80 字）。
+- **#16~#20** `stealth_js` 注入语义入文档；README 说清门禁边界（「不含第三方源码树」≠「零行级借鉴」）；
+  删根目录 spec 残留；补 `--max-items`/`--report`；onefile 启动耗时 47s → 约 40s（原表述夸大）。
+
+### ⚠ 一项**不采纳**审计建议（附理由）
+
+审计 #11 建议删掉 `freeguard` 政策名单里的 `host.startswith(denied)`，理由是「无安全增益」。
+删掉后测试立刻报红 —— 政策名单要防的是「**相似域名绕过**」：名单写了 `example-bad.com` 时，
+`example-bad.com.evil.net` 既不等于它、也不以 `.example-bad.com` 结尾，删了就拦不住。
+**政策名单 fail-closed（宁可误拦）与规则匹配必须严格，是两种不同语义，不能合并。**
+
+### 本次修复过程中反复出现的三类教训（写进代码注释）
+
+1. **漏 import 踩了三次**（`RuleError` / `BrowserUnavailable` / `import re`），三次都发生在
+   「测试全绿」时 —— 因为没用例走到那条分支，或改动后没跑测试。
+   → 新增 `tests/test_imports.py` 烟雾测试（不挑分支，逐个 import + 断言异常类可见）。
+2. **「测试全绿」≠「这条路能跑」**：新增代码漏 import，pytest 全绿没发现。
+3. **自检用例自己也会写错**：第一版为 #4/#5 建的注入现场都不对（#4 按 `tracked` 判定却传空；
+   #5 那个 selfcheck 盯的是 Cookie/口令/token 路径、不是通用密钥扫描）。
+   自检用例写错比门禁坏掉更难发现。
+
+### 新增测试
+
+`test_imports.py`(6) · `test_paywall_precision.py`(6) · `test_cli_errors.py`(5) ·
+`test_ratelimit.py`(7) · `test_identity_manager.py`(10) · `test_http_client.py`(11) ·
+`test_stop_signal.py`(3) · `test_catalog_guard.py`(7) · `test_export_paths.py`(10)
+
+### 状态
+
+- 规则 **161**（启用 146）不变｜测试 **288 → 353**（+65）｜门禁 **11 项 PASS + 自检 11/11**
+
 ## [0.8.39] - 2026-09-22
 
 **修上线前全检的 2 个阻塞项 + 全哥实测到的 GUI 导出崩溃。**

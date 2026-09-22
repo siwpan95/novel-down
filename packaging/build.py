@@ -38,7 +38,7 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-VERSION = "0.8.39"
+VERSION = "0.8.40"
 
 # ⚠ 与 packaging/setup_cx.py 的 EXCLUDES 保持一致。
 # 这些都是**可选能力**，排除后只是对应站点不可用（最小发行版）。

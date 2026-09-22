@@ -367,9 +367,9 @@ python tools\check_repo.py --selfcheck   # 证明门禁本身有效
 
 | 产物 | 形态 | 说明 |
 |---|---|---|
-| `noveldown-0.8.39-portable-win64.zip` | **便携版（目录）** | 解压即用，启动约 **1.4 秒**（推荐） |
+| `noveldown-0.8.40-portable-win64.zip` | **便携版（目录）** | 解压即用，启动约 **1.4 秒**（推荐） |
 | `noveldown-onefile.exe` | **便携版（单文件）** | 单个 exe；⚠ 每次启动约 **40 秒**（解包 + 杀软实时扫描） |
-| `novel-down-0.8.39-win64.msi` | **MSI 安装版** | 开始菜单 / PATH / 卸载项 |
+| `novel-down-0.8.40-win64.msi` | **MSI 安装版** | 开始菜单 / PATH / 卸载项 |
 
 自己构建（在本仓根目录）：
 
