@@ -382,6 +382,27 @@ F:/Python314/python.exe packaging/build.py --all
 **不含**浏览器路由（需 playwright）与字体反爬解码（需 fontTools）——
 需要这些能力请用**源码方式**运行，见「依赖」一节。
 
+## 与 crawl-hub 的接入（B 模式插件，2026-09-22）
+
+本仓同时作为 [`crawl-hub`](https://gitee.com/siwpan/crawl-hub) 聚合启动器（本机 `G:\repos\crawl-hub`）的
+**B 模式插件**接入：hub 只做「展示 + 启动 + 停止」，以子进程拉本仓 GUI（cwd = 本仓），
+**不 import 本仓任何逻辑**（聚合不融合）。新增/移除工具只改 hub 的 `crawlers.json`。
+
+| 本仓文件 | 作用 |
+|---|---|
+| `run_gui.py` | **文件级入口薄壳**：把仓根塞进 `sys.path` 后转交 `noveldown.gui.main`。GUI 本体是**包模块**（只支持 `python -m noveldown.gui`），而 hub 的 `entry` 约定是「工具目录下的**文件**」+ `python <entry>`（cwd = 工具目录）；此壳只做这一件事，不复制任何 GUI 逻辑 |
+| `manifest.json` | 插件清单：`name` / `version` / `entry` / `interface`（discover、fetch、extract、transform）+ `config` 键值提示。**刻意不声明 `kit` 依赖**——本仓不 import `crawler-kit`（反爬三件为内联副本，见下） |
+
+两条入口等价，任选：
+
+```bat
+python run_gui.py           :: 宿主 / crawl-hub 用（cwd = 本仓）
+python -m noveldown.gui     :: 手动用
+```
+
+> 依赖由**宿主的解释器**提供（hub 的 `python: auto`）：`requests` + `beautifulsoup4` 为必需，
+> `lxml` / `fontTools`+`brotli` / `playwright` / `curl_cffi` 按需（缺了只影响对应站点，见「依赖」一节）。
+
 ## 许可
 
 MIT，见 [LICENSE](./LICENSE)。

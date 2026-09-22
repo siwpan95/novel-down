@@ -1,0 +1,17 @@
+{
+  "name": "novel-down",
+  "version": "0.8.40",
+  "entry": "run_gui.py",
+  "interface": ["discover", "fetch", "extract", "transform"],
+  "description": "规则驱动的网络小说爬虫（仅免费章节）：161 条站点规则、目录发现→并发抓取→VIP/付费墙六层拦截→断点续爬→TXT/MD/EPUB/HTML 四格式导出",
+  "python": "auto",
+  "config": {
+    "url": "书籍页 URL（站点规则按域名自动匹配）",
+    "out_dir": "输出根目录（默认 output/）",
+    "formats": "导出格式 txt/md/epub/html（可多选）",
+    "concurrency": "并发数（默认 4）",
+    "delay": "基础请求间隔秒（默认 1.2，另加 0-0.8s 抖动）",
+    "limit": "最多抓取章数（0 = 全部，调试用）",
+    "proxy": "代理地址（可选）"
+  }
+}
