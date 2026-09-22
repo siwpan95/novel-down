@@ -320,9 +320,11 @@ class Rule:
 def iter_rule_files(rules_dir: str = RULES_DIR):
     """列出规则文件（**递归**含子目录，顺序确定）。
 
-    为什么允许子目录：手工维护的规则放顶层，**批量生成的镜像池放 `mirrors/`** ——
-    镜像池是"一个模板一个文件"自动产出的，数量会到几百条；
-    与手写规则混在同一层会让 `rules/` 不可读。
+    规则按池分目录组织（纯组织用途，加载器递归读，不区分层级）：
+    - **正版**放 `genuine/`
+    - **免费镜像**放 `mirrors/`（批量生成的镜像池，"一个模板一个文件"自动产出，数量到几百条）
+    门禁 #12（`tools/check_repo.py`）强制 `pool` 字段与所在文件夹一致，
+    从根上杜绝人工拷规则时把镜像误放顶层、导致 `rules/` 散落一地。
     """
     out = []
     for root, dirs, files in os.walk(rules_dir):

@@ -24,9 +24,21 @@ from noveldown.rules import Rule, RuleError, load_rules  # noqa: E402
 
 
 def _rule_dict(pattern=None):
-    """用仓里一条真规则当底子，只改 id_from.pattern。"""
-    p = os.path.join(ROOT, "noveldown", "rules", "biqu520.net.json")
-    d = json.load(open(p, encoding="utf-8"))
+    """用仓里一条真规则当底子，只改 id_from.pattern。
+
+    ⚠ 2026-09-22 重组：规则按池分目录（genuine/ mirrors/），
+    原顶层 `biqu520.net.json` 已迁入 `mirrors/`。这里**递归定位**该文件，
+    避免把路径写死成顶层（那样重组后测试会 FileNotFoundError）。
+    """
+    from noveldown.rules import iter_rule_files
+    target = None
+    for fp in iter_rule_files():
+        if os.path.basename(fp) == "biqu520.net.json":
+            target = fp
+            break
+    if target is None:
+        raise RuntimeError("找不到 biqu520.net.json 规则文件（genuine/mirrors 递归均未见）")
+    d = json.load(open(target, encoding="utf-8"))
     d["id"] = "_probe_rule"
     d["path"] = "probe"
     if pattern is not None:

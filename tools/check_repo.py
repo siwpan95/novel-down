@@ -11,7 +11,7 @@ FictionDown 是 GPL-3.0、novel-downloader 是 AGPL-3.0-or-later，本项目是 
 但"不含"如果只写在文档里，迟早会有人手滑 `git add -A` 把它带进去。
 所以做成 <1 秒可跑的检查。
 
-十一项检查
+十二项检查
 ----------
 1. 许可文件唯一且为本项目 LICENSE（不得混入第三方 LICENSE/COPYING）
 2. 不跟踪第三方源码目录（_ref/ vendor/ node_modules/ third_party/ …）
@@ -24,6 +24,7 @@ FictionDown 是 GPL-3.0、novel-downloader 是 AGPL-3.0-or-later，本项目是 
 9. 镜像族规则 `notes` 里的「域数 N」必须等于 `match` 长度（同一事实写在两处必须相等）
 10. README 里的关键计数必须等于**从代码算出的**事实
 11. `docs/NEW_SITES_PLAN.md §12.6` 规划表的「状态」必须等于规则文件的存在/启用事实
+12. 规则 `pool` 字段（`正版`/`免费镜像`）必须与所在文件夹（`genuine/`/`mirrors/`）一致
 
 用法：
     python tools\\check_repo.py
@@ -247,6 +248,34 @@ def check(root_dir=ROOT, tracked=None) -> list:
                 bad.append(("9 镜像族域数一致",
                             f"{name}: notes 写「域数 {m.group(1)}」，"
                             f"但 match 里有 {n} 个域"))
+
+    # --- 12. pool 字段与文件夹一致（防人工拷乱复发）---
+    # 2026-09-22：此前人工把镜像规则从 `.sources/draft_rules/` 拷进仓库时，
+    # 11 条 `pool="免费镜像"`（含 7 条用域名命名、长得像正版）被误放 `rules/` 顶层，
+    # 既绕过了门禁 #9（它只扫 `mirrors/`），也让 `rules/` 散落一地。
+    # 强制约束：`pool="正版"` 必在 `genuine/`，`pool="免费镜像"` 必在 `mirrors/`。
+    #   ⚠ 加载器本来就**递归读子目录**（`iter_rule_files`），文件夹纯属组织用途 ——
+    #   这条门禁是把「组织约定」变成「机械事实」，从根上堵住下次再散落。
+    rules_root = os.path.join(root_dir, "noveldown", "rules")
+    if os.path.isdir(rules_root):
+        for rroot, _, rfiles in os.walk(rules_root):
+            for fn in sorted(rfiles):
+                if not fn.endswith(".json"):
+                    continue
+                fp = os.path.join(rroot, fn)
+                try:
+                    with open(fp, encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception:
+                    continue  # 解析失败由别的检查项管
+                pool = data.get("pool")
+                rel = os.path.relpath(fp, rules_root)
+                if pool == "正版" and not rel.startswith("genuine" + os.sep):
+                    bad.append(("12 pool↔文件夹对齐",
+                                f"{rel}: pool=正版 但不在 genuine/（应在 noveldown/rules/genuine/）"))
+                elif pool == "免费镜像" and not rel.startswith("mirrors" + os.sep):
+                    bad.append(("12 pool↔文件夹对齐",
+                                f"{rel}: pool=免费镜像 但不在 mirrors/（应在 noveldown/rules/mirrors/）"))
     return bad
 
 
@@ -256,6 +285,7 @@ def _selfcheck() -> int:
 
     ⚠ 审计 #9（2026-09-22）：原来的自检只抽验了 11 项里的 5 项
     （许可文件唯一 / 无第三方源码 / 无归档 / 无调试残留 / 规划表脱节）。
+    现在**每一项都注入一次**（含 2026-09-22 新增的 #12 pool↔文件夹对齐）。
     只抽验一部分的问题是：**没被抽到的那几项，你不知道它是活的还是死的**——
     而第 7 项当时恰好就是「死」的（正则对本机那个解释器目录匹配不上，长期漏报）。
 
@@ -368,6 +398,18 @@ def _selfcheck() -> int:
         with open(os.path.join(d, "m.json"), "w", encoding="utf-8") as f:
             json.dump({"notes": "签名：x；域数 3", "match": ["a.com"]}, f)
 
+    def _align(tmp):
+        """12 pool↔文件夹对齐：把一条 `pool="正版"` 规则放进 `mirrors/`（应被拦）。
+
+        ⚠ 这是 2026-09-22 重组时真正出现过的问题：
+        11 条镜像被人工误放顶层，其中 7 条还用域名命名、长得像正版。
+        这条探针模拟「正版规则落在镜像目录」这种放反的情况。
+        """
+        d = os.path.join(tmp, "noveldown", "rules", "mirrors")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "rogue.json"), "w", encoding="utf-8") as f:
+            json.dump({"pool": "正版", "id": "rogue", "match": ["rogue.com"]}, f)
+
     def _counts(tmp):
         """10 README 计数：写一个明显对不上的数字。"""
         with open(os.path.join(tmp, "README.md"), "w", encoding="utf-8") as f:
@@ -392,6 +434,7 @@ def _selfcheck() -> int:
     _probe("6 借鉴记账完整", _doc, "6 借鉴记账完整")
     _probe("7 无硬编码本机路径", _hardpath, "7 无硬编码本机路径")
     _probe("9 镜像族域数一致", _mirror, "9 镜像族域数一致")
+    _probe("12 pool↔文件夹对齐", _align, "12 pool↔文件夹对齐")
 
     # 10 README 计数（走的是独立函数，不看 tracked）
     tmp = tempfile.mkdtemp(prefix="gate10_")
@@ -421,7 +464,7 @@ def _selfcheck() -> int:
         ok = ok and hit
         print("  [%s] %s" % ("PASS" if hit else "FAIL", label))
     covered = len([1 for _l, h in results if h])
-    print("\n 覆盖 %d 项 / 全部 11 项；检出 %d 项" % (len(results), covered))
+    print("\n 覆盖 %d 项 / 全部 12 项；检出 %d 项" % (len(results), covered))
     print()
     print("门禁自检：" + ("有效 ✓" if ok else "失效 ✗（有检查项没能抓到假违规）"))
     return 0 if ok else 1
@@ -459,22 +502,23 @@ def check_readme_counts(root: str):
         from noveldown.rules import load_rules, active_rules
         r = load_rules()
         a = active_rules(r)
-        top = {k: v for k, v in r.items()
-               if _os.sep + "mirrors" + _os.sep not in (v.path or "")}
-        mir = {k: v for k, v in r.items()
-               if _os.sep + "mirrors" + _os.sep in (v.path or "")}
+        in_mirrors = lambda p: _os.sep + "mirrors" + _os.sep in (p or "")
+        genuine = {k: v for k, v in r.items() if not in_mirrors(v.path)}
+        mir = {k: v for k, v in r.items() if in_mirrors(v.path)}
         gb = {k: v for k, v in r.items() if v.pool == "正版"}
         facts = {
             "总规则数": len(r),
             "启用规则数": len(a),
-            "顶层手写": len(top),
-            "顶层启用": sum(1 for v in top.values() if v.enabled),
-            "镜像池": len(mir),
-            "顶层停用存根": sum(1 for v in top.values() if not v.enabled),
+            # ⚠ 2026-09-22 重组：正版规则从 `rules/` 顶层搬进 `genuine/`，
+            #   镜像规则（含原顶层 11 条域名命名的镜像族）全在 `mirrors/`。
+            #   所以「非 mirrors 路径」= genuine 口径；下面正则改用「正版 / 镜像池」措辞，
+            #   与 README 的新写法一一对应。
             "正版总数": len(gb),
             "正版启用": sum(1 for v in gb.values() if v.enabled),
-            # ⚠ 全仓停用数（含镜像池）—— 与「顶层停用存根」是两个口径，
-            #   README 里「停用存根共 N 条」指的是**全仓**，别拿顶层口径去比。
+            "镜像池": len(mir),
+            "镜像启用": sum(1 for v in mir.values() if v.enabled),
+            # ⚠ 全仓停用数（含镜像池）—— 与「正版停用存根」是两个口径，
+            #   README 里「停用存根共 N 条」指的是**全仓**，别拿正版口径去比。
             "停用总数": sum(1 for v in r.values() if not v.enabled),
         }
     except Exception as e:                       # 规则加载失败不在这里报
@@ -491,15 +535,13 @@ def check_readme_counts(root: str):
     checks = [
         (r"内置 \*\*(\d+) 条\*\*规则（\*\*(\d+) 条启用\*\*",
          ["总规则数", "启用规则数"], "规则总数/启用数"),
-        # ⚠ 措辞要与数字口径**一一对应**：README 原写「顶层手写 28 条」，
-        #   而"手写"其实是 40（28 启用 + 12 存根）—— 门禁首次运行就抓到了这个措辞歧义，
-        #   故两边都改成「手写 40 条（启用 28）」。
-        (r"顶层手写 \*\*(\d+) 条\*\*（启用 (\d+)）\+ \*\*镜像池 (\d+) 条\*\*；另有 (\d+) 条停用存根",
-         ["顶层手写", "顶层启用", "镜像池", "顶层停用存根"], "顶层/镜像池/存根"),
+        # ⚠ 措辞与数字口径**一一对应**：正版 / 镜像池，停用存根取**全仓**口径
+        #   （正版 14 + 免费镜像 1 = 15）。镜像池本身也有 1 条停用，故单列「镜像启用」。
+        (r"正版 \*\*(\d+) 条\*\*（启用 (\d+)）\+ \*\*镜像池 (\d+) 条\*\*（启用 (\d+)）；另有 (\d+) 条停用存根",
+         ["正版总数", "正版启用", "镜像池", "镜像启用", "停用总数"], "正版池/镜像池/停用存根"),
         (r"\*\*正版\*\*（(\d+) 条，(\d+) 启用）", ["正版总数", "正版启用"], "正版池"),
         # ⚠ v0.8.28 补：README 末尾还有一句「**停用存根共 N 条**（正版 X + 免费镜像 Y）」，
-        #   它此前**不在**校验范围内 —— 实测已脱节（写 11，实际 12；本轮加火星后应为 13）。
-        #   教训同第 11 项：**同一事实的每一处都要进校验，只覆盖「主要那处」迟早漏。**
+        #   同一事实的每一处都要进校验，只覆盖「主要那处」迟早漏。
         (r"\*\*停用存根共 (\d+) 条\*\*", ["停用总数"], "停用存根总数"),
     ]
     for pat, keys, label in checks:
@@ -571,17 +613,27 @@ def check_plan_state(root: str):
         seg = seg[:len(PLAN_SECTION_MARK) + nxt.start() + 1]
 
     rules_dir = os.path.join(root, "noveldown", "rules")
-    known = {f[:-5] for f in os.listdir(rules_dir) if f.endswith(".json")}
+    # ⚠ 2026-09-22 重组：规则已按池分目录（genuine/ mirrors/），
+    #   不能再 `os.listdir(rules_dir)` 顶层找 .json —— 那样会漏掉子目录，
+    #   把整张 §12.6 规划表误报成「无规则文件」。改为**递归**收集 id + 启用状态。
+    known = set()
+    enabled_cache = {}
+    if os.path.isdir(rules_dir):
+        for dp, _dn, fns in os.walk(rules_dir):
+            for fn in fns:
+                if not fn.endswith(".json"):
+                    continue
+                rid = fn[:-5]
+                known.add(rid)
+                try:
+                    with open(os.path.join(dp, fn), encoding="utf-8") as fh:
+                        enabled_cache[rid] = (
+                            json.load(fh).get("enabled", True) is not False)
+                except Exception:
+                    enabled_cache[rid] = None
 
     def is_enabled(rid):
-        p = os.path.join(rules_dir, rid + ".json")
-        if not os.path.isfile(p):
-            return None
-        try:
-            with open(p, encoding="utf-8") as fh:
-                return json.load(fh).get("enabled", True) is not False
-        except Exception:
-            return None
+        return enabled_cache.get(rid)
 
     problems, unverified, n_rows = [], [], 0
     for line in seg.splitlines():
