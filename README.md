@@ -1,5 +1,8 @@
 # novel-down · 读书爬虫（仅免费章节）
 
+> 仓库：<https://gitee.com/siwpan/novel-down> ｜ 许可：MIT（见 [LICENSE](LICENSE)）
+> 注：文中 <PATH> 为路径占位符，请替换为你本机实际的目录 / 可执行文件路径。
+
 规则驱动的网络小说离线阅读工具：**目录发现 → 并发抓取 → 免费章节硬拦截 → 校对 → 四格式导出**。
 
 > **本项目仅用于免费章节，不涉及任何 VIP 付费内容。**
@@ -61,7 +64,7 @@ python -m noveldown.gui
 
 抓取跑在**后台线程**里，界面不会卡死；「停止」会**保存断点**，下次点「开始抓取」即续爬。
 
-⚠ 需要 Python 带 **Tcl/Tk**（本机 `F://Python314` 自带 Tcl/Tk 9）。
+⚠ 需要 Python 带 **Tcl/Tk**（本机 `<PATH>` 自带 Tcl/Tk 9）。
 若当前环境没有 Tk，启动时会**明确提示并建议改用命令行**，不会静默失败。
 
 打包好的图形版见「发行版」一节（`noveldown-gui.exe`，双击即开、不弹控制台）。
@@ -375,7 +378,7 @@ python tools\check_repo.py --selfcheck   # 证明门禁本身有效
 自己构建（在本仓根目录）：
 
 ```bat
-F:/Python314/python.exe packaging/build.py --all
+python packaging/build.py --all
 ```
 
 ⚠ 发行版按**最小依赖**打包（`requests` + `beautifulsoup4` + `lxml`），
@@ -384,7 +387,7 @@ F:/Python314/python.exe packaging/build.py --all
 
 ## 与 crawl-hub 的接入（B 模式插件，2026-09-22）
 
-本仓同时作为 [`crawl-hub`](https://gitee.com/siwpan/crawl-hub) 聚合启动器（本机 `G:\repos\crawl-hub`）的
+本仓同时作为 [`crawl-hub`](https://gitee.com/siwpan/crawl-hub) 聚合启动器（本机 `<PATH>`）的
 **B 模式插件**接入：hub 只做「展示 + 启动 + 停止」，以子进程拉本仓 GUI（cwd = 本仓），
 **不 import 本仓任何逻辑**（聚合不融合）。新增/移除工具只改 hub 的 `crawlers.json`。
 
