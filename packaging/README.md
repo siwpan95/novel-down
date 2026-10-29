@@ -7,16 +7,16 @@
 在本仓根目录执行：
 
 ```bat
-F:/Python314/python.exe packaging/build.py --all
+/Python314/python.exe packaging/build.py --all
 ```
 
 分步：
 
 ```bat
-F:/Python314/python.exe packaging/build.py --portable          :: 便携版 onedir + onefile
-F:/Python314/python.exe packaging/build.py --zip               :: onedir 压成 zip
-F:/Python314/python.exe packaging/build.py --msi               :: MSI 安装版
-F:/Python314/python.exe packaging/build.py --all --clean       :: 先清空 dist/ 与 build/
+/Python314/python.exe packaging/build.py --portable          :: 便携版 onedir + onefile
+/Python314/python.exe packaging/build.py --zip               :: onedir 压成 zip
+/Python314/python.exe packaging/build.py --msi               :: MSI 安装版
+/Python314/python.exe packaging/build.py --all --clean       :: 先清空 dist/ 与 build/
 ```
 
 产物都在 `dist/`：
@@ -45,7 +45,7 @@ onefile 每次运行都要把 18MB 解包到临时目录，本机**杀毒软件�
 ### 图形界面版（noveldown-gui）
 
 ```bat
-F:/Python314/python.exe packaging/build.py --gui
+/Python314/python.exe packaging/build.py --gui
 ```
 
 产物 `dist/noveldown-gui/noveldown-gui.exe`（**windowed**，双击即开、不弹控制台）。
@@ -84,7 +84,7 @@ F:/Python314/python.exe packaging/build.py --gui
 
 1. **`--add-data` 必须用绝对路径**。相对路径会被解析成相对 `--specpath` 的目录，
    实测报 `Unable to find ...\build\noveldown\rules`。
-2. **必须显式排除无关模块**。本机 `F:/Python314` 装了大量无关包，
+2. **必须显式排除无关模块**。本机 `/Python314` 装了大量无关包，
    不排除会把 numpy / PIL / cryptography / curl_cffi / gevent / Cython / pygame 打进去
    → 产物 **110MB**；排除后 **35MB**。
 3. **入口必须强制 UTF-8**。打包后 Windows 控制台 stdout 是 **GBK**，

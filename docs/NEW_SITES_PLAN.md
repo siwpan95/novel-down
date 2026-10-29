@@ -1139,7 +1139,7 @@ chapter.content_selector = "td:not([class])"     # ← 纯 CSS 等价于「t50 �
 
 #### （2）P2：OCR 引擎**就绪**，瓶颈在**素材来源**
 
-**① 引擎侧 —— 实测全部可用**（`F:/Python314`）：
+**① 引擎侧 —— 实测全部可用**（`/Python314`）：
 
 ```
 ✓ fitz (PyMuPDF)        1.28.2      ✓ rapidocr_onnxruntime
@@ -1305,7 +1305,7 @@ OCR 质量天然低于横排现代文），**不是**当代出版电子书 —�
 
 | 项 | 实测 |
 |---|---|
-| Python | `F:/Python314` = **3.14.7**（沙箱 3.13.14 无任何 OCR 依赖） |
+| Python | `/Python314` = **3.14.7**（沙箱 3.13.14 无任何 OCR 依赖） |
 | torch | **2.13.0+cpu**（⚠ **CPU 版**） |
 | transformers | 5.15.1 ✓ |
 | paddle / paddleocr | ✗ **未装**（Python 3.14 上 PaddlePaddle 基本无轮子） |

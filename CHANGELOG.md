@@ -14,7 +14,7 @@
 
 | # | 内容 | 关键点 |
 |---|---|---|
-| #6 | 门禁**过度声称** | `SCAN_CODE_DIRS` 漏了 `packaging/`，而 `packaging/build.py` 正硬编码着解释器路径 —— 门禁却照印「无硬编码本机路径 ✓」。已纳入扫描；`--py` 默认改 `sys.executable`；测试里那份重复的目录表改为从门禁导入（同一事实别写两处）。<br>⚠ **并抓到审计也漏掉的真 bug**：`HARDCODED_PATH_RE` 写成 `Python\d` + `\b`，而 `F:/Python314` 里 `Python3` 后跟 `1`（同为 word 字符）→ **没有词边界** → 这条检查对**本机最常用的路径一直漏报**。改用负向先行断言；注入测试证明两个位置都报红。 |
+| #6 | 门禁**过度声称** | `SCAN_CODE_DIRS` 漏了 `packaging/`，而 `packaging/build.py` 正硬编码着解释器路径 —— 门禁却照印「无硬编码本机路径 ✓」。已纳入扫描；`--py` 默认改 `sys.executable`；测试里那份重复的目录表改为从门禁导入（同一事实别写两处）。<br>⚠ **并抓到审计也漏掉的真 bug**：`HARDCODED_PATH_RE` 写成 `Python\d` + `\b`，而 `/Python314` 里 `Python3` 后跟 `1`（同为 word 字符）→ **没有词边界** → 这条检查对**本机最常用的路径一直漏报**。改用负向先行断言；注入测试证明两个位置都报红。 |
 | #4 | 目录**静默 0 章** | 规则把 `id_from.pattern` 写成无名组时 `m.group("cid")` 抛 IndexError，被 `except Exception: pass` 吞掉 → 一本没抓到却不报错。两层防线：加载时校验命名组；`discover()` 0 章显式抛错并列出排查方向。 |
 | #3 | GUI「停止」**实际停不下来** | 旧做法是在进度回调里抛 `KeyboardInterrupt`，而 `with ThreadPoolExecutor` 的 `__exit__` 会 `shutdown(wait=True)` —— 异常拦不住它等完所有已提交的任务（审计实测 40/40 全抓完）。改为协作式取消：`run(stop_event=…)` + `cancel_futures`。 |
 | #7 | 三模块**零测试** | `http_client` / `ratelimit` / `identity_manager` 共补 28 个用例。 |
